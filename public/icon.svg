@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f766e" />
+      <stop offset="100%" stop-color="#042f2e" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.3" />
+    </filter>
+  </defs>
+  
+  <!-- Base Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  
+  <!-- Subtle inner border -->
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="none" stroke="#34d399" stroke-width="2" stroke-opacity="0.2" />
+
+  <!-- Ledger Card Main Body -->
+  <g filter="url(#shadow)" transform="translate(96, 88)">
+    <rect x="0" y="0" width="320" height="336" rx="36" fill="#134e4a" stroke="#2dd4bf" stroke-width="3" stroke-opacity="0.4" />
+    
+    <!-- Ledger Spine & Bookmark -->
+    <path d="M 0 36 C 0 16.1 16.1 0 36 0 L 72 0 L 72 336 L 36 336 C 16.1 336 0 319.9 0 300 Z" fill="#042f2e" />
+    <line x1="72" y1="0" x2="72" y2="336" stroke="#2dd4bf" stroke-width="2" stroke-opacity="0.3" />
+
+    <!-- Golden Bookmark ribbon -->
+    <path d="M 230 0 L 262 0 L 262 70 L 246 54 L 230 70 Z" fill="url(#goldGrad)" />
+
+    <!-- Ledger Entry Lines / Financial Symbol -->
+    <!-- Positive Transaction Line (Green) -->
+    <rect x="100" y="76" width="100" height="14" rx="7" fill="#34d399" />
+    <circle cx="270" cy="83" r="10" fill="#34d399" />
+    <path d="M 266 83 L 269 86 L 275 80" fill="none" stroke="#042f2e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- Neutral Detail Line -->
+    <rect x="100" y="126" width="140" height="12" rx="6" fill="#99f6e4" fill-opacity="0.5" />
+    <rect x="100" y="154" width="80" height="10" rx="5" fill="#99f6e4" fill-opacity="0.3" />
+
+    <!-- Negative Transaction Line (Coral/Gold) -->
+    <rect x="100" y="196" width="110" height="14" rx="7" fill="#f87171" />
+    <circle cx="270" cy="203" r="10" fill="#f87171" />
+    <path d="M 265 203 L 275 203" fill="none" stroke="#042f2e" stroke-width="2.5" stroke-linecap="round" />
+
+    <!-- Net Balance Indicator Badge -->
+    <rect x="96" y="248" width="188" height="52" rx="16" fill="url(#accentGrad)" />
+    <!-- Arabic Calligraphic / Financial Icon (Scale / Symbol) -->
+    <path d="M 130 274 L 142 262 L 154 274 M 142 263 L 142 285" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+    <rect x="168" y="268" width="88" height="14" rx="7" fill="#ffffff" />
+  </g>
+</svg>
