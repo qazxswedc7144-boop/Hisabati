@@ -80,6 +80,23 @@ export class OCRService {
 
     return fallbackResult;
   }
+
+  /**
+   * Process an image (base64 string, File, or Blob)
+   */
+  public async processImage(
+    input: string | File | Blob,
+    options?: ImagePreprocessOptions
+  ): Promise<OCRResult> {
+    return this.processDocument(input, { preprocess: options });
+  }
+
+  /**
+   * Process raw text input deterministically
+   */
+  public async processText(text: string): Promise<OCRResult> {
+    return OCRFieldParser.parse(text, 'local_text_parser');
+  }
 }
 
 export const ocrService = new OCRService();

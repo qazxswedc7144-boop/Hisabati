@@ -18,6 +18,7 @@ export type AIIntent =
   | 'CREATE_TRANSACTION_REQUEST'
   | 'EDIT_TRANSACTION_REQUEST'
   | 'DELETE_TRANSACTION_REQUEST'
+  | 'AUDIT_INVOICE'
   | 'UNKNOWN';
 
 export type AICommandStatus =

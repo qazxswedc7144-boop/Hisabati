@@ -9,13 +9,17 @@ import { Toast } from '@/shared/components/Toast';
 import { OfflineIndicator } from '@/shared/components/OfflineIndicator';
 import { NotificationCenterDrawer } from '@/features/messaging/components/NotificationCenterDrawer';
 import { SendMessageModal } from '@/features/messaging/components/SendMessageModal';
-import { OCRReceiptScannerModal, SmartReceiptReviewModal } from '@/features/ocr';
-import { useSettingsStore, useAccountStore, useTransactionStore } from '@/shared/stores';
+import { OCRReceiptScannerModal, SmartReceiptReviewModal, ReceiptToTransactionModal } from '@/features/ocr';
+import { useSettingsStore, useAccountStore, useTransactionStore, useOCRStore } from '@/shared/stores';
 
 export const MainLayout: React.FC = () => {
   const loadSettings = useSettingsStore((state) => state.loadSettings);
   const fetchAccounts = useAccountStore((state) => state.fetchAccounts);
   const fetchRecentTransactions = useTransactionStore((state) => state.fetchRecentTransactions);
+
+  const isConversionModalOpen = useOCRStore((state) => state.isConversionModalOpen);
+  const closeConversionModal = useOCRStore((state) => state.closeConversionModal);
+  const draftToConvert = useOCRStore((state) => state.draftToConvert);
 
   useEffect(() => {
     // Initial data hydration
@@ -45,6 +49,11 @@ export const MainLayout: React.FC = () => {
         <SendMessageModal />
         <OCRReceiptScannerModal />
         <SmartReceiptReviewModal />
+        <ReceiptToTransactionModal
+          isOpen={isConversionModalOpen}
+          onClose={closeConversionModal}
+          draft={draftToConvert}
+        />
         <Toast />
         <OfflineIndicator />
       </div>

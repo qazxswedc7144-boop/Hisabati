@@ -81,6 +81,57 @@ export interface StructuredReceiptDraft {
   confirmedAt: string; // ISO String
   source: 'ocr_reviewed' | 'manual_input';
   validationErrors?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  // Phase 7-C Conversion Fields
+  status?: 'draft' | 'converted' | 'cancelled';
+  convertedToTransactionId?: string;
+  convertedAt?: string;
+  operationId?: string;
+}
+
+export interface DuplicateInvoiceCheckResult {
+  isDuplicate: boolean;
+  severity: 'warning' | 'info';
+  matchingTransactions: Array<{
+    id: string;
+    receiptNumber?: string;
+    amount: number;
+    date: string;
+    accountId: string;
+    accountName?: string;
+    note?: string;
+  }>;
+  matchingDrafts?: Array<{
+    id: string;
+    invoiceNumber: string;
+    totalAmount: number;
+    date: string;
+    partyName: string;
+  }>;
+  messageAr?: string;
+  reasons: string[];
+}
+
+export interface ConvertDraftToTransactionRequest {
+  draft: StructuredReceiptDraft;
+  accountId: string;
+  type: 'debit' | 'credit';
+  overrideAmount?: number;
+  overrideDate?: string;
+  overrideNote?: string;
+  overrideReceiptNumber?: string;
+  explicitUserConfirmed: boolean;
+  allowDuplicate?: boolean;
+}
+
+export interface ConvertDraftToTransactionResult {
+  success: boolean;
+  transactionId?: string;
+  operationId?: string;
+  duplicateWarning?: DuplicateInvoiceCheckResult;
+  integrityValid: boolean;
+  error?: string;
 }
 
 export interface ReviewFieldStatus {
@@ -113,3 +164,68 @@ export interface OCRProvider {
   processImage(imageSource: string | File | Blob, options?: ImagePreprocessOptions): Promise<OCRResult>;
   processText?(rawText: string): Promise<OCRResult>;
 }
+
+// ==========================================
+// Phase 7-D AI Invoice Audit & Anomaly Types
+// ==========================================
+
+export type AuditRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
+export type AuditFindingSeverity = 'info' | 'warning' | 'error' | 'critical';
+
+export type InvoiceAuditFindingCategory =
+  | 'totals'
+  | 'tax'
+  | 'line_items'
+  | 'quantities'
+  | 'prices'
+  | 'currency'
+  | 'date'
+  | 'invoice_number'
+  | 'duplicate'
+  | 'account_mismatch';
+
+export interface InvoiceAuditFinding {
+  id: string;
+  category: InvoiceAuditFindingCategory;
+  severity: AuditFindingSeverity;
+  titleAr: string;
+  messageAr: string;
+  field?: string;
+  expected?: string | number;
+  actual?: string | number;
+}
+
+export interface InvoiceAuditReport {
+  id: string;
+  draftId: string;
+  timestamp: string;
+  overallRisk: AuditRiskLevel;
+  riskScore: number; // 0 to 100
+  confidence: number; // 0.0 to 1.0
+  summaryAr: string;
+  recommendationAr: string;
+  findings: InvoiceAuditFinding[];
+  mathVerification: {
+    lineItemsSum: number;
+    statedSubtotal: number;
+    statedTax: number;
+    statedTotal: number;
+    calculatedTotal: number;
+    discrepancy: number;
+    isBalanced: boolean;
+    itemsMathValid: boolean;
+  };
+  duplicateAssessment?: DuplicateInvoiceCheckResult;
+  accountComparison?: {
+    targetAccountId?: string;
+    targetAccountName?: string;
+    partyName?: string;
+    nameMatchStatus: 'matched' | 'partial' | 'mismatch' | 'unknown';
+    similarityScore: number;
+    messageAr?: string;
+  };
+  provider: 'local_deterministic' | 'gemini_ai' | 'hybrid';
+  isOfflineFallback: boolean;
+}
+

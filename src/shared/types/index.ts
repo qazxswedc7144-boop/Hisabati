@@ -7,4 +7,5 @@ export * from './sync.types';
 export * from './messaging.types';
 export * from './ai.types';
 export * from './ocr.types';
+export * from './rbac.types';
 

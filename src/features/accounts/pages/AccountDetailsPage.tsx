@@ -17,10 +17,12 @@ import {
   RefreshCw,
   Clock,
   Layers,
+  Receipt,
 } from 'lucide-react';
 import { useAccountStore, useTransactionStore, useSettingsStore, useUIStore } from '@/shared/stores';
 import { BalanceBadge, EmptyState, EditTransactionModal } from '@/shared/components';
 import { AccountStatementModal } from '@/features/reports/components';
+import { ReceiptDocumentModal } from '@/features/ocr';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
 
 import { Transaction } from '@/shared/types';
@@ -52,6 +54,7 @@ export const AccountDetailsPage: React.FC = () => {
   const [editNote, setEditNote] = useState('');
 
   const [editingTrx, setEditingTrx] = useState<Transaction | null>(null);
+  const [viewingDocTrx, setViewingDocTrx] = useState<Transaction | null>(null);
   const [showStatementModal, setShowStatementModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [trxToDelete, setTrxToDelete] = useState<string | null>(null);
@@ -404,8 +407,19 @@ export const AccountDetailsPage: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Actions: Edit & Delete */}
+                  {/* Actions: Edit & Delete & Document */}
                   <div className="flex items-center gap-1">
+                    {Boolean(trx.receiptId || trx.documentRef || trx.documentMetadata) && (
+                      <button
+                        type="button"
+                        onClick={() => setViewingDocTrx(trx)}
+                        className="p-1.5 rounded-lg text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 transition min-w-[32px] min-h-[32px] flex items-center justify-center border border-teal-200/60 dark:border-teal-800/60"
+                        title="عرض المستند الأصلي والفاتورة"
+                      >
+                        <Receipt className="w-4 h-4" />
+                      </button>
+                    )}
+
                     <button
                       onClick={() => setEditingTrx(trx)}
                       className="p-1.5 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/40 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
@@ -610,6 +624,13 @@ export const AccountDetailsPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Original Receipt Document Modal */}
+      <ReceiptDocumentModal
+        isOpen={!!viewingDocTrx}
+        onClose={() => setViewingDocTrx(null)}
+        transaction={viewingDocTrx}
+      />
     </div>
   );
 };

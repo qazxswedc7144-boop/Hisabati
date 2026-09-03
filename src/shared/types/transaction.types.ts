@@ -15,6 +15,29 @@ export interface Transaction {
   // Optional populated fields for UI convenience
   accountName?: string;
   runningBalance?: number; // Derived running balance for statement view
+
+  // Phase 7 OCR & Document linkage
+  receiptId?: string; // Reference to StructuredReceiptDraft or receipt ID
+  documentRef?: string; // Image URL, Base64 data URL, or document storage ID
+  documentMetadata?: {
+    vendorName?: string;
+    customerName?: string;
+    invoiceNumber?: string;
+    itemCount?: number;
+    subtotal?: number;
+    tax?: number;
+    lineItems?: Array<{
+      id?: string;
+      name: string;
+      quantity: number;
+      unitPrice: number;
+      totalPrice: number;
+    }>;
+    ocrConfidence?: number;
+    imageUrl?: string;
+    documentType?: string;
+    currency?: string;
+  };
 }
 
 export interface CreateTransactionDTO {
@@ -25,6 +48,9 @@ export interface CreateTransactionDTO {
   note?: string;
   receiptNumber?: string;
   operationId?: string; // Unique idempotency key
+  receiptId?: string;
+  documentRef?: string;
+  documentMetadata?: Transaction['documentMetadata'];
 }
 
 export interface UpdateTransactionDTO {

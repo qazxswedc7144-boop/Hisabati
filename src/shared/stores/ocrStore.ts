@@ -20,11 +20,19 @@ interface OCRStoreState {
   savedDrafts: StructuredReceiptDraft[];
   selectedDraft: StructuredReceiptDraft | null;
 
+  // Conversion Modal State (Phase 7-C)
+  isConversionModalOpen: boolean;
+  draftToConvert: StructuredReceiptDraft | null;
+
   // Actions
   openScannerModal: () => void;
   closeScannerModal: () => void;
   openReviewModal: (ocrResult: OCRResult) => void;
   closeReviewModal: () => void;
+
+  openConversionModal: (draft: StructuredReceiptDraft) => void;
+  closeConversionModal: () => void;
+  markDraftConverted: (draftId: string, transactionId: string, operationId: string) => void;
 
   setScanning: (isScanning: boolean, progress?: number) => void;
   setScanError: (error: string | null) => void;
@@ -34,7 +42,7 @@ interface OCRStoreState {
   addLineItem: () => void;
   removeLineItem: (index: number) => void;
 
-  confirmReview: () => StructuredReceiptDraft;
+  confirmReview: (andOpenConvert?: boolean) => StructuredReceiptDraft;
   resetReview: () => void;
 
   deleteDraft: (draftId: string) => void;
@@ -53,6 +61,51 @@ export const useOCRStore = create<OCRStoreState>((set, get) => ({
 
   savedDrafts: [],
   selectedDraft: null,
+
+  isConversionModalOpen: false,
+  draftToConvert: null,
+
+  openConversionModal: (draft: StructuredReceiptDraft) =>
+    set({
+      draftToConvert: draft,
+      isConversionModalOpen: true,
+    }),
+
+  closeConversionModal: () =>
+    set({
+      isConversionModalOpen: false,
+      draftToConvert: null,
+    }),
+
+  markDraftConverted: (draftId: string, transactionId: string, operationId: string) => {
+    const { savedDrafts, selectedDraft } = get();
+    const updatedDrafts = savedDrafts.map((d) => {
+      if (d.id === draftId) {
+        return {
+          ...d,
+          status: 'converted' as const,
+          convertedToTransactionId: transactionId,
+          convertedAt: new Date().toISOString(),
+          operationId,
+        };
+      }
+      return d;
+    });
+
+    set({
+      savedDrafts: updatedDrafts,
+      selectedDraft:
+        selectedDraft?.id === draftId
+          ? {
+              ...selectedDraft,
+              status: 'converted' as const,
+              convertedToTransactionId: transactionId,
+              convertedAt: new Date().toISOString(),
+              operationId,
+            }
+          : selectedDraft,
+    });
+  },
 
   openScannerModal: () =>
     set({
@@ -166,7 +219,7 @@ export const useOCRStore = create<OCRStoreState>((set, get) => ({
     });
   },
 
-  confirmReview: () => {
+  confirmReview: (andOpenConvert?: boolean) => {
     const { editableState, currentOCRResult, savedDrafts } = get();
     if (!editableState) {
       throw new Error('لا توجد بيانات فاتورة قيد المراجعة');
@@ -184,6 +237,8 @@ export const useOCRStore = create<OCRStoreState>((set, get) => ({
       isReviewModalOpen: false,
       currentOCRResult: null,
       editableState: null,
+      isConversionModalOpen: !!andOpenConvert,
+      draftToConvert: andOpenConvert ? structuredDraft : null,
     });
 
     return structuredDraft;

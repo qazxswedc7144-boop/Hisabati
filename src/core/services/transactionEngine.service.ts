@@ -5,6 +5,7 @@ import {
   UpdateTransactionDTO,
   TransactionSummary,
   Account,
+  AuditActor,
 } from '@/shared/types';
 import {
   roundMoney,
@@ -13,6 +14,8 @@ import {
   StatementItem,
 } from '../utils/financial';
 import { validateTransactionForm } from '../utils/validators';
+import { rbacGuard } from './rbac/RBACGuard.service';
+import { auditTrailService } from './rbac/AuditTrail.service';
 
 export class FinancialTransactionEngine {
   // In-memory mutex/deduplication registry for rapid in-flight double submission prevention
@@ -22,7 +25,16 @@ export class FinancialTransactionEngine {
    * Creates a transaction with strict financial validation, precision rounding,
    * deduplication / idempotency check, atomic persistence, and derived balance recalculation.
    */
-  async createTransaction(dto: CreateTransactionDTO): Promise<Transaction> {
+  async createTransaction(dto: CreateTransactionDTO, actor?: AuditActor): Promise<Transaction> {
+    const currentActor = actor || rbacGuard.getActiveActor();
+
+    // 0. Strict RBAC Guard Assertion (Guarded Execution Gate)
+    await rbacGuard.assertPermission('transactions:create', {
+      actor: currentActor,
+      targetType: 'transaction',
+      details: `تسجيل عملية مالية بمبلغ ${dto.amount} على الحساب ${dto.accountId}`,
+    });
+
     // 1. Validation
     const validation = validateTransactionForm({
       accountId: dto.accountId,
@@ -80,6 +92,9 @@ export class FinancialTransactionEngine {
         note: dto.note?.trim() || undefined,
         receiptNumber: dto.receiptNumber?.trim() || undefined,
         operationId: dto.operationId || idempotencyKey,
+        receiptId: dto.receiptId?.trim() || undefined,
+        documentRef: dto.documentRef || undefined,
+        documentMetadata: dto.documentMetadata || undefined,
         createdAt: now,
         updatedAt: now,
       };
@@ -89,6 +104,27 @@ export class FinancialTransactionEngine {
         await db.transactions.add(newTransaction);
         await this.recalculateAccountBalance(dto.accountId);
       });
+
+      // Log in immutable tamper-resistant audit trail
+      try {
+        await auditTrailService.log({
+          actor: currentActor,
+          action: 'TRANSACTION_CREATE',
+          targetType: 'transaction',
+          targetId: newTransaction.id,
+          riskLevel: 'LOW',
+          detailsAr: `تسجيل قيد مالي (${newTransaction.type === 'debit' ? 'مدين/له' : 'دائن/عليه'}) بمبلغ ${safeAmount} على حساب "${account.name}".`,
+          afterState: { ...newTransaction },
+          metadata: {
+            accountId: account.id,
+            accountName: account.name,
+            amount: safeAmount,
+            operationId: newTransaction.operationId,
+          },
+        });
+      } catch (logErr) {
+        console.warn('Audit trail write warning:', logErr);
+      }
 
       return newTransaction;
     } finally {
@@ -102,7 +138,17 @@ export class FinancialTransactionEngine {
   /**
    * Updates an existing transaction and updates balances of all affected accounts.
    */
-  async updateTransaction(id: string, dto: UpdateTransactionDTO): Promise<Transaction> {
+  async updateTransaction(id: string, dto: UpdateTransactionDTO, actor?: AuditActor): Promise<Transaction> {
+    const currentActor = actor || rbacGuard.getActiveActor();
+
+    // Strict RBAC Guard: assert transactions:update permission
+    await rbacGuard.assertPermission('transactions:update', {
+      actor: currentActor,
+      targetType: 'transaction',
+      targetId: id,
+      details: `تعديل القيد المالي رقم ${id}`,
+    });
+
     const existing = await db.transactions.get(id);
     if (!existing) {
       throw new Error(`العملية رقم ${id} غير موجودة`);
@@ -145,13 +191,39 @@ export class FinancialTransactionEngine {
       }
     });
 
+    // Record update in audit trail
+    try {
+      await auditTrailService.log({
+        actor: currentActor,
+        action: 'TRANSACTION_UPDATE',
+        targetType: 'transaction',
+        targetId: updatedTrx.id,
+        riskLevel: 'MEDIUM',
+        detailsAr: `تعديل قيد مالي رقم ${updatedTrx.id} على حساب ID ${targetAccountId}.`,
+        beforeState: { ...existing },
+        afterState: { ...updatedTrx },
+      });
+    } catch (logErr) {
+      console.warn('Audit trail update write warning:', logErr);
+    }
+
     return updatedTrx;
   }
 
   /**
    * Deletes a transaction and recalculates the affected account balance.
    */
-  async deleteTransaction(id: string): Promise<boolean> {
+  async deleteTransaction(id: string, actor?: AuditActor): Promise<boolean> {
+    const currentActor = actor || rbacGuard.getActiveActor();
+
+    // Strict RBAC Guard: assert transactions:delete permission
+    await rbacGuard.assertPermission('transactions:delete', {
+      actor: currentActor,
+      targetType: 'transaction',
+      targetId: id,
+      details: `حذف القيد المالي رقم ${id}`,
+    });
+
     const existing = await db.transactions.get(id);
     if (!existing) {
       return false;
@@ -163,6 +235,21 @@ export class FinancialTransactionEngine {
       await db.transactions.delete(id);
       await this.recalculateAccountBalance(accountId);
     });
+
+    // Record deletion in audit trail
+    try {
+      await auditTrailService.log({
+        actor: currentActor,
+        action: 'TRANSACTION_DELETE',
+        targetType: 'transaction',
+        targetId: id,
+        riskLevel: 'HIGH',
+        detailsAr: `حذف قيد مالي رقم ${id} بمبلغ ${existing.amount} من حساب ID ${accountId}.`,
+        beforeState: { ...existing },
+      });
+    } catch (logErr) {
+      console.warn('Audit trail delete write warning:', logErr);
+    }
 
     return true;
   }

@@ -128,6 +128,9 @@ export class ReportService {
         debitAmount: isDebit ? trx.amount : 0,
         creditAmount: !isDebit ? trx.amount : 0,
         runningBalance: fromMinorUnits(runningUnits),
+        receiptId: trx.receiptId,
+        documentRef: trx.documentRef,
+        documentMetadata: trx.documentMetadata,
       });
     }
 

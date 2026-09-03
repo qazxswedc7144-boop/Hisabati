@@ -155,6 +155,80 @@ async function startServer() {
     }
   });
 
+  // Server-side AI Invoice Audit endpoint (Phase 7-D)
+  app.post('/api/ai/audit-invoice', async (req, res) => {
+    try {
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.status(503).json({
+          error: 'GEMINI_API_KEY is not configured on server',
+          fallback: true,
+        });
+      }
+
+      const { draft, accountContext } = req.body;
+      if (!draft) {
+        return res.status(400).json({ error: 'Draft data is required for auditing' });
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+
+      const auditPrompt = `
+أنت مدقق حسابات محترف وخبير فحص فواتير لتطبيق "حساباتي | Hisabati".
+مهمتك فحص هذه المسودة المستخرجة من المستند بدقة لاكتشاف التناقضات المالية المحتملة.
+
+بيانات الفاتورة:
+- المورد/الجهة: ${draft.partyName || 'غير محدد'} (${draft.partyType || 'vendor'})
+- رقم الفاتورة: ${draft.invoiceNumber || 'غير مسجل'}
+- التاريخ: ${draft.date || 'غير محدد'}
+- العملة: ${draft.currency || 'YER'}
+- المجموع الفرعي (Subtotal): ${draft.subtotal ?? 0}
+- الضريبة (Tax): ${draft.tax ?? 0}
+- الإجمالي الكلي (Total): ${draft.totalAmount ?? 0}
+- عدد الأصناف: ${draft.lineItems ? draft.lineItems.length : 0}
+- تفاصيل الأصناف: ${JSON.stringify(draft.lineItems || [])}
+
+سياق الحساب المرتبط (إن وجد):
+${JSON.stringify(accountContext || {})}
+
+المطلوب:
+حلل التوافق الحسابي، ومقارنة اسم المورد/العميل بالحساب، ومطابقة الضريبة والإجمالي، وتفاصيل البنود.
+أخرج JSON نقي فقط وفق البنية التالية:
+{
+  "summaryAr": "ملخص مهني من سطرين بالعربية عن حالة الفاتورة والتوافق المالي",
+  "recommendationAr": "توصية محاسبية واضحة للمستخدم بالعربية قبل ترحيل العملية",
+  "riskLevel": "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
+  "aiObservations": ["ملاحظة 1", "ملاحظة 2"]
+}
+      `.trim();
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: auditPrompt }],
+          },
+        ],
+      });
+
+      const responseText = (response.text || '').trim();
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('AI Auditor did not return valid JSON');
+      }
+
+      const parsedData = JSON.parse(jsonMatch[0]);
+      return res.json({ audit: parsedData, provider: 'gemini-ai' });
+    } catch (err: any) {
+      console.error('Invoice Audit server error:', err?.message || err);
+      return res.status(500).json({
+        error: err?.message || 'Error processing invoice audit with Gemini',
+        fallback: true,
+      });
+    }
+  });
+
   // Vite development middleware or production static serving
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');

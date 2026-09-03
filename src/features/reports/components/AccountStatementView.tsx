@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Copy,
   Download,
+  Receipt,
 } from 'lucide-react';
 import { useAccountStore, useSettingsStore } from '@/shared/stores';
 import { reportService, excelGenerator, pdfGenerator, shareService } from '@/core/services';
@@ -21,6 +22,7 @@ import { Account, AccountStatementReport, DatePreset, DateRange } from '@/shared
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
 import { DateRangePicker } from './DateRangePicker';
 import { formatISODate } from '@/core/utils/dateRange';
+import { ReceiptDocumentModal } from '@/features/ocr';
 
 interface AccountStatementViewProps {
   initialAccountId?: string;
@@ -43,6 +45,7 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({ init
   const [statement, setStatement] = useState<AccountStatementReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [selectedDocTrx, setSelectedDocTrx] = useState<any | null>(null);
 
   // Sync if initialAccountId changes or accounts load
   useEffect(() => {
@@ -390,11 +393,28 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({ init
                           </td>
                           <td className="py-2.5 px-3">
                             <div className="font-bold text-slate-900 dark:text-slate-100">{t.note || 'عملية مالية'}</div>
-                            {t.receiptNumber && (
-                              <span className="inline-block text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded mt-0.5 font-mono">
-                                سند: {t.receiptNumber}
-                              </span>
-                            )}
+                            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                              {t.receiptNumber && (
+                                <span className="inline-block text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded font-mono">
+                                  سند: {t.receiptNumber}
+                                </span>
+                              )}
+                              {Boolean(t.receiptId || t.documentRef || t.documentMetadata) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedDocTrx({
+                                    ...t,
+                                    accountId: statement.account.id,
+                                    accountName: statement.account.name,
+                                  })}
+                                  className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200/80 dark:border-teal-800 px-1.5 py-0.5 rounded transition"
+                                  title="عرض المستند الأصلي والفاتورة"
+                                >
+                                  <Receipt className="w-3 h-3 text-teal-600" />
+                                  <span>المستند</span>
+                                </button>
+                              )}
+                            </div>
                           </td>
                           <td className="py-2.5 px-3 font-bold font-mono text-emerald-600 dark:text-emerald-400 tabular-nums">
                             {isDebit ? `+${formatCurrency(t.debitAmount, '')}` : '—'}
@@ -428,6 +448,13 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({ init
           </div>
         </div>
       )}
+
+      {/* View Attached Receipt / Document Modal */}
+      <ReceiptDocumentModal
+        isOpen={!!selectedDocTrx}
+        onClose={() => setSelectedDocTrx(null)}
+        transaction={selectedDocTrx}
+      />
     </div>
   );
 };

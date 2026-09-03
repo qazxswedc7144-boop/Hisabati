@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FileCheck,
   AlertTriangle,
@@ -23,8 +23,11 @@ import { useOCRStore } from '@/shared/stores/ocrStore';
 import { useAccountStore } from '@/shared/stores/accountStore';
 import { useUIStore } from '@/shared/stores/uiStore';
 import { ReceiptReviewService, ReceiptReviewValidationResult } from '@/core/services/ocr/ReceiptReviewService';
-import { CurrencyCode, OCRDocumentType } from '@/shared/types';
+import { CurrencyCode, OCRDocumentType, InvoiceAuditReport, StructuredReceiptDraft } from '@/shared/types';
 import { formatCurrency } from '@/core/utils/formatters';
+import { toMinorUnits } from '@/core/utils/financial';
+import { invoiceAuditEngine } from '@/core/services/ocr/InvoiceAuditEngine.service';
+import { InvoiceAuditReportCard } from './InvoiceAuditReportCard';
 
 export const SmartReceiptReviewModal: React.FC = () => {
   const {
@@ -47,6 +50,88 @@ export const SmartReceiptReviewModal: React.FC = () => {
   const [activeImageView, setActiveImageView] = useState<boolean>(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState<boolean>(false);
 
+  // Phase 7-D AI Invoice Audit state
+  const [auditReport, setAuditReport] = useState<InvoiceAuditReport | null>(null);
+  const [isAuditing, setIsAuditing] = useState<boolean>(false);
+
+  const runAudit = async () => {
+    if (!editableState) return;
+    setIsAuditing(true);
+    try {
+      const subtotalNum = Number(editableState.subtotal) || 0;
+      const taxNum = Number(editableState.tax) || 0;
+      const totalNum = Number(editableState.totalAmount) || 0;
+
+      const draftForAudit: StructuredReceiptDraft = {
+        id: currentOCRResult?.id || 'temp_draft',
+        documentType: 'invoice',
+        partyType: editableState.partyType,
+        partyName: editableState.partyName,
+        matchedAccountId: editableState.matchedAccountId,
+        invoiceNumber: editableState.invoiceNumber,
+        date: editableState.date,
+        currency: editableState.currency,
+        subtotal: subtotalNum,
+        subtotalMinor: toMinorUnits(subtotalNum),
+        tax: taxNum,
+        taxMinor: toMinorUnits(taxNum),
+        totalAmount: totalNum,
+        totalAmountMinor: toMinorUnits(totalNum),
+        isConfirmedByUser: false,
+        confirmedAt: new Date().toISOString(),
+        source: 'ocr_reviewed',
+        lineItems: editableState.lineItems.map((item, idx) => {
+          const qty = Number(item.quantity) || 1;
+          const uPrice = Number(item.unitPrice) || 0;
+          const tPrice = Number(item.totalPrice) || (qty * uPrice);
+          return {
+            id: item.id || `item_${idx + 1}`,
+            name: item.name,
+            quantity: qty,
+            unitPrice: uPrice,
+            unitPriceMinor: toMinorUnits(uPrice),
+            totalPrice: tPrice,
+            totalPriceMinor: toMinorUnits(tPrice),
+          };
+        }),
+        rawText: currentOCRResult?.rawText || '',
+        imageUrl: currentOCRResult?.imageUrl,
+        status: 'draft',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const report = await invoiceAuditEngine.auditInvoiceDraft({
+        draft: draftForAudit,
+        targetAccountId: editableState.matchedAccountId,
+      });
+      setAuditReport(report);
+    } catch (err) {
+      console.error('Audit failed:', err);
+    } finally {
+      setIsAuditing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isReviewModalOpen && editableState) {
+      const timer = setTimeout(() => {
+        runAudit();
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [
+    isReviewModalOpen,
+    editableState?.partyName,
+    editableState?.matchedAccountId,
+    editableState?.invoiceNumber,
+    editableState?.totalAmount,
+    editableState?.subtotal,
+    editableState?.tax,
+    editableState?.date,
+    editableState?.lineItems,
+  ]);
+
   if (!isReviewModalOpen || !editableState) return null;
 
   const confidenceStatus = currentOCRResult
@@ -56,7 +141,7 @@ export const SmartReceiptReviewModal: React.FC = () => {
   // Live validation on state
   const liveValidation = ReceiptReviewService.validate(editableState);
 
-  const handleSaveAndConfirm = () => {
+  const handleSaveAndConfirm = (andOpenConvert: boolean = false) => {
     const check = ReceiptReviewService.validate(editableState);
     setValidationResult(check);
 
@@ -66,8 +151,12 @@ export const SmartReceiptReviewModal: React.FC = () => {
     }
 
     try {
-      const draft = confirmReview();
-      showToast(`تم اعتماد مسودة الفاتورة بنجاح (#${draft.invoiceNumber || 'بدون رقم'}). لم يتم ترحيل أي قيد مالي بعد.`, 'success');
+      const draft = confirmReview(andOpenConvert);
+      if (andOpenConvert) {
+        showToast(`تم اعتماد المسودة. يرجى تأكيد القيد المالي للحساب.`, 'info');
+      } else {
+        showToast(`تم اعتماد مسودة الفاتورة بنجاح (#${draft.invoiceNumber || 'بدون رقم'}). لم يتم ترحيل أي قيد مالي بعد.`, 'success');
+      }
     } catch (e: any) {
       showToast(e.message || 'فشل حفظ المسودة', 'error');
     }
@@ -189,6 +278,9 @@ export const SmartReceiptReviewModal: React.FC = () => {
 
         {/* Scrollable Form Content */}
         <div className="p-4 sm:p-5 overflow-y-auto space-y-5 flex-1">
+          {/* Phase 7-D AI Invoice Audit Card */}
+          <InvoiceAuditReportCard report={auditReport} isLoading={isAuditing} onReaudit={runAudit} />
+
           {/* Warnings & Incomplete Input Banner */}
           {currentOCRResult && currentOCRResult.warnings.length > 0 && (
             <div className="p-3.5 rounded-2xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200 text-xs space-y-1">
@@ -543,24 +635,33 @@ export const SmartReceiptReviewModal: React.FC = () => {
         </div>
 
         {/* Modal Footer Actions */}
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/70 flex items-center justify-between gap-3 shrink-0">
+        <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
           <button
             type="button"
             onClick={closeReviewModal}
-            className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-h-[42px]"
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-h-[42px]"
           >
             إلغاء وتجاهل
           </button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
             <button
               type="button"
-              onClick={handleSaveAndConfirm}
+              onClick={() => handleSaveAndConfirm(false)}
               disabled={!liveValidation.isValid}
-              className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs font-bold shadow-md shadow-teal-700/20 disabled:opacity-50 flex items-center gap-2 transition min-h-[42px]"
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 transition min-h-[42px]"
+            >
+              حفظ كمسودة فقط
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSaveAndConfirm(true)}
+              disabled={!liveValidation.isValid}
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs font-bold shadow-md shadow-teal-700/20 disabled:opacity-50 flex items-center justify-center gap-2 transition min-h-[42px]"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>اعتماد مسودة الفاتورة (حفظ المسودة)</span>
+              <span>اعتماد وترحيل مالي فوراً</span>
             </button>
           </div>
         </div>

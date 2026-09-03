@@ -9,6 +9,7 @@ import {
   SettingsPage,
   MessagingPage,
   AIAssistantPage,
+  TeamPage,
 } from '@/features';
 import { seedInitialMockData } from '@/shared/data/mockData';
 import { useSettingsStore } from '@/shared/stores';

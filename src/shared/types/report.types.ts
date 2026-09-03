@@ -28,6 +28,9 @@ export interface AccountStatementItem {
   creditAmount: number;    // عليك (أخذت منه) -> 0 if debit
   amount: number;
   runningBalance: number;  // الرصيد بعد هذه الحركة
+  receiptId?: string;
+  documentRef?: string;
+  documentMetadata?: Transaction['documentMetadata'];
 }
 
 export interface AccountStatementReport {

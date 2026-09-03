@@ -11,6 +11,10 @@ import {
   ScheduledMessage,
   MessageQueueItem,
   AIAuditLogEntry,
+  UserProfile,
+  Team,
+  TeamMember,
+  AuditTrailEntry,
 } from '@/shared/types';
 
 export class HisabatiDatabase extends Dexie {
@@ -29,6 +33,12 @@ export class HisabatiDatabase extends Dexie {
 
   // Phase 6 AI Audit Logs
   aiAuditLogs!: Table<AIAuditLogEntry, string>;
+
+  // Phase 8: RBAC, Teams & Tamper-Resistant Audit Trail
+  users!: Table<UserProfile, string>;
+  teams!: Table<Team, string>;
+  teamMembers!: Table<TeamMember, string>;
+  auditTrail!: Table<AuditTrailEntry, string>;
 
   constructor() {
     super('HisabatiDatabase');
@@ -83,6 +93,25 @@ export class HisabatiDatabase extends Dexie {
       scheduledMessages: 'id, channel, status, scheduledAt, nextRunAt, operationId, createdAt',
       messageQueue: 'id, messageId, channel, status, operationId, nextRetryAt, createdAt',
       aiAuditLogs: 'id, requestId, intent, status, provider, confirmed, timestamp',
+    });
+
+    // Version 6 Schema (Phase 8: Teams, RBAC & Tamper-Resistant Audit Trail)
+    this.version(6).stores({
+      accounts: 'id, name, phone, archived, createdAt, updatedAt',
+      transactions: 'id, accountId, type, date, operationId, createdAt, updatedAt, [accountId+date]',
+      settings: 'id, key, updatedAt',
+      syncQueue: 'id, entityType, entityId, operation, operationId, status, createdAt',
+      syncAuditLogs: 'id, action, timestamp, deviceId, success',
+      messages: 'id, messageId, channel, type, status, recipient, priority, operationId, createdAt, scheduledAt',
+      messageTemplates: 'id, name, type, defaultChannel, active, createdAt',
+      inAppNotifications: 'id, type, priority, read, createdAt',
+      scheduledMessages: 'id, channel, status, scheduledAt, nextRunAt, operationId, createdAt',
+      messageQueue: 'id, messageId, channel, status, operationId, nextRetryAt, createdAt',
+      aiAuditLogs: 'id, requestId, intent, status, provider, confirmed, timestamp',
+      users: 'id, email, phone, role, activeTeamId, createdAt',
+      teams: 'id, name, ownerId, createdAt',
+      teamMembers: 'id, teamId, userId, role, status, [teamId+userId], createdAt',
+      auditTrail: 'id, sequenceNumber, timestamp, action, targetType, targetId, riskLevel, [targetType+targetId]',
     });
   }
 }

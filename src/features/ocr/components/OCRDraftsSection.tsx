@@ -9,6 +9,7 @@ import {
   Building2,
   Receipt,
   ArrowRight,
+  ArrowUpRight,
   ExternalLink,
   Plus,
 } from 'lucide-react';
@@ -17,7 +18,7 @@ import { formatCurrency, formatDate } from '@/core/utils/formatters';
 import { StructuredReceiptDraft } from '@/shared/types';
 
 export const OCRDraftsSection: React.FC = () => {
-  const { savedDrafts, openScannerModal, deleteDraft } = useOCRStore();
+  const { savedDrafts, openScannerModal, openConversionModal, deleteDraft } = useOCRStore();
   const [selectedDraft, setSelectedDraft] = useState<StructuredReceiptDraft | null>(null);
 
   return (
@@ -117,8 +118,26 @@ export const OCRDraftsSection: React.FC = () => {
                   <span className="font-mono font-black text-sm text-slate-900 dark:text-slate-100">
                     {formatCurrency(draft.totalAmount, draft.currency)}
                   </span>
-                  <p className="text-[10px] text-slate-400">مسودة جاهزة للترحيل</p>
+                  <p className="text-[10px] text-slate-400">
+                    {draft.status === 'converted' ? 'تم ترحيلها إلى قيد مالي' : 'مسودة جاهزة للترحيل'}
+                  </p>
                 </div>
+
+                {draft.status === 'converted' ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold border border-emerald-200/60 dark:border-emerald-800">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>مُرحّلة</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => openConversionModal(draft)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs shadow-xs min-h-[36px] transition active:scale-[0.98]"
+                  >
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                    <span>ترحيل مالي</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
