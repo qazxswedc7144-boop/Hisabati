@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowUpRight, ArrowDownLeft, Scale, Users, Plus, UserPlus, Clock, ChevronLeft, ArrowRight, ScanLine } from 'lucide-react';
-import { useAccountStore, useTransactionStore, useSettingsStore, useUIStore, useOCRStore } from '@/shared/stores';
+import { ArrowUpRight, ArrowDownLeft, Scale, Users, Plus, UserPlus, Clock, ChevronLeft, ArrowRight, ScanLine, Activity } from 'lucide-react';
+import { useAccountStore, useTransactionStore, useSettingsStore, useUIStore, useOCRStore, useBIStore } from '@/shared/stores';
 import { StatCard, BalanceBadge, EmptyState } from '@/shared/components';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
 import { useI18n } from '@/shared/hooks/useI18n';
@@ -18,6 +18,20 @@ export const DashboardPage: React.FC = () => {
   const openQuickAdd = useUIStore((state) => state.openQuickAddTransaction);
   const openAddAccount = useUIStore((state) => state.openAddAccount);
   const openScannerModal = useOCRStore((state) => state.openScannerModal);
+
+  const healthSummary = useBIStore((state) => state.healthSummary);
+  const insights = useBIStore((state) => state.insights);
+  const loadBIData = useBIStore((state) => state.loadBIData);
+
+  const proactiveInsight =
+    insights.find((i) => i.impact === 'CRITICAL' || i.impact === 'WARNING') ||
+    insights[0];
+
+  useEffect(() => {
+    if (!healthSummary) {
+      loadBIData();
+    }
+  }, [healthSummary, loadBIData]);
 
   return (
     <div id="dashboard-page" className="space-y-6 animate-in fade-in duration-200">
@@ -110,6 +124,66 @@ export const DashboardPage: React.FC = () => {
           icon={Users}
           onClick={() => navigate('/accounts')}
         />
+      </div>
+
+      {/* Financial Health & BI Insight Banner */}
+      <div
+        id="dashboard-bi-quick-banner"
+        onClick={() => navigate('/bi')}
+        className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-teal-500/50 cursor-pointer transition flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+      >
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+            <Activity className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-slate-100">
+                مؤشر الصحة المالية (BI): {healthSummary ? `${healthSummary.healthScore}/100 - الفئة ${healthSummary.healthGrade}` : 'جاري التحليل...'}
+              </h3>
+              {healthSummary && (
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300">
+                  {healthSummary.healthStatusAr}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              تحليل أعمار الديون (0-30، 31-60، 61-90، +90)، التدفقات النقدية، وتنبيهات الأمان المالي
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 text-xs font-bold text-teal-600 dark:text-teal-400 self-end sm:self-auto shrink-0 min-h-[36px]">
+          <span>فتح لوحة ذكاء الأعمال والصحة المالية</span>
+          <ChevronLeft className="w-4 h-4" />
+        </div>
+
+        {/* Proactive Intelligence Insight (Subtle & Non-cluttered) */}
+        {proactiveInsight && (
+          <div className="w-full pt-3 border-t border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  proactiveInsight.impact === 'CRITICAL'
+                    ? 'bg-rose-500 animate-pulse'
+                    : proactiveInsight.impact === 'WARNING'
+                    ? 'bg-amber-500'
+                    : 'bg-teal-500'
+                }`}
+              />
+              <span className="font-black text-slate-800 dark:text-slate-200 shrink-0">
+                تنبيه استباقي:
+              </span>
+              <span className="text-slate-600 dark:text-slate-300 font-medium truncate">
+                {proactiveInsight.titleAr}
+              </span>
+            </div>
+
+            <div className="text-[11px] text-teal-700 dark:text-teal-400 font-bold self-start sm:self-auto shrink-0">
+              {proactiveInsight.recommendationAr}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Recent Transactions & Quick Accounts Overview */}

@@ -178,7 +178,7 @@ export const AIAssistantPage: React.FC = () => {
 
       {/* Quick Prompts Bar */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 shrink-0 no-scrollbar">
-        <span className="text-[11px] font-bold text-slate-400 shrink-0 ml-1">اقتراحات سريعة:</span>
+        <span className="text-[11px] font-bold text-slate-400 shrink-0 ms-1">اقتراحات سريعة:</span>
         {quickPills.map((pill) => (
           <button
             key={pill}
@@ -192,7 +192,7 @@ export const AIAssistantPage: React.FC = () => {
       </div>
 
       {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto space-y-4 pr-1 pl-1">
+      <div className="flex-1 overflow-y-auto space-y-4 px-1">
         {messages.map((msg) => {
           const isUser = msg.sender === 'user';
           return (
@@ -262,7 +262,7 @@ export const AIAssistantPage: React.FC = () => {
               <div className="w-2 h-2 rounded-full bg-teal-500 animate-bounce" />
               <div className="w-2 h-2 rounded-full bg-teal-500 animate-bounce [animation-delay:0.2s]" />
               <div className="w-2 h-2 rounded-full bg-teal-500 animate-bounce [animation-delay:0.4s]" />
-              <span className="mr-1">جاري التحليل واستعلام البيانات المالية...</span>
+              <span className="me-1">جاري التحليل واستعلام البيانات المالية...</span>
             </div>
           </div>
         )}

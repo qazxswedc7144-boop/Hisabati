@@ -71,7 +71,7 @@ export class AIIntentService {
       }
 
       // Extract account name candidate
-      const nameMatch = raw.match(/(?:على|عند|من|لـ|ل)\s+([^\d٠-٩,\s]+(?:\s+[^\d٠-٩,\s]+)?)/);
+      const nameMatch = raw.match(/(?:^|\s)(?:على|عند|من|لـ|ل)\s+([^\d٠-٩,\s]+(?:\s+[^\d٠-٩,\s]+)*)/);
       if (nameMatch && nameMatch[1]) {
         const potentialName = nameMatch[1].replace(/^(حساب|العميل|الاخ|الأخ)\s+/, '').trim();
         if (potentialName && potentialName !== 'الناس' && potentialName !== 'العملاء') {
@@ -112,7 +112,7 @@ export class AIIntentService {
     }
 
     // 6. Top Debtors (أعلى المدينين / من أكثر شخص عليه دين؟)
-    if (/(اكثر\s+(شخص|عميل|ناس)\s+عليه|اكثر\s+العملاء\s+مديونيه|اعلى\s+المدينين|من\s+عليه\s+اكثر|اكبر\s+المدينين)/.test(normalized)) {
+    if (/(اكثر\s+(?:شخص|عميل|ناس)?\s*عليه|اكثر\s+العملاء\s+مديونيه|اعل[ىي]\s+المدينين|من\s+عليه\s+اكثر|اكبر\s+المدينين)/.test(normalized)) {
       return {
         intent: 'GET_TOP_DEBTORS',
         mode: 'analyze',
@@ -123,7 +123,7 @@ export class AIIntentService {
     }
 
     // 7. Top Creditors (أعلى الدائنين / من أكثر شخص يطالبني؟)
-    if (/(اكثر\s+(شخص|عميل|ناس)\s+يطالبني|اعلى\s+الدائنين|اكبر\s+الدائنين|من\s+له\s+عندي\s+اكثر)/.test(normalized)) {
+    if (/(اكثر\s+(?:شخص|عميل|ناس)?\s*يطالبني|اعل[ىي]\s+الدائنين|اكبر\s+الدائنين|من\s+له\s+عندي\s+اكثر)/.test(normalized)) {
       return {
         intent: 'GET_TOP_CREDITORS',
         mode: 'analyze',

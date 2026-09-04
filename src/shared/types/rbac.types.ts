@@ -2,6 +2,9 @@
  * Phase 8: RBAC, Teams & Tamper-Resistant Audit Trail Types
  */
 
+import { AuditRiskLevel } from './ocr.types';
+export type { AuditRiskLevel };
+
 export type UserRole = 'owner' | 'admin' | 'accountant' | 'employee' | 'viewer';
 
 export type Permission =
@@ -58,8 +61,6 @@ export type AuditAction =
   | 'BACKUP_EXPORT'
   | 'BACKUP_RESTORE'
   | 'SECURITY_UNAUTHORIZED_ATTEMPT';
-
-export type AuditRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 export interface AuditActor {
   id: string;

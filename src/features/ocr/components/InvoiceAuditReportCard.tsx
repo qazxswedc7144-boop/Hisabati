@@ -262,7 +262,7 @@ export const InvoiceAuditReportCard: React.FC<InvoiceAuditReportCardProps> = ({
 
           {/* TAB 2: Findings List */}
           {activeTab === 'findings' && (
-            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-60 overflow-y-auto pe-1">
               {report.findings.length === 0 ? (
                 <div className="text-center py-6 text-slate-500 dark:text-slate-400">
                   <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500 mb-1" />

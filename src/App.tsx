@@ -10,6 +10,7 @@ import {
   MessagingPage,
   AIAssistantPage,
   TeamPage,
+  FinancialHealthDashboardPage,
 } from '@/features';
 import { seedInitialMockData } from '@/shared/data/mockData';
 import { useSettingsStore } from '@/shared/stores';
@@ -68,8 +69,10 @@ export default function App() {
           <Route path="/accounts" element={<AccountsPage />} />
           <Route path="/accounts/:id" element={<AccountDetailsPage />} />
           <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/bi" element={<FinancialHealthDashboardPage />} />
           <Route path="/messaging" element={<MessagingPage />} />
           <Route path="/ai" element={<AIAssistantPage />} />
+          <Route path="/team" element={<TeamPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

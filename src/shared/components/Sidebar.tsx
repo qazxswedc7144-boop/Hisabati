@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Home, Users, BarChart3, Settings, Plus, Wallet2, MessageSquare, Database, Sparkles } from 'lucide-react';
+import { Home, Users, BarChart3, Settings, Plus, Wallet2, MessageSquare, Database, Sparkles, ShieldCheck, Activity } from 'lucide-react';
 import { useUIStore, useMessagingStore } from '@/shared/stores';
 import { useI18n } from '@/shared/hooks/useI18n';
 
@@ -14,8 +14,10 @@ export const Sidebar: React.FC = () => {
     { to: '/', label: t('nav.dashboard'), icon: Home, exact: true },
     { to: '/accounts', label: t('nav.accounts'), icon: Users },
     { to: '/reports', label: t('nav.reports'), icon: BarChart3 },
+    { to: '/bi', label: 'الصحة المالية (BI)', icon: Activity },
     { to: '/messaging', label: t('nav.messaging'), icon: MessageSquare, badge: unreadNotificationsCount },
     { to: '/ai', label: 'المساعد الذكي (AI)', icon: Sparkles },
+    { to: '/team', label: 'الفريق والتدقيق (RBAC)', icon: ShieldCheck },
     { to: '/settings', label: t('nav.settings'), icon: Settings },
   ];
 

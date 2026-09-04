@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Sun, Moon, Wallet2, Cloud, RefreshCw, Bell, Sparkles, ScanLine } from 'lucide-react';
+import { Plus, Sun, Moon, Wallet2, Cloud, RefreshCw, Bell, Sparkles, ScanLine, ShieldCheck } from 'lucide-react';
 import { useUIStore, useSettingsStore, useSyncStore, useMessagingStore, useOCRStore } from '@/shared/stores';
 import { PWAInstallPrompt } from './PWAInstallPrompt';
 import { useI18n } from '@/shared/hooks/useI18n';
@@ -50,7 +50,7 @@ export const Header: React.FC<HeaderProps> = ({
             <h1 className="text-base sm:text-lg font-black tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-1.5 truncate">
               {title || t('app.name')}
               <span className="hidden sm:inline-block text-[11px] font-bold px-2 py-0.5 rounded-md bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200/60 dark:border-teal-800/60">
-                Phase 6: AI
+                v1.0
               </span>
             </h1>
             {subtitle ? (
@@ -65,12 +65,23 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Actions */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {/* OCR Receipt Scanner Entry Button (Phase 7) */}
+          {/* Team and RBAC Audit Navigation Button */}
+          <button
+            id="btn-header-team-rbac"
+            onClick={() => navigate('/team')}
+            aria-label="إدارة الفريق وسجل التدقيق"
+            title="إدارة الفريق والصلاحيات وسجل التدقيق"
+            className="p-2.5 rounded-xl text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-200/80 dark:border-purple-800/80 transition flex items-center justify-center min-h-[40px] min-w-[40px]"
+          >
+            <ShieldCheck className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+          </button>
+
+          {/* OCR Receipt Scanner Entry Button */}
           <button
             id="btn-header-ocr-scanner"
             onClick={() => openScannerModal()}
             aria-label="مسح الفواتير والإيصالات الذكي"
-            title="مسح الفواتير والإيصالات الذكي (Phase 7)"
+            title="مسح الفواتير والإيصالات الذكي"
             className="p-2.5 rounded-xl text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 dark:hover:bg-sky-900/60 border border-sky-200/80 dark:border-sky-800/80 transition flex items-center justify-center min-h-[40px] min-w-[40px]"
           >
             <ScanLine className="w-4 h-4 text-sky-600 dark:text-sky-400" />
@@ -81,7 +92,7 @@ export const Header: React.FC<HeaderProps> = ({
             id="btn-header-ai-assistant"
             onClick={() => navigate('/ai')}
             aria-label="المساعد المالي الذكي"
-            title="المساعد المالي الذكي (Phase 6)"
+            title="المساعد المالي الذكي"
             className="p-2.5 rounded-xl text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200/80 dark:border-teal-800/80 transition flex items-center justify-center min-h-[40px] min-w-[40px]"
           >
             <Sparkles className="w-4 h-4 text-teal-600 dark:text-teal-400" />

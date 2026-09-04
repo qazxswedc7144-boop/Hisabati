@@ -13,5 +13,7 @@ export * from './share.service';
 export * from './messaging';
 export * from './ai';
 export * from './ocr';
+export * from './rbac';
+export * from './bi';
 
 

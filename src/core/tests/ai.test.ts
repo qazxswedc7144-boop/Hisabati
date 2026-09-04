@@ -271,7 +271,7 @@ export class AITestSuite {
       'AI-12',
       'Safety: AI Cannot Write Directly to Database',
       'حظر كتابة أو تعديل قاعدة البيانات مباشرة من الذكاء الاصطناعي',
-      () => {
+      async () => {
         // Verify that AITools does not export raw mutating functions without confirmation
         const unconfirmedCommand = {
           id: 'cmd_hack_attempt',
@@ -290,7 +290,7 @@ export class AITestSuite {
         let threw = false;
         try {
           // Attempting to execute unconfirmed command MUST throw
-          aiTools.executeConfirmedCommand(unconfirmedCommand);
+          await aiTools.executeConfirmedCommand(unconfirmedCommand);
         } catch {
           threw = true;
         }
@@ -445,7 +445,8 @@ export class AITestSuite {
       'تنفيذ العملية المؤكدة حصرياً عبر FinancialTransactionEngine وتحديث الرصيد',
       async () => {
         // Create an isolated test account in DB
-        const testAccName = 'عميل تجربة الذكاء ' + Date.now();
+        const testAccName = 'عميل تجربة الذكاء التنفيذي';
+        await db.accounts.where('name').equals(testAccName).delete();
         const account = await accountService.createAccount({
           name: testAccName,
           phone: '779998888',
@@ -543,7 +544,8 @@ export class AITestSuite {
       'Critical Confirmation Test: Canceled Command Leaves DB Untouched',
       'إلغاء الأمر المالي لا يمس قاعدة البيانات بأي شكل',
       async () => {
-        const testAccName = 'عميل إلغاء أمر ' + Date.now();
+        const testAccName = 'عميل اختبار الإلغاء الصارم';
+        await db.accounts.where('name').equals(testAccName).delete();
         const account = await accountService.createAccount({
           name: testAccName,
         });

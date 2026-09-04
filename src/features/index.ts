@@ -7,3 +7,4 @@ export * from './messaging/pages/MessagingPage';
 export * from './ai/pages/AIAssistantPage';
 export * from './ocr';
 export * from './team/pages/TeamPage';
+export * from './bi';

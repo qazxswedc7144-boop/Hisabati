@@ -1,6 +1,26 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
   <head>
+    <script>
+      (function () {
+        const origError = console.error;
+        console.error = function (...args) {
+          const msg = args
+            .map((a) => (typeof a === 'string' ? a : (a && (a.message || a.stack)) || ''))
+            .join(' ');
+          if (
+            msg.includes('[vite]') &&
+            (msg.includes('websocket') ||
+              msg.includes('WebSocket') ||
+              msg.includes('failed to connect') ||
+              msg.includes('connection lost'))
+          ) {
+            return;
+          }
+          origError.apply(console, args);
+        };
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>حساباتي | Hisabati - إدارة الحسابات والديون</title>

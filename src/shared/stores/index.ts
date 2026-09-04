@@ -6,3 +6,4 @@ export * from './syncStore';
 export * from './messagingStore';
 export * from './ocrStore';
 export * from './rbacStore';
+export * from './biStore';

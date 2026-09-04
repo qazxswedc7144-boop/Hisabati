@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 
@@ -6,6 +7,7 @@ const PORT = 3000;
 
 async function startServer() {
   const app = express();
+  const server = http.createServer(app);
   app.use(express.json({ limit: '10mb' }));
 
   // Health check endpoint
@@ -233,7 +235,10 @@ ${JSON.stringify(accountContext || {})}
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -245,7 +250,7 @@ ${JSON.stringify(accountContext || {})}
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  server.listen(PORT, '0.0.0.0', () => {
     console.log(`Hisabati server running on http://0.0.0.0:${PORT}`);
   });
 }
