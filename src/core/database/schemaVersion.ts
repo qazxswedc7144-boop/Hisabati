@@ -1,0 +1,9 @@
+export const DATABASE_SCHEMA_VERSION = 6;
+export const BACKUP_SCHEMA_VERSION = 3;
+export const FINANCIAL_FORMAT_VERSION = 1;
+
+export const SCHEMA_COMPATIBILITY = {
+  database: DATABASE_SCHEMA_VERSION,
+  backup: BACKUP_SCHEMA_VERSION,
+  financial: FINANCIAL_FORMAT_VERSION,
+} as const;
