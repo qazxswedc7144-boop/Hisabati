@@ -103,8 +103,21 @@ export function formatCurrency(
     activeCurrency = currencyCode || 'YER';
   }
 
+  // Safety guard against NaN and Infinity
+  if (isNaN(numericVal) || !isFinite(numericVal)) {
+    numericVal = 0;
+  }
+
+  // Normalize negative zero (-0) to 0
+  if (Object.is(numericVal, -0) || numericVal === 0) {
+    numericVal = 0;
+  }
+
   const config = (typeof activeCurrency === 'string' && (CURRENCIES as any)[activeCurrency]) || CURRENCIES.YER;
-  const val = options?.absolute ? Math.abs(numericVal) : numericVal;
+  let val = options?.absolute ? Math.abs(numericVal) : numericVal;
+  if (Object.is(val, -0) || val === 0) {
+    val = 0;
+  }
   
   const formattedNumber = toWesternNumerals(
     new Intl.NumberFormat('en-US', {
@@ -131,10 +144,14 @@ export function formatCurrency(
 }
 
 export function formatNumber(value: number, decimals = 0): string {
+  let safeVal = value;
+  if (isNaN(safeVal) || !isFinite(safeVal) || Object.is(safeVal, -0) || safeVal === 0) {
+    safeVal = 0;
+  }
   const formatted = new Intl.NumberFormat('en-US', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
-  }).format(value);
+  }).format(safeVal);
   return toWesternNumerals(formatted);
 }
 

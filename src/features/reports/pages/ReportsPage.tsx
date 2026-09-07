@@ -33,6 +33,16 @@ export const ReportsPage: React.FC = () => {
     setSearchParams(params);
   };
 
+  const handleAccountChange = (accountId: string | null) => {
+    const params = new URLSearchParams(searchParams);
+    if (accountId) {
+      params.set('accountId', accountId);
+    } else {
+      params.delete('accountId');
+    }
+    setSearchParams(params, { replace: true });
+  };
+
   return (
     <div id="reports-page" className="space-y-6 animate-in fade-in duration-200">
       {/* Header */}
@@ -103,7 +113,12 @@ export const ReportsPage: React.FC = () => {
 
       {/* Tab Panels */}
       <div className="pt-1">
-        {currentTab === 'statement' && <AccountStatementView initialAccountId={targetAccountId} />}
+        {currentTab === 'statement' && (
+          <AccountStatementView
+            initialAccountId={targetAccountId}
+            onAccountChange={handleAccountChange}
+          />
+        )}
         {currentTab === 'summary' && <FinancialSummaryView />}
         {currentTab === 'receivables' && <ReceivablesReportView />}
         {currentTab === 'payables' && <PayablesReportView />}

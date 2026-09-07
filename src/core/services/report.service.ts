@@ -1,9 +1,11 @@
 import { accountRepository } from '../repositories/account.repository';
 import { transactionRepository } from '../repositories/transaction.repository';
+import { settingsRepository } from '../repositories/settings.repository';
 import {
   Account,
   AccountStatementItem,
   AccountStatementReport,
+  CurrencyCode,
   DatePreset,
   DateRange,
   FinancialSummaryReport,
@@ -20,6 +22,8 @@ import {
   fromMinorUnits,
 } from '../utils/financial';
 import { resolveDateRange } from '../utils/dateRange';
+import { getCurrencyDecimals } from '../money/currency';
+import { isValidMinorUnit } from '../money/converter';
 
 export interface StatementFilterOptions {
   startDate?: string;
@@ -55,6 +59,23 @@ type AccountFinancial = Account & {
   initialBalanceMinor?: number;
   currentBalanceMinor?: number;
   initialBalance?: number;
+};
+
+/**
+ * Resolves active currency and effective decimal places for reports.
+ * If an account has fractional transactions, enforces 2 decimal places to prevent truncation.
+ */
+const resolveReportDecimals = async (
+  options?: { transactions?: Transaction[]; hasFractions?: boolean }
+): Promise<{ currency: CurrencyCode; decimals: number }> => {
+  const activeCurrency = (await settingsRepository.get<CurrencyCode>('currency', 'YER')) || 'YER';
+  const currencyDecimals = getCurrencyDecimals(activeCurrency);
+  const hasFractions = Boolean(
+    options?.hasFractions ||
+    options?.transactions?.some((t) => t.amount % 1 !== 0)
+  );
+  const decimals = hasFractions ? Math.max(currencyDecimals, 2) : currencyDecimals;
+  return { currency: activeCurrency, decimals };
 };
 
 /**
@@ -192,15 +213,37 @@ export class ReportService {
       accountId
     );
 
+    const { decimals } = await resolveReportDecimals({ transactions: allTransactions });
+
+    const getTrxAmountMinor = (trx: Transaction): number => {
+      if (decimals === 2 && allTransactions.some((t) => t.amount % 1 !== 0)) {
+        if (
+          trx.amountMinor !== undefined &&
+          isValidMinorUnit(trx.amountMinor) &&
+          Math.abs(trx.amountMinor) === Math.round(Math.abs(trx.amount) * 100)
+        ) {
+          return Math.abs(trx.amountMinor);
+        }
+        return toMinorUnits(Math.abs(trx.amount), 2);
+      }
+      return getTransactionMinorUnits(trx);
+    };
+
     // Initial balance from account metadata (if present)
-    const initialBalanceMinor = getAccountInitialBalanceMinor(account);
+    let initialBalanceMinor = getAccountInitialBalanceMinor(account);
+    const accFinancial = account as AccountFinancial;
+    if (decimals === 2 && allTransactions.some((t) => t.amount % 1 !== 0)) {
+      if (typeof accFinancial.initialBalance === 'number' && Number.isFinite(accFinancial.initialBalance)) {
+        initialBalanceMinor = toMinorUnits(accFinancial.initialBalance, 2);
+      }
+    }
 
     // Opening balance accumulates initial balance + all historical transactions strictly before startDate
     let openingBalanceMinor = initialBalanceMinor;
     const periodTransactions: Transaction[] = [];
 
     for (const trx of allTransactions) {
-      const trxAmountMinor = getTransactionMinorUnits(trx);
+      const trxAmountMinor = getTrxAmountMinor(trx);
 
       if (trx.date < dateRange.startDate) {
         if (trx.type === 'debit') {
@@ -232,7 +275,7 @@ export class ReportService {
     const statementItems: AccountStatementItem[] = [];
 
     for (const trx of periodTransactions) {
-      const trxAmountMinor = getTransactionMinorUnits(trx);
+      const trxAmountMinor = getTrxAmountMinor(trx);
       const isDebit = trx.type === 'debit';
 
       if (isDebit) {
@@ -260,22 +303,22 @@ export class ReportService {
         receiptNumber: trx.receiptNumber,
         type: trx.type,
         amount: trx.amount,
-        debitAmount: isDebit ? fromMinorUnits(trxAmountMinor) : 0,
-        creditAmount: !isDebit ? fromMinorUnits(trxAmountMinor) : 0,
-        runningBalance: fromMinorUnits(runningBalanceMinor),
+        debitAmount: isDebit ? fromMinorUnits(trxAmountMinor, decimals) : 0,
+        creditAmount: !isDebit ? fromMinorUnits(trxAmountMinor, decimals) : 0,
+        runningBalance: fromMinorUnits(runningBalanceMinor, decimals),
         receiptId: trx.receiptId,
         documentRef: trx.documentRef,
         documentMetadata: trx.documentMetadata,
       });
     }
 
-    const totalPeriodDebit = fromMinorUnits(periodDebitMinor);
-    const totalPeriodCredit = fromMinorUnits(periodCreditMinor);
+    const totalPeriodDebit = fromMinorUnits(periodDebitMinor, decimals);
+    const totalPeriodCredit = fromMinorUnits(periodCreditMinor, decimals);
     const periodNetMovementMinor = periodDebitMinor - periodCreditMinor;
-    const periodNetMovement = fromMinorUnits(periodNetMovementMinor);
-    const openingBalance = fromMinorUnits(openingBalanceMinor);
+    const periodNetMovement = fromMinorUnits(periodNetMovementMinor, decimals);
+    const openingBalance = fromMinorUnits(openingBalanceMinor, decimals);
     const closingBalanceMinor = openingBalanceMinor + periodNetMovementMinor;
-    const closingBalance = fromMinorUnits(closingBalanceMinor);
+    const closingBalance = fromMinorUnits(closingBalanceMinor, decimals);
 
     return {
       account,
@@ -317,6 +360,8 @@ export class ReportService {
         transaction.date <= dateRange.endDate
     );
 
+    const { decimals } = await resolveReportDecimals({ transactions: periodTransactions });
+
     let periodDebitMinor = 0;
     let periodCreditMinor = 0;
 
@@ -356,9 +401,9 @@ export class ReportService {
     )
       .map(([date, data]) => ({
         date,
-        debit: fromMinorUnits(data.debitMinor),
-        credit: fromMinorUnits(data.creditMinor),
-        net: fromMinorUnits(data.debitMinor - data.creditMinor),
+        debit: fromMinorUnits(data.debitMinor, decimals),
+        credit: fromMinorUnits(data.creditMinor, decimals),
+        net: fromMinorUnits(data.debitMinor - data.creditMinor, decimals),
         transactionCount: data.count,
         debitMinor: data.debitMinor,
         creditMinor: data.creditMinor,
@@ -393,17 +438,18 @@ export class ReportService {
       dateRange,
       preset,
       generatedAt: new Date().toISOString(),
-      totalDebit: fromMinorUnits(periodDebitMinor),
-      totalCredit: fromMinorUnits(periodCreditMinor),
+      totalDebit: fromMinorUnits(periodDebitMinor, decimals),
+      totalCredit: fromMinorUnits(periodCreditMinor, decimals),
       netBalance: fromMinorUnits(
-        periodDebitMinor - periodCreditMinor
+        periodDebitMinor - periodCreditMinor,
+        decimals
       ),
       totalTransactions: periodTransactions.length,
       totalAccounts: accounts.length,
       activeAccountsCount,
-      owedToMeTotal: fromMinorUnits(owedToMeTotalMinor),
+      owedToMeTotal: fromMinorUnits(owedToMeTotalMinor, decimals),
       owedToMeCount,
-      owedByMeTotal: fromMinorUnits(owedByMeTotalMinor),
+      owedByMeTotal: fromMinorUnits(owedByMeTotalMinor, decimals),
       owedByMeCount,
       settledAccountsCount,
       dailyBreakdown,
@@ -422,6 +468,8 @@ export class ReportService {
   public async getReceivablesReport(
     options: AccountsReportFilterOptions = {}
   ): Promise<ReceivablesReport> {
+    const { decimals } = await resolveReportDecimals();
+
     const accounts = await accountRepository.getAll(
       options.includeArchived ?? false
     );
@@ -436,12 +484,12 @@ export class ReportService {
       overallTotalAmountMinor += getAccountCurrentBalanceMinor(account);
     }
     const overallAccountsCount = allReceivableAccounts.length;
-    const overallTotalAmount = fromMinorUnits(overallTotalAmountMinor);
+    const overallTotalAmount = fromMinorUnits(overallTotalAmountMinor, decimals);
 
     let filtered = allReceivableAccounts;
 
     if (options.minBalance && options.minBalance > 0) {
-      const minMinor = toMinorUnits(options.minBalance);
+      const minMinor = toMinorUnits(options.minBalance, decimals);
 
       filtered = filtered.filter(
         (account) =>
@@ -473,7 +521,7 @@ export class ReportService {
       totalAmountMinor += getAccountCurrentBalanceMinor(account);
     }
 
-    const totalAmount = fromMinorUnits(totalAmountMinor);
+    const totalAmount = fromMinorUnits(totalAmountMinor, decimals);
 
     // Base denominator for share percentage calculation: use overall portfolio total if available, otherwise filtered total
     const baseTotalMinor =
@@ -481,7 +529,10 @@ export class ReportService {
 
     const items: ReceivablesReportItem[] = filtered.map((account) => {
       const balanceMinor = getAccountCurrentBalanceMinor(account);
-      const balance = fromMinorUnits(balanceMinor);
+      const balance =
+        typeof account.currentBalance === 'number' && Number.isFinite(account.currentBalance)
+          ? Math.abs(account.currentBalance)
+          : fromMinorUnits(balanceMinor, decimals);
       const sharePercentage =
         baseTotalMinor > 0
           ? (balanceMinor / baseTotalMinor) * 100
@@ -516,6 +567,8 @@ export class ReportService {
   public async getPayablesReport(
     options: AccountsReportFilterOptions = {}
   ): Promise<PayablesReport> {
+    const { decimals } = await resolveReportDecimals();
+
     const accounts = await accountRepository.getAll(
       options.includeArchived ?? false
     );
@@ -530,12 +583,12 @@ export class ReportService {
       overallTotalAmountMinor += Math.abs(getAccountCurrentBalanceMinor(account));
     }
     const overallAccountsCount = allPayableAccounts.length;
-    const overallTotalAmount = fromMinorUnits(overallTotalAmountMinor);
+    const overallTotalAmount = fromMinorUnits(overallTotalAmountMinor, decimals);
 
     let filtered = allPayableAccounts;
 
     if (options.minBalance && options.minBalance > 0) {
-      const minMinor = toMinorUnits(options.minBalance);
+      const minMinor = toMinorUnits(options.minBalance, decimals);
 
       filtered = filtered.filter(
         (account) =>
@@ -567,7 +620,7 @@ export class ReportService {
       totalAmountMinor += Math.abs(getAccountCurrentBalanceMinor(account));
     }
 
-    const totalAmount = fromMinorUnits(totalAmountMinor);
+    const totalAmount = fromMinorUnits(totalAmountMinor, decimals);
 
     // Base denominator for share percentage calculation
     const baseTotalMinor =
@@ -577,7 +630,10 @@ export class ReportService {
       const magnitudeMinor = Math.abs(
         getAccountCurrentBalanceMinor(account)
       );
-      const balance = fromMinorUnits(magnitudeMinor);
+      const balance =
+        typeof account.currentBalance === 'number' && Number.isFinite(account.currentBalance)
+          ? Math.abs(account.currentBalance)
+          : fromMinorUnits(magnitudeMinor, decimals);
       const sharePercentage =
         baseTotalMinor > 0
           ? (magnitudeMinor / baseTotalMinor) * 100

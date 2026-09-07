@@ -80,12 +80,20 @@ export function computeAccountMetricsFromTransactions(
 
   for (const trx of transactions) {
     let amountUnits: number;
-    if (trx.amountMinor !== undefined && isValidMinorUnit(trx.amountMinor)) {
+    if (hasFractions) {
+      if (
+        trx.amountMinor !== undefined &&
+        isValidMinorUnit(trx.amountMinor) &&
+        Math.abs(trx.amountMinor) === Math.round(Math.abs(trx.amount) * 100)
+      ) {
+        amountUnits = Math.abs(trx.amountMinor);
+      } else {
+        amountUnits = toMinorUnits(Math.abs(trx.amount), 2);
+      }
+    } else if (trx.amountMinor !== undefined && isValidMinorUnit(trx.amountMinor)) {
       amountUnits = Math.abs(trx.amountMinor);
     } else if (currency) {
       amountUnits = Math.abs(getAmountMinor(trx, currency as CurrencyCode));
-    } else if (hasFractions) {
-      amountUnits = toMinorUnits(Math.abs(trx.amount), 2);
     } else {
       amountUnits = Math.abs(getAmountMinor(trx, 'YER'));
     }
@@ -161,12 +169,20 @@ export function computeStatementRunningBalances(
 
   for (const trx of chronological) {
     let units: number;
-    if (trx.amountMinor !== undefined && isValidMinorUnit(trx.amountMinor)) {
+    if (hasFractions) {
+      if (
+        trx.amountMinor !== undefined &&
+        isValidMinorUnit(trx.amountMinor) &&
+        Math.abs(trx.amountMinor) === Math.round(Math.abs(trx.amount) * 100)
+      ) {
+        units = Math.abs(trx.amountMinor);
+      } else {
+        units = toMinorUnits(Math.abs(trx.amount), 2);
+      }
+    } else if (trx.amountMinor !== undefined && isValidMinorUnit(trx.amountMinor)) {
       units = Math.abs(trx.amountMinor);
     } else if (currency) {
       units = Math.abs(getAmountMinor(trx, currency as CurrencyCode));
-    } else if (hasFractions) {
-      units = toMinorUnits(Math.abs(trx.amount), 2);
     } else {
       units = Math.abs(getAmountMinor(trx, 'YER'));
     }

@@ -28,14 +28,32 @@ export class ReportsTestSuite {
     // Setup clean isolated test fixtures
     const testAccountName = `حساب اختبار التقارير ${Date.now()}`;
     let testAccountId = '';
+    const payableAccountName = `حساب دائن اختبار ${Date.now()}`;
+    let payableAccountId = '';
 
     try {
-      // Create test account
+      // Create test account (Receivable)
       const testAccount = await accountRepository.create({
         name: testAccountName,
         phone: '0501234567',
       });
       testAccountId = testAccount.id;
+
+      // Create test account (Payable)
+      const payableAccount = await accountRepository.create({
+        name: payableAccountName,
+        phone: '0509876543',
+      });
+      payableAccountId = payableAccount.id;
+
+      // Insert creditor transaction (credit 500 => balance -500)
+      await transactionEngine.createTransaction({
+        accountId: payableAccountId,
+        type: 'credit',
+        amount: 500.00,
+        date: '2026-02-12',
+        note: 'دين علي للمورد',
+      });
 
       // Insert prior-period transactions (date: 2026-01-10 & 2026-01-15)
       await transactionEngine.createTransaction({
@@ -232,11 +250,74 @@ export class ReportsTestSuite {
         }
       );
 
+      // TEST 8: Cross-Report Consistency & Mathematical Invariant
+      await this.runTest(
+        results,
+        'REP-08',
+        'تطابق الأرقام المحاسبية عبر مختلف التقارير (Cross-Report Integrity)',
+        async () => {
+          // Account Statement for February
+          const statement = await reportService.getAccountStatement(testAccountId, {
+            preset: 'custom',
+            startDate: '2026-02-01',
+            endDate: '2026-02-28',
+          });
+
+          // Invariant: Closing = Opening + PeriodDebit - PeriodCredit
+          const expectedClosing = Math.round((statement.openingBalance + statement.totalPeriodDebit - statement.totalPeriodCredit) * 100) / 100;
+          if (Math.abs(statement.closingBalance - expectedClosing) > 0.001) {
+            throw new Error(`خلل في معادلة كشف الحساب: ${statement.closingBalance} != ${expectedClosing}`);
+          }
+
+          // Invariant: Net Movement = PeriodDebit - PeriodCredit
+          const expectedNet = Math.round((statement.totalPeriodDebit - statement.totalPeriodCredit) * 100) / 100;
+          if (Math.abs(statement.periodNetMovement - expectedNet) > 0.001) {
+            throw new Error(`خلل في صافي الحركة: ${statement.periodNetMovement} != ${expectedNet}`);
+          }
+        }
+      );
+
+      // TEST 9: Payables Separation & Balance Magnitude Invariant
+      await this.runTest(
+        results,
+        'REP-09',
+        'تقرير الديون عليك: عزل الحسابات الدائنة وعرض رصيد الديون كقيمة مطلقة موجبة',
+        async () => {
+          const payReport = await reportService.getPayablesReport({ search: payableAccountName });
+          if (payReport.items.length === 0) {
+            throw new Error('الحساب الدائن لم يظهر في تقرير الديون عليك');
+          }
+          const item = payReport.items[0];
+          // Debt must be represented as positive magnitude (500)
+          if (Math.abs(item.balance - 500) > 0.01) {
+            throw new Error(`قيمة الدين المعروضة يجب أن تكون 500 موجبة ولكنها: ${item.balance}`);
+          }
+          if (item.balanceMinor <= 0) {
+            throw new Error(`قيمة balanceMinor يجب أن تكون أكبر من الصفر ولكنها: ${item.balanceMinor}`);
+          }
+          if (item.sharePercentage <= 0) {
+            throw new Error('نسبة الحصة يجب أن تكون أكبر من الصفر');
+          }
+
+          // Must NOT appear in Receivables Report
+          const recCheck = await reportService.getReceivablesReport({ search: payableAccountName });
+          if (recCheck.items.length > 0) {
+            throw new Error('الحساب الدائن ظهر خطأً في تقرير المستحقات لك');
+          }
+        }
+      );
+
     } finally {
       // Clean up test data
       try {
-        await db.transactions.where('accountId').equals(testAccountId).delete();
-        await db.accounts.delete(testAccountId);
+        if (testAccountId) {
+          await db.transactions.where('accountId').equals(testAccountId).delete();
+          await db.accounts.delete(testAccountId);
+        }
+        if (payableAccountId) {
+          await db.transactions.where('accountId').equals(payableAccountId).delete();
+          await db.accounts.delete(payableAccountId);
+        }
       } catch (err) {
         console.warn('Failed to cleanup reports test fixtures', err);
       }

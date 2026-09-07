@@ -49,6 +49,7 @@ import { ReceiptDocumentModal } from '@/features/ocr';
 
 interface AccountStatementViewProps {
   initialAccountId?: string;
+  onAccountChange?: (accountId: string | null) => void;
 }
 
 type AccountSearchable = Account & {
@@ -87,6 +88,7 @@ const balanceTone = (value: number) =>
 
 export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
   initialAccountId,
+  onAccountChange,
 }) => {
   const accounts = useAccountStore((state) => state.accounts) || [];
   const currency =
@@ -126,6 +128,7 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
   const bottomActionsRef = useRef<HTMLDivElement>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestIdRef = useRef(0);
+  const lastInitialAccountIdRef = useRef<string | undefined>(initialAccountId);
 
   // Debounce transaction search
   useEffect(() => {
@@ -166,10 +169,18 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
   }, [accounts, hasAccountSearch, normalizedAccountSearch]);
 
   useEffect(() => {
-    if (!initialAccountId) return;
+    if (!initialAccountId) {
+      lastInitialAccountIdRef.current = undefined;
+      return;
+    }
 
-    const exists = accounts.some((account) => account.id === initialAccountId);
-    if (exists) setSelectedAccountId(initialAccountId);
+    if (lastInitialAccountIdRef.current !== initialAccountId) {
+      const exists = accounts.some((account) => account.id === initialAccountId);
+      if (exists) {
+        setSelectedAccountId(initialAccountId);
+        lastInitialAccountIdRef.current = initialAccountId;
+      }
+    }
   }, [initialAccountId, accounts]);
 
   useEffect(() => {
@@ -229,15 +240,19 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
 
   const handleSelectAccount = (account: AccountSearchable) => {
     setSelectedAccountId(account.id);
+    lastInitialAccountIdRef.current = account.id;
     setAccountSearch('');
     setIsAccountSearchOpen(false);
+    onAccountChange?.(account.id);
   };
 
   const handleClearAccount = () => {
     setSelectedAccountId(null);
+    lastInitialAccountIdRef.current = undefined;
     setAccountSearch('');
     setIsAccountSearchOpen(false);
     setStatement(null);
+    onAccountChange?.(null);
     setTimeout(() => {
       searchInputRef.current?.focus();
     }, 50);
