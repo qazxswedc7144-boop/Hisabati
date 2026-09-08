@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, UserPlus, Phone, FileText, Tag, UserCheck } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { X, UserPlus, Phone, FileText, Tag, UserCheck, ChevronDown } from 'lucide-react';
 import { useUIStore, useAccountStore, useSettingsStore } from '@/shared/stores';
 import { validateAccountForm } from '@/core/utils/validators';
 
@@ -31,28 +31,6 @@ export const AddAccountModal: React.FC = () => {
   const [initialBalanceType, setInitialBalanceType] = useState<'owed_by_me' | 'owed_to_me'>('owed_to_me');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  
-  // Mobile keyboard slide-up / scroll adjustment state
-  const [isInputFocused, setIsInputFocused] = useState(false);
-  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
-  const formRef = useRef<HTMLFormElement>(null);
-
-  // Monitor visualViewport for mobile virtual keyboard changes
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleResize = () => {
-      if (window.visualViewport) {
-        const isKeyboard = window.visualViewport.height < window.innerHeight * 0.82;
-        setIsKeyboardOpen(isKeyboard);
-      }
-    };
-
-    window.visualViewport?.addEventListener('resize', handleResize);
-    return () => {
-      window.visualViewport?.removeEventListener('resize', handleResize);
-    };
-  }, [isOpen]);
 
   // Autocomplete suggestions from existing accounts
   const nameSuggestions = useMemo(() => {
@@ -76,7 +54,6 @@ export const AddAccountModal: React.FC = () => {
   // Phone number auto-formatter: formats digits cleanly (e.g., 770 123 456)
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value;
-    // Allow digits, spaces, and hyphens
     const digitsOnly = raw.replace(/[^\d]/g, '');
     let formatted = digitsOnly;
     if (digitsOnly.length > 3 && digitsOnly.length <= 6) {
@@ -86,18 +63,6 @@ export const AddAccountModal: React.FC = () => {
     }
     setPhone(formatted);
     if (errors.phone) setErrors((prev) => ({ ...prev, phone: '' }));
-  };
-
-  const handleInputFocus = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setIsInputFocused(true);
-    // Smoothly scroll the focused element into view
-    setTimeout(() => {
-      e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 120);
-  };
-
-  const handleInputBlur = () => {
-    setIsInputFocused(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -148,31 +113,28 @@ export const AddAccountModal: React.FC = () => {
   return (
     <div
       id="add-account-modal-overlay"
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
       onClick={(e) => {
         if (e.target === e.currentTarget) close();
       }}
     >
+      {/* 1. النافذة الرئيسية مستقرة وثابتة في المنتصف مع أقصى ارتفاع وتمرير داخلي لمنع الاهتزاز */}
       <div
         id="add-account-modal"
-        className={`w-full sm:max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border-t sm:border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] transition-all duration-300 ease-out animate-in slide-in-from-bottom ${
-          isInputFocused || isKeyboardOpen
-            ? 'translate-y-[-10px] sm:translate-y-0'
-            : 'translate-y-0'
-        }`}
+        className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-150"
       >
-        {/* 1. Header: عنوان النافذة والأيقونة في الأعلى مع زر إغلاق (X) */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 shrink-0">
+        {/* Header: رأس النافذة */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
-              <UserPlus className="w-5 h-5" />
+            <div className="w-8 h-8 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+              <UserPlus className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+              <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
                 إضافة حساب جديد
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                شخصي، مورد، أو عميل
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                عميل، مورد، أو شخصي
               </p>
             </div>
           </div>
@@ -180,17 +142,16 @@ export const AddAccountModal: React.FC = () => {
           <button
             onClick={close}
             aria-label="إغلاق"
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[36px] min-h-[36px] flex items-center justify-center"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[36px] min-h-[36px] flex items-center justify-center"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* 2. Body Form */}
+        {/* Form: المحتوى المدمج في شبكة محكمة تقلل الطول الرأسي */}
         <form
-          ref={formRef}
           onSubmit={handleSubmit}
-          className="p-5 space-y-4 overflow-y-auto flex-1 overscroll-contain"
+          className="p-4 sm:p-5 space-y-3 sm:space-y-3.5 overflow-y-auto flex-1 overscroll-contain"
         >
           {/* Autocomplete Datalists */}
           <datalist id="account-name-autocomplete-list">
@@ -205,96 +166,105 @@ export const AddAccountModal: React.FC = () => {
             ))}
           </datalist>
 
-          {/* حقل اسم الحساب / الشخص مع نص توضيحي وخاصية التنبؤ */}
-          <div>
+          {/* 1. حقل اسم الحساب / الشخص (4 أعمدة للعنوان و 8 أعمدة للحقل) */}
+          <div className="grid grid-cols-12 gap-2 sm:gap-3 items-center">
             <label
               htmlFor="input-account-name"
-              className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1"
+              className="col-span-4 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1"
             >
-              اسم الحساب / الشخص <span className="text-rose-500">*</span>
+              <span className="truncate">اسم الحساب</span>
+              <span className="text-rose-500">*</span>
             </label>
-            <input
-              id="input-account-name"
-              name="accountName"
-              type="text"
-              required
-              autoComplete="name"
-              list="account-name-autocomplete-list"
-              placeholder="مثال: محمد أحمد، شركة النور..."
-              value={name}
-              onFocus={handleInputFocus}
-              onBlur={handleInputBlur}
-              onChange={(e) => {
-                setName(e.target.value);
-                if (errors.name) setErrors((prev) => ({ ...prev, name: '' }));
-              }}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition min-h-[44px]"
-              autoFocus
-            />
-            {errors.name && (
-              <p className="text-xs text-rose-500 mt-1">{errors.name}</p>
-            )}
+            <div className="col-span-8">
+              <input
+                id="input-account-name"
+                name="accountName"
+                type="text"
+                required
+                autoComplete="name"
+                list="account-name-autocomplete-list"
+                placeholder="مثال: محمد أحمد، شركة النور..."
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (errors.name) setErrors((prev) => ({ ...prev, name: '' }));
+                }}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs sm:text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition min-h-[40px] sm:min-h-[42px]"
+                autoFocus
+              />
+              {errors.name && (
+                <p className="text-xs text-rose-500 mt-1">{errors.name}</p>
+              )}
+            </div>
           </div>
 
-          {/* حقل رقم الهاتف (اختياري) متبوعاً بمفتاح الدولة وتنسيق الرقم مع خاصية التنبؤ */}
-          <div>
+          {/* 2. حقل رقم الهاتف: الجهة اليمنى للعنوان (4 أعمدة) واليسرى لحقل الرقم والبادئة LTR (8 أعمدة) */}
+          <div className="grid grid-cols-12 gap-2 sm:gap-3 items-center">
             <label
               htmlFor="input-account-phone"
-              className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1"
+              className="col-span-4 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5"
             >
-              <Phone className="w-3.5 h-3.5 text-slate-400" />
-              <span>رقم الهاتف (اختياري)</span>
+              <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="truncate">رقم الهاتف</span>
             </label>
 
-            <div className="flex items-center rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 focus-within:ring-2 focus-within:ring-teal-500 focus-within:border-teal-500 transition overflow-hidden min-h-[44px]">
-              {/* مفتاح الدولة */}
-              <select
-                id="select-account-country-code"
-                value={countryCode}
-                onChange={(e) => setCountryCode(e.target.value)}
-                dir="ltr"
-                aria-label="مفتاح الدولة"
-                className="px-2.5 py-2.5 bg-slate-50 dark:bg-slate-800/80 border-e border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-hidden cursor-pointer shrink-0"
-              >
-                {POPULAR_COUNTRY_CODES.map((item) => (
-                  <option key={item.code} value={item.code}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
+            <div className="col-span-8">
+              <div className="flex items-center rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 focus-within:ring-2 focus-within:ring-teal-500 focus-within:border-teal-500 transition overflow-hidden min-h-[40px] sm:min-h-[42px]">
+                {/* حقل إدخال رقم الهاتف في الجهة اليمنى */}
+                <input
+                  id="input-account-phone"
+                  name="phone"
+                  type="tel"
+                  autoComplete="tel"
+                  list="account-phone-autocomplete-list"
+                  dir="ltr"
+                  placeholder="77XXXXXXX"
+                  value={phone}
+                  onChange={handlePhoneChange}
+                  className="flex-1 px-3 py-2 bg-transparent text-slate-900 dark:text-slate-100 text-xs sm:text-sm focus:outline-hidden text-right font-medium placeholder:text-slate-400 min-w-0"
+                />
 
-              {/* رقم الهاتف المنسق مع الاقتراحات */}
-              <input
-                id="input-account-phone"
-                name="phone"
-                type="tel"
-                autoComplete="tel"
-                list="account-phone-autocomplete-list"
-                dir="ltr"
-                placeholder="770 000 000"
-                value={phone}
-                onFocus={handleInputFocus}
-                onBlur={handleInputBlur}
-                onChange={handlePhoneChange}
-                className="w-full px-3.5 py-2 bg-transparent text-slate-900 dark:text-slate-100 text-sm focus:outline-hidden text-start font-medium"
-              />
+                {/* فاصل بصري وقائمة مفتاح الدولة في الجهة اليسرى مع سهم منسدل واضح */}
+                <div className="relative flex items-center shrink-0 border-s border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-750 transition h-full self-stretch">
+                  <select
+                    id="select-account-country-code"
+                    value={countryCode}
+                    onChange={(e) => setCountryCode(e.target.value)}
+                    dir="ltr"
+                    aria-label="مفتاح الدولة"
+                    className="appearance-none ps-2.5 pe-6 py-2 bg-transparent text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-hidden cursor-pointer h-full"
+                  >
+                    {POPULAR_COUNTRY_CODES.map((item) => (
+                      <option
+                        key={item.code}
+                        value={item.code}
+                        className="text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900"
+                      >
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 pointer-events-none absolute end-1.5 shrink-0" />
+                </div>
+              </div>
+              {errors.phone && (
+                <p className="text-xs text-rose-500 mt-1">{errors.phone}</p>
+              )}
             </div>
-            {errors.phone && (
-              <p className="text-xs text-rose-500 mt-1">{errors.phone}</p>
-            )}
           </div>
 
-          {/* أزرار تصنيف أفقية متجاورة (شخصي | مورد | عميل) */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1">
-              <Tag className="w-3.5 h-3.5 text-slate-400" />
-              <span>التصنيف</span>
+          {/* 3. حقل التصنيف: 4 أعمدة للعنوان والأيقونة و 8 أعمدة لأزرار التصنيف الأفقية الثلاثة (عميل، مورد، شخصي) */}
+          <div className="grid grid-cols-12 gap-2 sm:gap-3 items-center">
+            <label className="col-span-4 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <Tag className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="truncate">التصنيف</span>
             </label>
-            <div className="grid grid-cols-3 gap-2">
+
+            <div className="col-span-8 grid grid-cols-3 gap-1.5 sm:gap-2">
               {[
-                { id: 'personal', label: 'شخصي' },
-                { id: 'supplier', label: 'مورد' },
                 { id: 'customer', label: 'عميل' },
+                { id: 'supplier', label: 'مورد' },
+                { id: 'personal', label: 'شخصي' },
               ].map((cat) => {
                 const isSelected = category === cat.id;
                 return (
@@ -302,7 +272,7 @@ export const AddAccountModal: React.FC = () => {
                     key={cat.id}
                     type="button"
                     onClick={() => setCategory(cat.id as any)}
-                    className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all min-h-[40px] flex items-center justify-center ${
+                    className={`py-1.5 px-1 sm:px-2 text-xs font-bold rounded-xl border transition-all min-h-[38px] sm:min-h-[40px] flex items-center justify-center text-center ${
                       isSelected
                         ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 shadow-xs'
                         : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -315,7 +285,28 @@ export const AddAccountModal: React.FC = () => {
             </div>
           </div>
 
-          {/* خانة اختيار تسجيل رصيد افتتاحي سابق مع خيارات طبيعة الرصيد */}
+          {/* 4. حقل ملاحظة عن الحساب */}
+          <div className="grid grid-cols-12 gap-2 sm:gap-3 items-start">
+            <label
+              htmlFor="textarea-account-note"
+              className="col-span-4 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 pt-2"
+            >
+              <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="truncate">ملاحظة</span>
+            </label>
+            <div className="col-span-8">
+              <textarea
+                id="textarea-account-note"
+                rows={2}
+                placeholder="مثال: عنوان السكن أو العمل، طبيعة التعامل..."
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs sm:text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition resize-none min-h-[42px]"
+              />
+            </div>
+          </div>
+
+          {/* 5. خانة اختيار تسجيل رصيد افتتاحي سابق */}
           <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
@@ -331,90 +322,75 @@ export const AddAccountModal: React.FC = () => {
             </label>
 
             {hasInitialBalance && (
-              <div className="mt-3 space-y-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 animate-in fade-in duration-150">
-                <div>
+              <div className="mt-2.5 space-y-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 animate-in fade-in duration-150">
+                {/* المبلغ */}
+                <div className="grid grid-cols-12 gap-2 sm:gap-3 items-center">
                   <label
                     htmlFor="input-initial-balance-amount"
-                    className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1"
+                    className="col-span-4 text-xs font-medium text-slate-600 dark:text-slate-400"
                   >
-                    المبلغ الافتتاحي ({currency})
+                    المبلغ ({currency})
                   </label>
-                  <input
-                    id="input-initial-balance-amount"
-                    type="number"
-                    step="any"
-                    min="0"
-                    placeholder="0.00"
-                    value={initialBalance}
-                    onFocus={handleInputFocus}
-                    onBlur={handleInputBlur}
-                    onChange={(e) => setInitialBalance(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-bold min-h-[42px] focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-                  />
+                  <div className="col-span-8">
+                    <input
+                      id="input-initial-balance-amount"
+                      type="number"
+                      step="any"
+                      min="0"
+                      placeholder="0.00"
+                      value={initialBalance}
+                      onChange={(e) => setInitialBalance(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs sm:text-sm font-bold min-h-[38px] sm:min-h-[40px] focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                    />
+                  </div>
                 </div>
 
-                {/* زرا اختيار طبيعة الرصيد ("له عليك (عليك له)" بالوردي و "لك عنده (مستحق لك)" بالأخضر) */}
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  {/* له عليك (عليك له) - وردي */}
-                  <button
-                    type="button"
-                    id="btn-balance-owed-by-me"
-                    onClick={() => setInitialBalanceType('owed_by_me')}
-                    className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all min-h-[40px] flex items-center justify-center text-center ${
-                      initialBalanceType === 'owed_by_me'
-                        ? 'border-rose-500 bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 shadow-xs ring-1 ring-rose-500'
-                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    له عليك (عليك له)
-                  </button>
+                {/* طبيعة الرصيد */}
+                <div className="grid grid-cols-12 gap-2 sm:gap-3 items-center">
+                  <span className="col-span-4 text-xs font-medium text-slate-600 dark:text-slate-400">
+                    طبيعة الرصيد
+                  </span>
+                  <div className="col-span-8 grid grid-cols-2 gap-2">
+                    {/* لك عنده (مستحق لك) - أخضر */}
+                    <button
+                      type="button"
+                      id="btn-balance-owed-to-me"
+                      onClick={() => setInitialBalanceType('owed_to_me')}
+                      className={`py-1.5 px-2 text-xs font-bold rounded-xl border transition-all min-h-[38px] flex items-center justify-center text-center ${
+                        initialBalanceType === 'owed_to_me'
+                          ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 shadow-xs ring-1 ring-emerald-500'
+                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      لك عنده (مستحق لك)
+                    </button>
 
-                  {/* لك عنده (مستحق لك) - أخضر */}
-                  <button
-                    type="button"
-                    id="btn-balance-owed-to-me"
-                    onClick={() => setInitialBalanceType('owed_to_me')}
-                    className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all min-h-[40px] flex items-center justify-center text-center ${
-                      initialBalanceType === 'owed_to_me'
-                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 shadow-xs ring-1 ring-emerald-500'
-                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    لك عنده (مستحق لك)
-                  </button>
+                    {/* له عليك (عليك له) - وردي */}
+                    <button
+                      type="button"
+                      id="btn-balance-owed-by-me"
+                      onClick={() => setInitialBalanceType('owed_by_me')}
+                      className={`py-1.5 px-2 text-xs font-bold rounded-xl border transition-all min-h-[38px] flex items-center justify-center text-center ${
+                        initialBalanceType === 'owed_by_me'
+                          ? 'border-rose-500 bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 shadow-xs ring-1 ring-rose-500'
+                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      له عليك (عليك له)
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
           </div>
 
-          {/* حقل نصي لاختيار "ملاحظة عن الحساب (اختياري)" */}
-          <div>
-            <label
-              htmlFor="textarea-account-note"
-              className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1"
-            >
-              <FileText className="w-3.5 h-3.5 text-slate-400" />
-              <span>ملاحظة عن الحساب (اختياري)</span>
-            </label>
-            <textarea
-              id="textarea-account-note"
-              rows={2}
-              placeholder="مثال: عنوان السكن أو العمل، طبيعة التعامل..."
-              value={note}
-              onFocus={handleInputFocus}
-              onBlur={handleInputBlur}
-              onChange={(e) => setNote(e.target.value)}
-              className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition resize-none"
-            />
-          </div>
-
-          {/* زر عريض رئيسي في الأسفل مكتوب عليه "حفظ الحساب" مع أيقونة */}
-          <div className="pt-2 pb-1">
+          {/* 6. زر الحفظ الرئيسي في الأسفل */}
+          <div className="pt-2">
             <button
               id="btn-submit-account"
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 disabled:opacity-50 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-xs shadow-teal-700/20 active:scale-[0.99] transition-all min-h-[46px]"
+              className="w-full py-2.5 sm:py-3 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 disabled:opacity-50 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs shadow-teal-700/20 active:scale-[0.99] transition-all min-h-[44px]"
             >
               <UserCheck className="w-4 h-4 shrink-0" />
               <span>{isSubmitting ? 'جاري الحفظ...' : 'حفظ الحساب'}</span>
