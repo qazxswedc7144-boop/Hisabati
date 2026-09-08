@@ -53,23 +53,23 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div id="dashboard-page" className="space-y-5 sm:space-y-6 animate-in fade-in duration-200">
-      {/* Welcome Banner & Quick Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
+      {/* Welcome Banner & Quick Actions في سطر أفقي واحد دائم flex-row و flex-nowrap */}
+      <div className="flex flex-row items-center justify-between gap-2 sm:gap-3 pb-1 flex-nowrap w-full">
+        <div className="min-w-0 shrink">
+          <h2 className="text-base sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100 truncate">
             {t('dashboard.welcome')} 👋
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-[11px] sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5 truncate">
             {t('dashboard.quickSummary')}
           </p>
         </div>
 
-        {/* Quick Actions (Primary: تسجيل عملية, Secondary: مسح, Tertiary: حساب جديد) في سطر أفقي واحد دائم بحجم المحتوى فقط */}
-        <div className="flex flex-row items-center gap-1.5 sm:gap-2.5 w-auto flex-nowrap shrink-0">
+        {/* Quick Actions (Primary: تسجيل عملية, Secondary: مسح, Tertiary: حساب جديد) في سطر أفقي واحد دائم في الجانب الأيسر */}
+        <div className="flex flex-row items-center justify-end gap-1 sm:gap-2 flex-nowrap shrink-0">
           <button
             id="btn-dash-add-trx"
             onClick={() => openQuickAdd()}
-            className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs sm:text-sm font-bold shadow-xs shadow-teal-700/20 active:scale-[0.98] transition min-h-[40px] sm:min-h-[44px] shrink-0 whitespace-nowrap"
+            className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3.5 sm:py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs sm:text-sm font-bold shadow-xs shadow-teal-700/20 active:scale-[0.98] transition min-h-[36px] sm:min-h-[44px] shrink-0 whitespace-nowrap"
           >
             <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5] shrink-0" />
             <span className="whitespace-nowrap">تسجيل عملية</span>
@@ -78,7 +78,7 @@ export const DashboardPage: React.FC = () => {
           <button
             id="btn-dash-scan-ocr"
             onClick={() => openScannerModal()}
-            className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 py-2 sm:px-3 sm:py-2.5 rounded-xl border border-sky-200 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-xs sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[40px] sm:min-h-[44px] shrink-0 whitespace-nowrap"
+            className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 sm:py-2.5 rounded-xl border border-sky-200 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-xs sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[36px] sm:min-h-[44px] shrink-0 whitespace-nowrap"
           >
             <ScanLine className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-600 dark:text-sky-400 shrink-0" />
             <span className="whitespace-nowrap">مسح</span>
@@ -89,9 +89,9 @@ export const DashboardPage: React.FC = () => {
             id="btn-dash-add-acc"
             onClick={() => openAddAccount()}
             title="حساب جديد"
-            className="inline-flex items-center justify-center p-2.5 sm:py-2.5 sm:px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-xs active:scale-[0.98] transition min-h-[40px] min-w-[40px] sm:min-h-[44px] sm:min-w-[44px] shrink-0"
+            className="inline-flex items-center justify-center p-2 sm:py-2.5 sm:px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-xs active:scale-[0.98] transition min-h-[36px] min-w-[36px] sm:min-h-[44px] sm:min-w-[44px] shrink-0"
           >
-            <UserPlus className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+            <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-600 dark:text-teal-400 shrink-0" />
           </button>
         </div>
       </div>
