@@ -64,33 +64,34 @@ export const DashboardPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Quick Actions (Primary: تسجيل عملية, Secondary: مسح (OCR), Tertiary: حساب جديد) */}
-        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap sm:flex-nowrap">
+        {/* Quick Actions (Primary: تسجيل عملية, Secondary: مسح, Tertiary: حساب جديد) في سطر أفقي واحد دائم */}
+        <div className="flex flex-row items-center gap-1.5 sm:gap-2.5 w-full sm:w-auto flex-nowrap shrink-0">
           <button
             id="btn-dash-add-trx"
             onClick={() => openQuickAdd()}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs sm:text-sm font-bold shadow-xs shadow-teal-700/20 active:scale-[0.98] transition min-h-[44px] shrink-0"
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs sm:text-sm font-bold shadow-xs shadow-teal-700/20 active:scale-[0.98] transition min-h-[40px] sm:min-h-[44px] shrink-0 whitespace-nowrap"
           >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span>تسجيل عملية</span>
+            <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5] shrink-0" />
+            <span className="whitespace-nowrap">تسجيل عملية</span>
           </button>
 
           <button
             id="btn-dash-scan-ocr"
             onClick={() => openScannerModal()}
-            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-sky-200 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-xs sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[44px] shrink-0"
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-xl border border-sky-200 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-xs sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[40px] sm:min-h-[44px] shrink-0 whitespace-nowrap"
           >
-            <ScanLine className="w-4 h-4 text-sky-600 dark:text-sky-400" />
-            <span>مسح (OCR)</span>
+            <ScanLine className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-600 dark:text-sky-400 shrink-0" />
+            <span className="whitespace-nowrap">مسح</span>
           </button>
 
+          {/* 3. زر حساب جديد (أيقونة فقط) */}
           <button
             id="btn-dash-add-acc"
             onClick={() => openAddAccount()}
-            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[44px] shrink-0"
+            title="حساب جديد"
+            className="inline-flex items-center justify-center p-2.5 sm:py-2.5 sm:px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-xs active:scale-[0.98] transition min-h-[40px] min-w-[40px] sm:min-h-[44px] sm:min-w-[44px] shrink-0"
           >
-            <UserPlus className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-            <span>حساب جديد</span>
+            <UserPlus className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
           </button>
         </div>
       </div>
@@ -262,62 +263,60 @@ export const DashboardPage: React.FC = () => {
           </div>
 
           <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 space-y-2 shadow-xs">
-            {accounts.slice(0, 4).map((account) => (
-              <div
-                key={account.id}
-                className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-teal-500/30 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-800/80 transition flex flex-col gap-2"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div
-                    onClick={() => navigate(`/accounts/${account.id}`)}
-                    className="min-w-0 cursor-pointer flex-1"
-                  >
-                    <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate hover:text-teal-600 dark:hover:text-teal-400">
-                      {account.name}
-                    </p>
-                    <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
-                      {account.phone || account.note || 'لا توجد ملاحظات'}
-                    </p>
-                  </div>
-
-                  <BalanceBadge balance={account.currentBalance} size="sm" />
-                </div>
-
-                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-800">
-                  <div className="text-start">
-                    <span className="text-[10px] text-slate-400 block">الرصيد:</span>
-                    <span
-                      className={`text-xs sm:text-sm font-black tabular-nums ${
-                        account.currentBalance > 0
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : account.currentBalance < 0
-                          ? 'text-rose-600 dark:text-rose-400'
-                          : 'text-slate-600 dark:text-slate-300'
-                      }`}
-                    >
-                      {formatCurrency(Math.abs(account.currentBalance), currency)}
-                    </span>
-                  </div>
-
-                  <button
-                    onClick={() => openQuickAdd(account.id)}
-                    title="تسجيل عملية لهذا الحساب"
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 text-teal-700 dark:text-teal-300 text-[11px] font-bold transition min-h-[36px] active:scale-[0.98]"
-                  >
-                    <PlusCircle className="w-3.5 h-3.5" />
-                    <span>+ إضافة عملية</span>
-                  </button>
-                </div>
+            {accounts.length === 0 ? (
+              <div className="py-6 text-center">
+                <p className="text-xs text-slate-500 dark:text-slate-400">لا توجد حسابات مسجلة بعد</p>
               </div>
-            ))}
+            ) : (
+              accounts.slice(0, 4).map((account) => (
+                <div
+                  key={account.id}
+                  className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-teal-500/30 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-800/80 transition flex flex-col gap-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div
+                      onClick={() => navigate(`/accounts/${account.id}`)}
+                      className="min-w-0 cursor-pointer flex-1"
+                    >
+                      <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate hover:text-teal-600 dark:hover:text-teal-400">
+                        {account.name}
+                      </p>
+                      <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                        {account.phone || account.note || 'لا توجد ملاحظات'}
+                      </p>
+                    </div>
 
-            <button
-              onClick={() => openAddAccount()}
-              className="w-full py-2.5 text-center text-xs font-bold text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/40 rounded-xl transition min-h-[40px] flex items-center justify-center gap-1"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>+ إضافة حساب جديد</span>
-            </button>
+                    <BalanceBadge balance={account.currentBalance} size="sm" />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-800">
+                    <div className="text-start">
+                      <span className="text-[10px] text-slate-400 block">الرصيد:</span>
+                      <span
+                        className={`text-xs sm:text-sm font-black tabular-nums ${
+                          account.currentBalance > 0
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : account.currentBalance < 0
+                            ? 'text-rose-600 dark:text-rose-400'
+                            : 'text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        {formatCurrency(Math.abs(account.currentBalance), currency)}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => openQuickAdd(account.id)}
+                      title="تسجيل عملية لهذا الحساب"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 text-teal-700 dark:text-teal-300 text-[11px] font-bold transition min-h-[36px] active:scale-[0.98]"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      <span>+ إضافة عملية</span>
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

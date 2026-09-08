@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Plus,
   Sun,
   Moon,
   Wallet2,
@@ -14,7 +13,7 @@ import {
   MoreVertical,
   SlidersHorizontal,
 } from 'lucide-react';
-import { useUIStore, useSettingsStore, useMessagingStore, useOCRStore } from '@/shared/stores';
+import { useSettingsStore, useMessagingStore, useOCRStore } from '@/shared/stores';
 import { PWAInstallPrompt } from './PWAInstallPrompt';
 import { SyncStatusIndicator } from './SyncStatusIndicator';
 import { useI18n } from '@/shared/hooks/useI18n';
@@ -38,7 +37,6 @@ export const Header: React.FC<HeaderProps> = ({
 
   const theme = useSettingsStore((state) => state.settings.theme);
   const setTheme = useSettingsStore((state) => state.setTheme);
-  const openQuickAdd = useUIStore((state) => state.openQuickAddTransaction);
   const { unreadNotificationsCount, openNotificationCenter, fetchNotifications } = useMessagingStore();
   const openScannerModal = useOCRStore((state) => state.openScannerModal);
   const { t } = useI18n();
@@ -98,34 +96,18 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Right (End): Actions (تسجيل عملية + مسح OCR + Utility Icons) */}
+        {/* Right (End): Actions (مسح OCR + Utility Icons) */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Primary Action: زر 'تسجيل عملية' */}
-          {showQuickAdd && (
-            <button
-              id="btn-header-quick-add"
-              onClick={() => openQuickAdd()}
-              aria-label="تسجيل عملية"
-              title="تسجيل عملية جديدة"
-              className="inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs sm:text-sm font-bold shadow-xs shadow-teal-700/20 active:scale-[0.98] transition min-h-[40px] shrink-0"
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span className="hidden sm:inline">تسجيل عملية</span>
-              <span className="sm:hidden">عملية</span>
-            </button>
-          )}
-
-          {/* Secondary Action: زر 'مسح (OCR)' */}
+          {/* Scanner Action: زر 'مسح (OCR)' كأيقونة في الشريط العلوي */}
           {showOCR && (
             <button
               id="btn-header-scan-ocr"
               onClick={() => openScannerModal()}
-              aria-label="مسح (OCR)"
+              aria-label="مسح فاتورة (OCR)"
               title="مسح فاتورة ذكي (OCR)"
-              className="inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl border border-sky-200 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-xs sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[40px] shrink-0"
+              className="p-2 sm:p-2.5 rounded-xl border border-sky-200 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 transition min-h-[40px] min-w-[40px] flex items-center justify-center shrink-0 active:scale-[0.98]"
             >
               <ScanLine className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
-              <span className="hidden md:inline">مسح (OCR)</span>
             </button>
           )}
 
