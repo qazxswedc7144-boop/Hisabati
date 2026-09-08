@@ -10,4 +10,5 @@ export * from './Toast';
 export * from './QuickAddTransactionModal';
 export * from './EditTransactionModal';
 export * from './AddAccountModal';
+export * from './SyncStatusIndicator';
 

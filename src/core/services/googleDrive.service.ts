@@ -282,6 +282,48 @@ export class GoogleDriveService {
   }
 
   /**
+   * Safely updates an existing JSON file in Google Drive via multipart PATCH.
+   * Keeps the file ID intact without risking data loss.
+   */
+  public async updateJsonFile(
+    fileId: string,
+    filename: string,
+    content: any,
+    metadataSummary?: any
+  ): Promise<{ id: string; name: string }> {
+    const boundary = '-------314159265358979323846';
+    const delimiter = `\r\n--${boundary}\r\n`;
+    const closeDelimiter = `\r\n--${boundary}--`;
+
+    const fileMetadata = {
+      name: filename,
+      mimeType: 'application/json',
+      description: metadataSummary ? JSON.stringify(metadataSummary) : undefined,
+    };
+
+    const multipartRequestBody =
+      delimiter +
+      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+      JSON.stringify(fileMetadata) +
+      delimiter +
+      'Content-Type: application/json\r\n\r\n' +
+      JSON.stringify(content) +
+      closeDelimiter;
+
+    const patchUrl = `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`;
+    const res = await this.fetchWithAuth(patchUrl, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body: multipartRequestBody,
+    });
+
+    const result = await res.json();
+    return { id: result.id, name: result.name };
+  }
+
+  /**
    * Downloads and parses a JSON file by Drive file ID.
    */
   public async downloadJsonFile<T = any>(fileId: string): Promise<T> {

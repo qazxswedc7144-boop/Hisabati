@@ -14,20 +14,23 @@ import {
   MoreVertical,
   SlidersHorizontal,
 } from 'lucide-react';
-import { useUIStore, useSettingsStore, useSyncStore, useMessagingStore, useOCRStore } from '@/shared/stores';
+import { useUIStore, useSettingsStore, useMessagingStore, useOCRStore } from '@/shared/stores';
 import { PWAInstallPrompt } from './PWAInstallPrompt';
+import { SyncStatusIndicator } from './SyncStatusIndicator';
 import { useI18n } from '@/shared/hooks/useI18n';
 
 interface HeaderProps {
   title?: string;
   subtitle?: string;
   showQuickAdd?: boolean;
+  showOCR?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   title,
   subtitle,
   showQuickAdd = true,
+  showOCR = true,
 }) => {
   const navigate = useNavigate();
   const [isToolsOpen, setIsToolsOpen] = useState(false);
@@ -36,7 +39,6 @@ export const Header: React.FC<HeaderProps> = ({
   const theme = useSettingsStore((state) => state.settings.theme);
   const setTheme = useSettingsStore((state) => state.setTheme);
   const openQuickAdd = useUIStore((state) => state.openQuickAddTransaction);
-  const { isDriveConnected, syncStatus, triggerManualSync } = useSyncStore();
   const { unreadNotificationsCount, openNotificationCenter, fetchNotifications } = useMessagingStore();
   const openScannerModal = useOCRStore((state) => state.openScannerModal);
   const { t } = useI18n();
@@ -96,21 +98,39 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Right (End): Actions (Primary 'عملية جديدة' + Secondary Tools) */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-          {/* Primary Action: عملية جديدة (Always visible, prominent, touch-friendly) */}
+        {/* Right (End): Actions (تسجيل عملية + مسح OCR + Utility Icons) */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Primary Action: زر 'تسجيل عملية' */}
           {showQuickAdd && (
             <button
               id="btn-header-quick-add"
               onClick={() => openQuickAdd()}
-              aria-label="تسجيل عملية جديدة"
-              className="inline-flex items-center justify-center gap-1.5 px-3 sm:px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs sm:text-sm font-bold shadow-xs shadow-teal-700/20 active:scale-[0.98] transition min-h-[40px] shrink-0"
+              aria-label="تسجيل عملية"
+              title="تسجيل عملية جديدة"
+              className="inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs sm:text-sm font-bold shadow-xs shadow-teal-700/20 active:scale-[0.98] transition min-h-[40px] shrink-0"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span className="hidden xs:inline">عملية جديدة</span>
-              <span className="xs:hidden">عملية</span>
+              <span className="hidden sm:inline">تسجيل عملية</span>
+              <span className="sm:hidden">عملية</span>
             </button>
           )}
+
+          {/* Secondary Action: زر 'مسح (OCR)' */}
+          {showOCR && (
+            <button
+              id="btn-header-scan-ocr"
+              onClick={() => openScannerModal()}
+              aria-label="مسح (OCR)"
+              title="مسح فاتورة ذكي (OCR)"
+              className="inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl border border-sky-200 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-xs sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[40px] shrink-0"
+            >
+              <ScanLine className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
+              <span className="hidden md:inline">مسح (OCR)</span>
+            </button>
+          )}
+
+          {/* Subtle Vertical Divider */}
+          <div className="hidden xs:block h-5 w-px bg-slate-200 dark:bg-slate-800 mx-0.5" />
 
           {/* Notification Bell Button */}
           <button
@@ -118,13 +138,31 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => openNotificationCenter(true)}
             aria-label="مركز الإشعارات والتنبيهات"
             title="الإشعارات والتنبيهات"
-            className="relative p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/60 dark:border-slate-800 transition flex items-center justify-center min-h-[40px] min-w-[40px]"
+            className="relative p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/60 dark:border-slate-800 transition flex items-center justify-center min-h-[40px] min-w-[40px] shrink-0"
           >
             <Bell className="w-4 h-4" />
             {unreadNotificationsCount > 0 && (
               <span className="absolute -top-1 -start-1 min-w-[18px] h-[18px] rounded-full bg-rose-600 text-white text-[10px] font-extrabold flex items-center justify-center px-1 shadow-xs animate-pulse">
                 {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
               </span>
+            )}
+          </button>
+
+          {/* Cloud & Connection Sync Status Indicator */}
+          <SyncStatusIndicator />
+
+          {/* Theme Toggle Button */}
+          <button
+            id="btn-theme-toggle-desktop"
+            onClick={toggleTheme}
+            aria-label="تبديل المظهر"
+            title={theme === 'dark' ? 'المظهر الفاتح' : 'المظهر الداكن'}
+            className="hidden sm:flex p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[40px] min-h-[40px] items-center justify-center border border-slate-200/60 dark:border-slate-800 shrink-0"
+          >
+            {theme === 'dark' ? (
+              <Sun className="w-4 h-4 text-amber-400" />
+            ) : (
+              <Moon className="w-4 h-4 text-slate-600" />
             )}
           </button>
 
@@ -135,7 +173,7 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => navigate('/ai')}
               aria-label="المساعد المالي الذكي"
               title="المساعد المالي الذكي"
-              className="p-2 rounded-xl text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200/80 dark:border-teal-800/80 transition flex items-center justify-center min-h-[40px] min-w-[40px]"
+              className="p-2 rounded-xl text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200/80 dark:border-teal-800/80 transition flex items-center justify-center min-h-[40px] min-w-[40px] shrink-0"
             >
               <Sparkles className="w-4 h-4 text-teal-600 dark:text-teal-400" />
             </button>
@@ -145,40 +183,11 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => navigate('/team')}
               aria-label="إدارة الفريق وسجل التدقيق"
               title="إدارة الفريق والصلاحيات"
-              className="p-2 rounded-xl text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-200/80 dark:border-purple-800/80 transition flex items-center justify-center min-h-[40px] min-w-[40px]"
+              className="p-2 rounded-xl text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-200/80 dark:border-purple-800/80 transition flex items-center justify-center min-h-[40px] min-w-[40px] shrink-0"
             >
               <ShieldCheck className="w-4 h-4 text-purple-600 dark:text-purple-400" />
             </button>
           </div>
-
-          {/* Theme Toggle Button (Desktop) */}
-          <button
-            id="btn-theme-toggle-desktop"
-            onClick={toggleTheme}
-            aria-label="تبديل المظهر"
-            className="hidden sm:flex p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[40px] min-h-[40px] items-center justify-center border border-slate-200/60 dark:border-slate-800"
-          >
-            {theme === 'dark' ? (
-              <Sun className="w-4 h-4 text-amber-400" />
-            ) : (
-              <Moon className="w-4 h-4 text-slate-600" />
-            )}
-          </button>
-
-          {/* Cloud Sync Status Indicator */}
-          {isDriveConnected && (
-            <button
-              onClick={() => triggerManualSync()}
-              title={syncStatus === 'syncing' ? 'جارٍ المزامنة السحابية...' : 'مزامنة مع Google Drive'}
-              className="p-2 rounded-xl text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/40 border border-teal-200/60 dark:border-teal-800/60 transition flex items-center justify-center min-h-[40px] min-w-[40px]"
-            >
-              {syncStatus === 'syncing' ? (
-                <RefreshCw className="w-4 h-4 animate-spin" />
-              ) : (
-                <Cloud className="w-4 h-4" />
-              )}
-            </button>
-          )}
 
           {/* More Tools Menu Dropdown (Organized Secondary Actions for Mobile & Tablet) */}
           <div className="relative" ref={toolsMenuRef}>

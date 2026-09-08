@@ -7,6 +7,7 @@ export interface AppSettings {
   businessName?: string;
   ownerName?: string;
   phone?: string;
+  businessAddress?: string;
   enablePinLock: boolean;
   enableBiometrics: boolean;
   enableNotifications: boolean;

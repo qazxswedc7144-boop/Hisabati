@@ -1,79 +1,69 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Settings,
+  Store,
   Palette,
   Globe,
   Coins,
-  Cloud,
   Shield,
-  Database,
-  RefreshCw,
-  Download,
-  Upload,
-  Trash2,
-  Check,
-  AlertCircle,
+  Users,
+  Bell,
+  Cloud,
+  Lock,
+  FileText,
   Activity,
   CheckCircle2,
-  XCircle,
-  Layers,
-  FileCheck,
+  AlertCircle,
+  HelpCircle,
   ChevronDown,
   ChevronUp,
-  FileText,
-  Clock,
-  Sparkles,
+  Layers,
+  FileCheck,
   Bot,
   ScanLine,
+  ExternalLink,
+  ShieldAlert,
+  Check,
 } from 'lucide-react';
-import { useSettingsStore, useAccountStore, useTransactionStore, useUIStore } from '@/shared/stores';
+import { useSettingsStore, useUIStore } from '@/shared/stores';
 import { CurrencyCode, ThemeMode, LanguageCode } from '@/shared/types';
-import { SUPPORTED_CURRENCIES, formatNumber, formatDate } from '@/core/utils/formatters';
-import { seedInitialMockData } from '@/shared/data/mockData';
-import { db } from '@/core/database/db';
+import { SUPPORTED_CURRENCIES, formatNumber } from '@/core/utils/formatters';
 import { useI18n } from '@/shared/hooks/useI18n';
-import { integrityService, IntegrityReport } from '@/core/services/integrity.service';
-import { backupService } from '@/core/services/backup.service';
 import { runFinancialEngineTests, EngineTestSuiteResult } from '@/core/tests/transactionEngine.test';
 import { ReportsTestSuite, TestResult as ReportTestResult } from '@/core/tests/reports.test';
 import { CloudSyncTestSuite, TestResult as CloudSyncTestResult } from '@/core/tests/cloudSync.test';
 import { MessagingTestSuite, MessagingTestSuiteResult } from '@/core/tests/messaging.test';
 import { AITestSuite, AITestSuiteResult } from '@/core/tests/ai.test';
 import { OCRTestSuite, OCRTestSuiteSummary } from '@/core/tests/ocr.test';
-import { CloudBackupSection } from '../components/CloudBackupSection';
 import { MessagingSettingsSection } from '@/features/messaging/components/MessagingSettingsSection';
+import { DataControlCenter } from '../components/DataControlCenter';
 
 export const SettingsPage: React.FC = () => {
+  const navigate = useNavigate();
   const { t, changeLanguage } = useI18n();
-  const settings = useSettingsStore((state) => state.settings);
-  const setTheme = useSettingsStore((state) => state.setTheme);
-  const setCurrency = useSettingsStore((state) => state.setCurrency);
+  const { settings, updateSettings, setTheme, setCurrency } = useSettingsStore();
   const showToast = useUIStore((state) => state.showToast);
 
-  const fetchAccounts = useAccountStore((state) => state.fetchAccounts);
-  const fetchRecentTransactions = useTransactionStore((state) => state.fetchRecentTransactions);
-  const recalculateAll = useAccountStore((state) => state.recalculateAll);
+  // Business Info Form State
+  const [businessName, setBusinessName] = useState(settings.businessName || '');
+  const [ownerName, setOwnerName] = useState(settings.ownerName || '');
+  const [phone, setPhone] = useState(settings.phone || '');
+  const [businessAddress, setBusinessAddress] = useState(settings.businessAddress || '');
+  const [isSavingBusiness, setIsSavingBusiness] = useState(false);
 
-  // States
-  const [isResetting, setIsResetting] = useState(false);
-  const [isRecalculating, setIsRecalculating] = useState(false);
-  const [isCheckingIntegrity, setIsCheckingIntegrity] = useState(false);
-  const [integrityReport, setIntegrityReport] = useState<IntegrityReport | null>(null);
+  // Synchronize with store updates
+  useEffect(() => {
+    setBusinessName(settings.businessName || '');
+    setOwnerName(settings.ownerName || '');
+    setPhone(settings.phone || '');
+    setBusinessAddress(settings.businessAddress || '');
+  }, [settings.businessName, settings.ownerName, settings.phone, settings.businessAddress]);
 
-  // Local Backup State
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isExporting, setIsExporting] = useState(false);
-  const [isRestoring, setIsRestoring] = useState(false);
-  const [showRestoreModal, setShowRestoreModal] = useState(false);
-  const [pendingRestorePayload, setPendingRestorePayload] = useState<any | null>(null);
-
-  // Clear Database State
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
-
-  // Advanced Diagnostics Panel Toggle
+  // Diagnostics Panel Toggle
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
-  // Diagnostic Test Suites
+  // Diagnostic Test Suites States
   const [isRunningTests, setIsRunningTests] = useState(false);
   const [testSuiteResult, setTestSuiteResult] = useState<EngineTestSuiteResult | null>(null);
 
@@ -102,152 +92,53 @@ export const SettingsPage: React.FC = () => {
   const [isRunningOCRTests, setIsRunningOCRTests] = useState(false);
   const [ocrTestSuiteResult, setOcrTestSuiteResult] = useState<OCRTestSuiteSummary | null>(null);
 
+  // FAQ Accordion State
+  const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+
   // Handlers
-  const handleCurrencyChange = async (curr: CurrencyCode) => {
-    await setCurrency(curr);
-    showToast(`تم تغيير العملة الرئيسية إلى ${curr}`, 'success');
-  };
-
-  const handleThemeChange = async (theme: ThemeMode) => {
-    await setTheme(theme);
-  };
-
-  const handleLanguageChange = async (lang: LanguageCode) => {
-    await changeLanguage(lang);
-    showToast(lang === 'ar' ? 'تم تحويل اللغة إلى العربية' : 'Language switched to English', 'success');
-  };
-
-  const handleRecalculateAll = async () => {
-    setIsRecalculating(true);
+  const handleSaveBusinessInfo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingBusiness(true);
     try {
-      await recalculateAll();
-      showToast('تمت إعادة احتساب كافة الأرصدة من واقع المعاملات بنجاح', 'success');
-    } catch (e: any) {
-      showToast(e?.message || 'فشلت عملية إعادة الاحتساب', 'error');
-    } finally {
-      setIsRecalculating(false);
-    }
-  };
-
-  const handleCheckIntegrity = async () => {
-    setIsCheckingIntegrity(true);
-    try {
-      const report = await integrityService.verifyFinancialIntegrity();
-      setIntegrityReport(report);
-      if (report.valid) {
-        showToast('تم فحص السجلات: جميع الحسابات والمعاملات سليمة ومطابقة 100%', 'success');
-      } else {
-        showToast(`تم اكتشاف ${report.inconsistencies.length} ملاحظة في السجلات`, 'info');
-      }
-    } catch (e: any) {
-      showToast('فشل فحص التكامل', 'error');
-    } finally {
-      setIsCheckingIntegrity(false);
-    }
-  };
-
-  // Local JSON Backup Export
-  const handleExportJSON = async () => {
-    setIsExporting(true);
-    try {
-      const payload = await backupService.generateBackupPayload();
-      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(payload, null, 2));
-      const downloadAnchor = document.createElement('a');
-      downloadAnchor.setAttribute('href', dataStr);
-      downloadAnchor.setAttribute('download', `hisabati_backup_${new Date().toISOString().split('T')[0]}.json`);
-      document.body.appendChild(downloadAnchor);
-      downloadAnchor.click();
-      downloadAnchor.remove();
-
-      showToast('تم تصدير نسخة احتياطية محلية مشفرة (JSON V3) بنجاح', 'success');
-    } catch (e: any) {
-      showToast(e?.message || 'فشل تصدير البيانات', 'error');
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  // Local JSON Backup Import & Restore
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const content = event.target?.result as string;
-        const parsed = JSON.parse(content);
-        if (!parsed || typeof parsed !== 'object') {
-          showToast('ملف النسخة الاحتياطية غير صالح', 'error');
-          return;
-        }
-        setPendingRestorePayload(parsed);
-        setShowRestoreModal(true);
-      } catch (err: any) {
-        showToast('فشل قراءة ملف النسخة الاحتياطية (تنسيق JSON تالف)', 'error');
-      } finally {
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const handleConfirmRestore = async () => {
-    if (!pendingRestorePayload) return;
-    setIsRestoring(true);
-    try {
-      await backupService.restoreFromPayload(pendingRestorePayload, 'replace');
-      await fetchAccounts();
-      await fetchRecentTransactions();
-      setShowRestoreModal(false);
-      setPendingRestorePayload(null);
-      showToast('تمت استعادة النسخة الاحتياطية بنجاح وتدقيق كافة الأرصدة', 'success');
+      await updateSettings({
+        businessName: businessName.trim(),
+        ownerName: ownerName.trim(),
+        phone: phone.trim(),
+        businessAddress: businessAddress.trim(),
+      });
+      showToast('تم حفظ بيانات المنشأة بنجاح', 'success');
     } catch (err: any) {
-      showToast(err?.message || 'فشلت عملية استعادة النسخة الاحتياطية', 'error');
+      showToast('فشل حفظ بيانات المنشأة', 'error');
     } finally {
-      setIsRestoring(false);
+      setIsSavingBusiness(false);
     }
   };
 
-  // Local Database Management
-  const handleReSeedData = async () => {
-    setIsResetting(true);
-    try {
-      await seedInitialMockData(true);
-      await fetchAccounts();
-      await fetchRecentTransactions();
-      showToast('تم إعادة تحميل البيانات التجريبية الافتراضية بنجاح', 'success');
-    } catch (e) {
-      showToast('فشل إعادة التعيين', 'error');
-    } finally {
-      setIsResetting(false);
-    }
+  const handleThemeChange = async (newTheme: ThemeMode) => {
+    await setTheme(newTheme);
+    showToast('تم تحديث نمط المظهر', 'success');
   };
 
-  const handleClearDatabase = async () => {
-    try {
-      await db.transactions.clear();
-      await db.accounts.clear();
-      await fetchAccounts();
-      await fetchRecentTransactions();
-      setShowClearConfirm(false);
-      showToast('تم مسح جميع البيانات بنجاح', 'info');
-    } catch (e) {
-      showToast('فشل مسح البيانات', 'error');
-    }
+  const handleLanguageChange = async (newLang: LanguageCode) => {
+    await changeLanguage(newLang);
+    showToast(newLang === 'ar' ? 'تم ضبط اللغة إلى العربية' : 'Language set to English', 'success');
   };
 
-  // Test Suite Runners
+  const handleCurrencyChange = async (newCurrency: CurrencyCode) => {
+    await setCurrency(newCurrency);
+    showToast('تم تحديث العملة الرئيسية للنظام', 'success');
+  };
+
+  // Test Suite Triggers
   const handleRunTests = async () => {
     setIsRunningTests(true);
     try {
       const result = await runFinancialEngineTests();
       setTestSuiteResult(result);
-      await fetchAccounts();
-      await fetchRecentTransactions();
-      showToast(`اكتملت الاختبارات: ${result.passed} نجح من أصل ${result.total}`, result.failed === 0 ? 'success' : 'info');
+      showToast(
+        `اكتملت الاختبارات: ${result.passed} نجح من أصل ${result.total}`,
+        result.failed === 0 ? 'success' : 'info'
+      );
     } catch (e: any) {
       showToast('فشل تشغيل حزمة الاختبارات', 'error');
     } finally {
@@ -260,7 +151,10 @@ export const SettingsPage: React.FC = () => {
     try {
       const result = await ReportsTestSuite.runAllTests();
       setReportTestSuiteResult(result);
-      showToast(`اكتملت اختبارات التقارير: ${result.passedCount} نجح من أصل ${result.totalCount}`, result.failedCount === 0 ? 'success' : 'info');
+      showToast(
+        `اكتملت اختبارات التقارير: ${result.passedCount} نجح من أصل ${result.totalCount}`,
+        result.failedCount === 0 ? 'success' : 'info'
+      );
     } catch (e: any) {
       showToast('فشل تشغيل اختبارات التقارير', 'error');
     } finally {
@@ -273,7 +167,10 @@ export const SettingsPage: React.FC = () => {
     try {
       const result = await CloudSyncTestSuite.runAllTests();
       setCloudSyncTestSuiteResult(result);
-      showToast(`اكتملت اختبارات المزامنة: ${result.passedCount} نجح من أصل ${result.totalCount}`, result.failedCount === 0 ? 'success' : 'info');
+      showToast(
+        `اكتملت اختبارات المزامنة: ${result.passedCount} نجح من أصل ${result.totalCount}`,
+        result.failedCount === 0 ? 'success' : 'info'
+      );
     } catch (e: any) {
       showToast('فشل تشغيل اختبارات المزامنة والسحابة', 'error');
     } finally {
@@ -286,7 +183,10 @@ export const SettingsPage: React.FC = () => {
     try {
       const result = await MessagingTestSuite.runAllTests();
       setMessagingTestSuiteResult(result);
-      showToast(`اكتملت اختبارات الرسائل: ${result.passedCount} نجح من أصل ${result.totalCount}`, result.failedCount === 0 ? 'success' : 'info');
+      showToast(
+        `اكتملت اختبارات الرسائل: ${result.passedCount} نجح من أصل ${result.totalCount}`,
+        result.failedCount === 0 ? 'success' : 'info'
+      );
     } catch (e: any) {
       showToast('فشل تشغيل اختبارات الرسائل والتنبيهات', 'error');
     } finally {
@@ -299,7 +199,10 @@ export const SettingsPage: React.FC = () => {
     try {
       const result = await AITestSuite.runAllTests();
       setAiTestSuiteResult(result);
-      showToast(`اكتملت اختبارات المساعد الذكي: ${result.passedCount} نجح من أصل ${result.totalCount}`, result.failedCount === 0 ? 'success' : 'info');
+      showToast(
+        `اكتملت اختبارات المساعد الذكي: ${result.passedCount} نجح من أصل ${result.totalCount}`,
+        result.failedCount === 0 ? 'success' : 'info'
+      );
     } catch (e: any) {
       showToast('فشل تشغيل حزمة اختبارات الذكاء الاصطناعي', 'error');
     } finally {
@@ -312,7 +215,10 @@ export const SettingsPage: React.FC = () => {
     try {
       const result = await OCRTestSuite.runAll();
       setOcrTestSuiteResult(result);
-      showToast(`اكتملت اختبارات OCR: ${result.passed} نجح من أصل ${result.total}`, result.failed === 0 ? 'success' : 'info');
+      showToast(
+        `اكتملت اختبارات OCR: ${result.passed} نجح من أصل ${result.total}`,
+        result.failed === 0 ? 'success' : 'info'
+      );
     } catch (e: any) {
       showToast('فشل تشغيل اختبارات OCR', 'error');
     } finally {
@@ -329,11 +235,91 @@ export const SettingsPage: React.FC = () => {
           {t('settings.title')}
         </h2>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-          إعدادات النظام، العملة، سلامة الحسابات، النسخ الاحتياطي، وإدارة البيانات المحلية
+          مركز التحكم الشامل بالإعدادات، العملة، الأمان، المزامنة، الفريق، وإدارة البيانات
         </p>
       </div>
 
-      {/* SECTION A: المظهر واللغة (Appearance & Language) */}
+      {/* 1. إعدادات المنشأة وبيانات العمل (Business Info) */}
+      <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
+        <div>
+          <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <Store className="w-4 h-4 text-teal-600" />
+            <span>بيانات المنشأة والنشاط التجاري</span>
+          </h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            تظهر هذه البيانات في ترويسة التقارير، كشوفات الحساب، ومطبوعات الـ PDF
+          </p>
+        </div>
+
+        <form onSubmit={handleSaveBusinessInfo} className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                اسم المنشأة / المحل
+              </label>
+              <input
+                type="text"
+                value={businessName}
+                onChange={(e) => setBusinessName(e.target.value)}
+                placeholder="مثال: مؤسسة الأمل للتجارة"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-teal-500 min-h-[44px]"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                اسم المالك / المسؤول
+              </label>
+              <input
+                type="text"
+                value={ownerName}
+                onChange={(e) => setOwnerName(e.target.value)}
+                placeholder="مثال: أحمد محمد"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-teal-500 min-h-[44px]"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                رقم الهاتف / للتواصل
+              </label>
+              <input
+                type="text"
+                dir="ltr"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+967 770 000 000"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-teal-500 min-h-[44px] text-end font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                العنوان / المدينة
+              </label>
+              <input
+                type="text"
+                value={businessAddress}
+                onChange={(e) => setBusinessAddress(e.target.value)}
+                placeholder="مثال: صنعاء - شارع الزبيري"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-teal-500 min-h-[44px]"
+              />
+            </div>
+          </div>
+
+          <div className="pt-2 flex justify-end">
+            <button
+              type="submit"
+              disabled={isSavingBusiness}
+              className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs transition shadow-xs min-h-[44px] disabled:opacity-50"
+            >
+              {isSavingBusiness ? 'جارٍ الحفظ...' : 'حفظ بيانات المنشأة'}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {/* 2. المظهر ولغة الواجهة (Appearance & Language) */}
       <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
         <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
           <Palette className="w-4 h-4 text-teal-600" />
@@ -397,7 +383,7 @@ export const SettingsPage: React.FC = () => {
         </div>
       </section>
 
-      {/* SECTION B: الإعدادات المالية (Financial Settings - Currency) */}
+      {/* 3. العملة الرئيسية للنظام (Base Currency) */}
       <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
         <div>
           <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
@@ -433,170 +419,182 @@ export const SettingsPage: React.FC = () => {
         </div>
       </section>
 
-      {/* SECTION C: سلامة البيانات والحسابات (Data Integrity & Balance Safety) */}
+      {/* 4. الأمان وقفل التطبيق (Security & Privacy) */}
       <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
         <div>
           <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
             <Shield className="w-4 h-4 text-teal-600" />
-            سلامة السجلات وتكامل الأرصدة
+            <span>الأمان وحماية السجلات</span>
           </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-            المعاملات المالية هي المصدر الأساسي والوحيد للحقيقة. يمكنك تدقيق سجلاتك للتأكد من تطابق مجموع الحركات مع الأرصدة الحالية.
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            بياناتك مشفرة ومخزنة محلياً في جهازك بدون أي مشاركة خارجية
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2.5 pt-1">
-          {/* Integrity Check Button */}
-          <button
-            type="button"
-            onClick={handleCheckIntegrity}
-            disabled={isCheckingIntegrity}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition min-h-[42px] disabled:opacity-50"
-          >
-            <FileCheck className={`w-4 h-4 ${isCheckingIntegrity ? 'animate-pulse' : ''}`} />
-            <span>{isCheckingIntegrity ? 'جارٍ التدقيق...' : 'فحص تكامل وسلامة السجلات (Integrity Check)'}</span>
-          </button>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
+            <span className="font-bold text-slate-900 dark:text-slate-100 block">
+              🔒 تخزين محلي معزول 100%
+            </span>
+            <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+              جميع العمليات والأرصدة محفوظة داخل IndexedDB المحلي على جهازك ولا تمر عبر خوادم مركزية غير مصرح بها.
+            </p>
+          </div>
 
-          {/* Full Recalculation Button */}
-          <button
-            type="button"
-            onClick={handleRecalculateAll}
-            disabled={isRecalculating}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-teal-300 dark:border-teal-700 bg-teal-50/50 dark:bg-teal-950/20 text-teal-800 dark:text-teal-200 text-xs font-bold hover:bg-teal-100 dark:hover:bg-slate-800 transition min-h-[42px] disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${isRecalculating ? 'animate-spin' : ''}`} />
-            <span>{isRecalculating ? 'جارٍ إعادة الاحتساب...' : 'إعادة احتساب كافة الأرصدة (Recalculate All)'}</span>
-          </button>
+          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
+            <span className="font-bold text-slate-900 dark:text-slate-100 block">
+              🛡️ تشفير SHA-256 للنسخ
+            </span>
+            <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+              تحتوي كل نسخة احتياطية على توقيع رقمي مشفر يمنع التلاعب بالسجلات المالية قبل الاستعادة.
+            </p>
+          </div>
         </div>
 
-        {/* Integrity Report Card */}
-        {integrityReport && (
-          <div
-            className={`p-4 rounded-2xl border text-xs space-y-2 mt-2 ${
-              integrityReport.valid
-                ? 'bg-emerald-50/60 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-100'
-                : 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-100'
-            }`}
-          >
-            <div className="flex items-center gap-2 font-bold text-sm">
-              {integrityReport.valid ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-amber-600" />
-              )}
-              <span>
-                {integrityReport.valid
-                  ? 'جميع الحسابات والمعاملات المالية سليمة ومتطابقة 100%'
-                  : `تم العثور على ${integrityReport.inconsistencies.length} ملاحظة تحتاج إلى تدقيق`}
+        <div className="p-3.5 rounded-2xl bg-teal-50/60 dark:bg-teal-950/30 border border-teal-200/80 dark:border-teal-900/60 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-teal-600 shrink-0" />
+            <div>
+              <span className="font-bold text-slate-900 dark:text-slate-100 block">
+                قفل التطبيق برمز PIN أو البصمة
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                ميزة اختيارية لحماية الخصوصية عند فتح التطبيق
               </span>
             </div>
-
-            <div className="text-[11px] opacity-80">
-              تم فحص {formatNumber(integrityReport.totalAccountsChecked)} حساب و {formatNumber(integrityReport.totalTransactionsChecked)} عملية مالية مسجلة.
-            </div>
-
-            {integrityReport.inconsistencies.length > 0 && (
-              <ul className="list-disc list-inside space-y-1 pt-1 text-[11px]">
-                {integrityReport.inconsistencies.map((item, idx) => (
-                  <li key={idx}>
-                    حساب {item.accountName}: الفرق المسجل ({formatNumber(item.difference)})
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
-        )}
-      </section>
-
-      {/* SECTION D: الإشعارات والتنبيهات والأتمتة (Notifications & Automation) */}
-      <MessagingSettingsSection />
-
-      {/* SECTION E: النسخ الاحتياطي والمزامنة (Backup & Cloud Sync) */}
-      <CloudBackupSection />
-
-      {/* Local JSON Backup Section */}
-      <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <Cloud className="w-4 h-4 text-teal-600" />
-            النسخ الاحتياطي المحلي (JSON V3)
-          </h3>
-          <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300">
-            تشفير SHA-256
+          <span className="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] font-bold">
+            ميزة المرحلة 11
           </span>
         </div>
+      </section>
 
-        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-          يمكنك تصدير نسخة احتياطية كاملة محلياً أو استعادة نسخة سابقة. تخضع جميع النسخ للتحقق الصارم من التشفير ولقطة أمان قبل التطبيق.
-        </p>
-
-        <div className="pt-1 flex flex-wrap gap-2.5">
-          {/* Export JSON */}
+      {/* 5. إدارة الفريق والصلاحيات (Users & Roles) */}
+      <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <Users className="w-4 h-4 text-teal-600" />
+              <span>إدارة الفريق والصلاحيات (Team & Roles)</span>
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              التحكم في أدوار المستخدمين وسجلات التدقيق المحاسبي (RBAC)
+            </p>
+          </div>
           <button
             type="button"
-            onClick={handleExportJSON}
-            disabled={isExporting}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800/60 text-teal-700 dark:text-teal-300 text-xs font-bold hover:bg-teal-100 dark:hover:bg-teal-900/60 transition min-h-[42px] disabled:opacity-50"
+            onClick={() => navigate('/team')}
+            className="px-3.5 py-2 rounded-xl bg-teal-50 dark:bg-teal-950/50 border border-teal-200 dark:border-teal-800 text-teal-700 dark:text-teal-300 text-xs font-bold hover:bg-teal-100 dark:hover:bg-teal-900/60 transition flex items-center gap-1.5 min-h-[40px]"
           >
-            <Download className="w-4 h-4 text-teal-600" />
-            <span>{isExporting ? 'جارٍ التصدير...' : 'تصدير نسخة احتياطية محلية (JSON V3)'}</span>
+            <span>فتح شاشة الفريق</span>
+            <ExternalLink className="w-3.5 h-3.5" />
           </button>
+        </div>
 
-          {/* Import JSON */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition min-h-[42px]"
-          >
-            <Upload className="w-4 h-4 text-teal-600" />
-            <span>استيراد واستعادة نسخة احتياطية (JSON)</span>
-          </button>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json"
-            className="hidden"
-            onChange={handleFileSelect}
-          />
+        <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs">
+          <div>
+            <span className="font-bold text-slate-900 dark:text-slate-100 block">
+              دورك الحالي: المدير العام (Admin)
+            </span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400">
+              صلاحيات كاملة لإدارة الحسابات، التعديل المالي، وإجراء المزامنة والنسخ
+            </span>
+          </div>
+          <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">
+            نشط
+          </span>
         </div>
       </section>
 
-      {/* SECTION F: إدارة البيانات المحلية (Local Database Management) */}
+      {/* 6. التنبيهات والأتمتة والرسائل (Notifications & Automation) */}
+      <MessagingSettingsSection />
+
+      {/* 7. مركز التحكم بالبيانات والنسخ الاحتياطي والمزامنة (Data Control Center) */}
+      <DataControlCenter />
+
+      {/* 8. التكامل والخصوصية (Integrations & Privacy) */}
       <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
         <div>
           <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <Database className="w-4 h-4 text-teal-600" />
-            إدارة قاعدة البيانات المحلية (IndexedDB)
+            <Cloud className="w-4 h-4 text-teal-600" />
+            <span>التكامل والخصوصية (Integrations & Privacy)</span>
           </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            إعادة تعيين البيانات للتجربة أو تفريغ السجلات للبدء من الصفر
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            السياسات والضوابط الصارمة لخصوصية السجلات المالية
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2.5">
-          <button
-            type="button"
-            onClick={handleReSeedData}
-            disabled={isResetting}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition min-h-[42px] disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${isResetting ? 'animate-spin' : ''}`} />
-            <span>إعادة تحميل البيانات التجريبية الافتراضية</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowClearConfirm(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/70 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs font-bold hover:bg-rose-100 dark:hover:bg-rose-900/40 transition min-h-[42px]"
-          >
-            <Trash2 className="w-4 h-4" />
-            <span>مسح جميع البيانات والبدء من الصفر</span>
-          </button>
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs space-y-2 text-slate-600 dark:text-slate-300">
+          <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100">
+            <ShieldAlert className="w-4 h-4 text-teal-600" />
+            <span>ميثاق النزاهة والخصوصية المحاسبية:</span>
+          </div>
+          <ul className="list-disc list-inside space-y-1 text-[11px] leading-relaxed">
+            <li>التطبيق لا يحتوي على أي أكواد تتبع أو إعلانات تجارية أو تحليلات سرية.</li>
+            <li>لا يتم إرسال أي معاملات أو مبالغ لنماذج الذكاء الاصطناعي دون طلب وموافقة صريحة.</li>
+            <li>تظل بيانات Google Drive في مساحتك الشخصية المعزولة ولا يمكن للمطور أو خوادم وسيطة قراءتها.</li>
+          </ul>
         </div>
       </section>
 
-      {/* SECTION G: أدوات التشخيص والصيانة البرمجية المتقدمة (Diagnostic & Dev Tools) */}
+      {/* 9. المساعدة والدعم ومعلومات الإصدار (Help & Support) */}
+      <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <HelpCircle className="w-4 h-4 text-teal-600" />
+              <span>المساعدة والدعم ومعلومات الإصدار</span>
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              إرشادات الاستخدام والأسئلة الأكثر شيوعاً
+            </p>
+          </div>
+          <span className="text-xs font-bold font-mono px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+            v1.0.0
+          </span>
+        </div>
+
+        {/* FAQ list */}
+        <div className="space-y-2">
+          {[
+            {
+              q: 'كيف تعمل المزامنة في حال انقطاع الإنترنت؟',
+              a: 'يعمل التطبيق بشكل كامل وبأعلى كفاءة في وضع عدم الاتصال (Offline-First). تسجل جميع المعاملات في طابور المزامنة المحلي وتنتقل تلقائياً إلى السحابة فور عودة الاتصال دون أي تدخل منك.',
+            },
+            {
+              q: 'كيف يتعامل النظام مع تعارض التعديل من جهازين مختلفين؟',
+              a: 'عند تعديل نفس الحساب أو المعاملة على جهازين دون اتصال، يرصد محرك المزامنة التعارض تلقائياً ويقوم بعزله في مركز التحكم ليمنحك خيار اعتماد النسخة المحلية أو نسخة السحابة بأمان محاسبي تام.',
+            },
+            {
+              q: 'هل يمكنني استعادة بياناتي إذا قمت بتغيير هاتفي؟',
+              a: 'نعم، بكل سهولة. يمكنك ربط حساب Google Drive في الهاتف الجديد واستعادة أحدث نسخة احتياطية بضغطة زر واحدة، أو تصدير ملف JSON مشفر من الهاتف القديم واستيراده مباشرة.',
+            },
+          ].map((item, idx) => (
+            <div
+              key={idx}
+              className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 overflow-hidden"
+            >
+              <button
+                type="button"
+                onClick={() => setExpandedFaq(expandedFaq === idx ? null : idx)}
+                className="w-full p-3.5 flex items-center justify-between text-start text-xs font-bold text-slate-800 dark:text-slate-200 hover:bg-slate-100/60 dark:hover:bg-slate-800 transition min-h-[44px]"
+              >
+                <span>{item.q}</span>
+                <span className="text-slate-400">
+                  {expandedFaq === idx ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </span>
+              </button>
+              {expandedFaq === idx && (
+                <div className="p-3.5 pt-0 text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed border-t border-slate-100 dark:border-slate-800">
+                  {item.a}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* 10. أدوات التشخيص والصيانة البرمجية المتقدمة (Diagnostic & Dev Tools) */}
       <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs">
         <button
           type="button"
@@ -631,7 +629,6 @@ export const SettingsPage: React.FC = () => {
             </p>
 
             <div className="flex flex-wrap gap-2">
-              {/* Financial Engine Tests */}
               <button
                 type="button"
                 onClick={handleRunTests}
@@ -642,7 +639,6 @@ export const SettingsPage: React.FC = () => {
                 <span>{isRunningTests ? 'جارٍ الفحص...' : 'المحرك المالي (12 اختبار)'}</span>
               </button>
 
-              {/* Reports & Statements Tests */}
               <button
                 type="button"
                 onClick={handleRunReportTests}
@@ -653,7 +649,6 @@ export const SettingsPage: React.FC = () => {
                 <span>{isRunningReportTests ? 'جارٍ الفحص...' : 'التقارير وExcel/PDF (7 اختبارات)'}</span>
               </button>
 
-              {/* Cloud Sync Tests */}
               <button
                 type="button"
                 onClick={handleRunCloudSyncTests}
@@ -664,7 +659,6 @@ export const SettingsPage: React.FC = () => {
                 <span>{isRunningCloudSyncTests ? 'جارٍ الفحص...' : 'المزامنة والسحابة (7 اختبارات)'}</span>
               </button>
 
-              {/* Messaging Tests */}
               <button
                 type="button"
                 onClick={handleRunMessagingTests}
@@ -675,7 +669,6 @@ export const SettingsPage: React.FC = () => {
                 <span>{isRunningMessagingTests ? 'جارٍ الفحص...' : 'الرسائل والتنبيهات (20 اختبار)'}</span>
               </button>
 
-              {/* AI Tests */}
               <button
                 type="button"
                 onClick={handleRunAITests}
@@ -686,7 +679,6 @@ export const SettingsPage: React.FC = () => {
                 <span>{isRunningAITests ? 'جارٍ الفحص...' : 'المساعد الذكي (24 اختبار)'}</span>
               </button>
 
-              {/* OCR Tests */}
               <button
                 type="button"
                 onClick={handleRunOCRTests}
@@ -769,124 +761,6 @@ export const SettingsPage: React.FC = () => {
           </div>
         )}
       </section>
-
-      {/* Restore Confirmation Modal */}
-      {showRestoreModal && pendingRestorePayload && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-teal-100 dark:bg-teal-950 text-teal-600 flex items-center justify-center mx-auto">
-              <Upload className="w-6 h-6" />
-            </div>
-
-            <div className="text-center">
-              <h3 className="text-base font-black text-slate-900 dark:text-slate-100">
-                تأكيد استعادة النسخة الاحتياطية
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                سيتم استبدال البيانات المحلية بالنسخة المستوردة مع أخذ لقطة أمان احتياطية تلقائياً.
-              </p>
-            </div>
-
-            {/* Payload Metadata Card */}
-            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs space-y-1.5">
-              <div className="flex justify-between">
-                <span className="text-slate-500">تاريخ النسخة:</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">
-                  {pendingRestorePayload.metadata?.createdAt
-                    ? formatDate(pendingRestorePayload.metadata.createdAt, 'full')
-                    : 'غير محدد'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">إصدار المخطط:</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">
-                  V{pendingRestorePayload.metadata?.backupSchemaVersion || 1}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">عدد الحسابات:</span>
-                <span className="font-bold text-emerald-600 font-mono">
-                  {formatNumber(pendingRestorePayload.accounts?.length || 0)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">عدد المعاملات:</span>
-                <span className="font-bold text-teal-600 font-mono">
-                  {formatNumber(pendingRestorePayload.transactions?.length || 0)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">حالة التجزئة (SHA-256):</span>
-                <span className="font-bold text-teal-600">
-                  {pendingRestorePayload.metadata?.integrityHash ? 'تجزئة مشفرة مؤكدة' : 'بدون تجزئة'}
-                </span>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800/60 text-[11px] text-teal-800 dark:text-teal-200">
-              🛡️ <strong>حماية أمنية:</strong> يقوم النظام بحفظ لقطة أمان مسبقة وتدقيق سلامة الأرصدة تلقائياً قبل تطبيق الاستعادة.
-            </div>
-
-            <div className="flex items-center gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowRestoreModal(false);
-                  setPendingRestorePayload(null);
-                }}
-                disabled={isRestoring}
-                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
-              >
-                إلغاء
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmRestore}
-                disabled={isRestoring}
-                className="flex-1 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition disabled:opacity-50"
-              >
-                {isRestoring ? 'جارٍ الاستعادة والتحقق...' : 'تأكيد واستعادة البيانات'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Clear Database Dialog */}
-      {showClearConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 text-center space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
-              <AlertCircle className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-1">
-                تأكيد مسح البيانات
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                هل أنت متأكد من مسح جميع الحسابات والعمليات؟ هذا الإجراء نهائي ولا يمكن التراجع عنه.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowClearConfirm(false)}
-                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
-              >
-                إلغاء
-              </button>
-              <button
-                type="button"
-                onClick={handleClearDatabase}
-                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition"
-              >
-                مسح الكل
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

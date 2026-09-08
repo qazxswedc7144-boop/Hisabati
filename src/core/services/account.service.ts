@@ -50,6 +50,9 @@ export class AccountService {
 
     await db.accounts.add(newAccount);
 
+    // Safe offline-first sync mutation enqueueing
+    await this.enqueueSyncMutation('account', id, 'CREATE', newAccount, id);
+
     // If there is an initial balance, record it as a first transaction through the engine
     if (dto.initialBalance && dto.initialBalance > 0) {
       const type = dto.initialBalanceType === 'owed_by_me' ? 'credit' : 'debit';
@@ -89,6 +92,7 @@ export class AccountService {
     };
 
     await db.accounts.update(id, updated);
+    await this.enqueueSyncMutation('account', id, 'UPDATE', updated, id);
     return await this.getById(id);
   }
 
@@ -97,6 +101,7 @@ export class AccountService {
       archived: true,
       updatedAt: new Date().toISOString(),
     });
+    await this.enqueueSyncMutation('account', id, 'UPDATE', { archived: true }, id);
     return await this.getById(id);
   }
 
@@ -105,6 +110,7 @@ export class AccountService {
       archived: false,
       updatedAt: new Date().toISOString(),
     });
+    await this.enqueueSyncMutation('account', id, 'UPDATE', { archived: false }, id);
     return await this.getById(id);
   }
 
@@ -125,6 +131,9 @@ export class AccountService {
       await db.transactions.where('accountId').equals(id).delete();
       await db.accounts.delete(id);
     });
+
+    // Safe offline-first sync mutation enqueueing (tombstone)
+    await this.enqueueSyncMutation('account', id, 'DELETE', { id }, id);
 
     return true;
   }
@@ -159,6 +168,25 @@ export class AccountService {
     }
 
     return list;
+  }
+
+  /**
+   * Safe offline-first sync mutation enqueueing.
+   * Uses dynamic import to avoid circular dependency risks at module load time.
+   */
+  private async enqueueSyncMutation(
+    entityType: 'account',
+    entityId: string,
+    operation: 'CREATE' | 'UPDATE' | 'DELETE',
+    payload?: any,
+    operationId?: string
+  ): Promise<void> {
+    try {
+      const { syncEngine } = await import('./syncEngine.service');
+      await syncEngine.enqueueMutation(entityType, entityId, operation, payload, operationId);
+    } catch {
+      // Non-blocking safeguard
+    }
   }
 }
 

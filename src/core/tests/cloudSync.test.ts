@@ -1,12 +1,9 @@
-import { backupService } from '../services/backup.service';
 import { syncEngine } from '../services/syncEngine.service';
 import { googleDriveService } from '../services/googleDrive.service';
 import { transactionEngine } from '../services/transactionEngine.service';
 import { accountRepository } from '../repositories/account.repository';
 import { integrityService } from '../services/integrity.service';
 import { db } from '../database/db';
-import { calculateSHA256 } from '../utils/crypto';
-import { BACKUP_SCHEMA_VERSION } from '../database/schemaVersion';
 
 export interface TestResult {
   id: string;
@@ -25,211 +22,554 @@ export class CloudSyncTestSuite {
   }> {
     const results: TestResult[] = [];
 
-    // Test fixtures
-    const testAccIdA = `test_sync_a_${Date.now()}`;
-    const testAccNameA = `حساب مزامنة أ ${Date.now()}`;
-    const testAccIdB = `test_sync_b_${Date.now()}`;
-    const testAccNameB = `حساب مزامنة ب ${Date.now()}`;
+    // Save original googleDriveService methods to restore after all tests
+    const origListFiles = googleDriveService.listFiles.bind(googleDriveService);
+    const origDownload = googleDriveService.downloadJsonFile.bind(googleDriveService);
+    const origUpload = googleDriveService.uploadJsonFile.bind(googleDriveService);
+    const origUpdate = googleDriveService.updateJsonFile.bind(googleDriveService);
+    const origIsConnected = googleDriveService.isConnected.bind(googleDriveService);
+
+    // Mock in-memory cloud storage for deterministic tests
+    let inMemoryCloudFile: any = null;
+
+    const setupMocks = () => {
+      googleDriveService.isConnected = () => true;
+      googleDriveService.listFiles = async () => {
+        if (inMemoryCloudFile) {
+          return [{
+            id: 'file_cloud_sync_1',
+            name: 'hisabati_sync_state.json',
+            mimeType: 'application/json',
+            createdTime: new Date().toISOString(),
+            modifiedTime: new Date().toISOString(),
+          }];
+        }
+        return [];
+      };
+      googleDriveService.downloadJsonFile = async () => inMemoryCloudFile;
+      googleDriveService.uploadJsonFile = async (name: string, content: any) => {
+        inMemoryCloudFile = JSON.parse(JSON.stringify(content));
+        return { id: 'file_cloud_sync_1', name };
+      };
+      googleDriveService.updateJsonFile = async (id: string, name: string, content: any) => {
+        inMemoryCloudFile = JSON.parse(JSON.stringify(content));
+        return { id, name };
+      };
+    };
+
+    setupMocks();
 
     try {
-      // Create initial local accounts & transactions
-      const accA = await accountRepository.create({
-        name: testAccNameA,
-        phone: '0501112222',
-        initialBalance: 1000,
-        initialBalanceType: 'owed_to_me',
-      });
-
-      const trx1 = await transactionEngine.createTransaction({
-        accountId: accA.id,
-        type: 'debit',
-        amount: 500,
-        date: '2026-09-01',
-        note: 'عملية محلية 1',
-        operationId: `op_test_${accA.id}_1`,
-      });
-
-      // TEST 1: Generate Validated Snapshot & SHA-256 Checksum
+      // =========================================================================
+      // SYNC-01: Offline transaction is stored locally
+      // =========================================================================
       await this.runTest(
         results,
         'SYNC-01',
-        'توليد نسخة احتياطية محلية متوافقة وحساب تجزئة الأمان SHA-256',
+        'تخزين المعاملة محلياً عند انقطاع الاتصال (Offline Transaction Stored Locally)',
         async () => {
-          const payload = await backupService.generateBackupPayload();
-          if (!payload.metadata.integrityHash || payload.metadata.integrityHash.length !== 64) {
-            throw new Error('فشل توليد تجزئة SHA-256 بطول 64 حرفاً');
+          const acc = await accountRepository.create({
+            name: `حساب اختبار أوفلاين ${Date.now()}`,
+            initialBalance: 0,
+          });
+
+          const trx = await transactionEngine.createTransaction({
+            accountId: acc.id,
+            type: 'debit',
+            amount: 1500,
+            date: '2026-09-08',
+            note: 'معاملة أوفلاين',
+            operationId: `op_sync01_${Date.now()}`,
+          });
+
+          const storedTrx = await db.transactions.get(trx.id);
+          if (!storedTrx) throw new Error('المعاملة غير مخزنة في قاعدة البيانات المحلية');
+          if (storedTrx.amount !== 1500 || storedTrx.amountMinor === undefined) {
+            throw new Error(`قيم المبالغ غير متطابقة محلياً: amount=${storedTrx.amount}`);
           }
-          if (payload.metadata.backupSchemaVersion !== BACKUP_SCHEMA_VERSION) {
-            throw new Error(`إصدار المخطط غير صحيح: ${payload.metadata.backupSchemaVersion}`);
+
+          const storedAcc = await db.accounts.get(acc.id);
+          if (!storedAcc || storedAcc.currentBalance !== 1500) {
+            throw new Error(`رصيد الحساب غير محدث محلياً: balance=${storedAcc?.currentBalance}`);
           }
-          if (payload.accounts.length === 0 || payload.transactions.length === 0) {
-            throw new Error('النسخة الاحتياطية لا تحتوي على السجلات المخزنة');
-          }
+
+          // Check that mutation is enqueued in syncQueue
+          const pending = await db.syncQueue
+            .where('operationId')
+            .equals(trx.operationId!)
+            .first();
+
+          if (!pending) throw new Error('لم يتم تسجيل العملية في طابور المزامنة syncQueue');
+          if (pending.status !== 'pending') throw new Error(`حالة طابور المزامنة غير صحيحة: ${pending.status}`);
         }
       );
 
-      // TEST 2: Validate Backup Integrity & Reject Corrupted Payload
+      // =========================================================================
+      // SYNC-02: Pending operation survives reload
+      // =========================================================================
       await this.runTest(
         results,
         'SYNC-02',
-        'التحقق من صحة النسخة واكتشاف وتطويق أي ملف مشوه أو معدل يدوياً',
+        'بقاء العمليات المعلقة في طابور المزامنة عبر إعادة التشغيل (Survives Reload)',
         async () => {
-          const validPayload = await backupService.generateBackupPayload();
-          const validRes = await backupService.validateBackupPayload(validPayload);
-          if (!validRes.isValid) {
-            throw new Error(`فشل التحقق من النسخة الصالحة: ${validRes.error}`);
-          }
+          const testOpId = `op_survive_${Date.now()}`;
+          await syncEngine.enqueueMutation(
+            'transaction',
+            'trx_dummy_reload',
+            'CREATE',
+            { id: 'trx_dummy_reload', amount: 350 },
+            testOpId
+          );
 
-          // Simulate malicious or corrupted data tampering
-          const corruptedPayload = JSON.parse(JSON.stringify(validPayload));
-          if (corruptedPayload.transactions.length > 0) {
-            corruptedPayload.transactions[0].amount = 9999999; // Modified amount without recalculating SHA-256
-          }
-          const corruptedRes = await backupService.validateBackupPayload(corruptedPayload);
-          if (corruptedRes.isValid) {
-            throw new Error('فشل النظام في اكتشاف التعديل غير المصرح به على البيانات!');
-          }
+          // Direct query on IndexedDB simulates querying fresh table after restart
+          const item = await db.syncQueue.where('operationId').equals(testOpId).first();
+          if (!item) throw new Error('العملية المعلقة لم تدم في قاعدة البيانات بعد محاكاة إعادة التشغيل');
+          if (item.status !== 'pending') throw new Error(`حالة العملية المعلقة غير صحيحة: ${item.status}`);
+          if (item.entityId !== 'trx_dummy_reload') throw new Error('معرف الكيان غير متطابق');
+
+          const pendingCount = await syncEngine.getPendingCount();
+          if (pendingCount <= 0) throw new Error('العدد الإجمالي للعمليات المعلقة غير صحيح');
         }
       );
 
-      // TEST 3: Pre-Restore Safety Snapshot & Idempotent Restore
+      // =========================================================================
+      // SYNC-03: Retry does not duplicate transaction
+      // =========================================================================
       await this.runTest(
         results,
         'SYNC-03',
-        'إنشاء نسخة أمان تلقائية قبل الاستعادة وضمان عدم تكرار العمليات',
+        'عدم تكرار المعاملات عند إعادة المحاولة (Retry Does Not Duplicate)',
         async () => {
-          const snapshot = await backupService.generateBackupPayload();
-          await backupService.createPreRestoreSafetyBackup();
+          const acc = await accountRepository.create({
+            name: `حساب إعادة محاولة ${Date.now()}`,
+          });
 
-          // Restore from snapshot
-          const restoreRes = await backupService.restoreFromPayload(snapshot, 'replace');
-          if (!restoreRes.success) {
-            throw new Error('فشلت عملية الاستعادة المباشرة');
-          }
+          const opId = `op_retry_test_${Date.now()}`;
+          await transactionEngine.createTransaction({
+            accountId: acc.id,
+            type: 'debit',
+            amount: 770,
+            date: '2026-09-08',
+            operationId: opId,
+          });
 
-          const audit = await integrityService.auditIntegrity();
-          if (!audit.healthy) {
-            throw new Error('حدث عدم اتساق مالي بعد الاستعادة');
+          // Simulate network failure on first try
+          let attempt = 0;
+          const originalUpload = googleDriveService.uploadJsonFile;
+          try {
+            googleDriveService.uploadJsonFile = async (name: string, content: any) => {
+              attempt++;
+              if (attempt === 1) {
+                throw new Error('فشل مؤقت في الشبكة');
+              }
+              inMemoryCloudFile = JSON.parse(JSON.stringify(content));
+              return { id: 'file_cloud_sync_1', name };
+            };
+
+            try {
+              await syncEngine.performFullSync();
+            } catch {
+              // Expected failure on attempt 1
+            }
+
+            // Verify queue item updated retryCount
+            const queueItem = await db.syncQueue.where('operationId').equals(opId).first();
+            if (queueItem && queueItem.retryCount < 1) {
+              throw new Error('لم يتم تحديث عدد مرات المحاولة retryCount');
+            }
+
+            // Second try: upload succeeds
+            await syncEngine.performFullSync();
+
+            // Verify transaction was not duplicated in local DB
+            const matchingTrx = await db.transactions
+              .where('operationId')
+              .equals(opId)
+              .toArray();
+
+            if (matchingTrx.length !== 1) {
+              throw new Error(`تم تكرار المعاملة: عُثر على ${matchingTrx.length} معاملات بنفس operationId`);
+            }
+          } finally {
+            setupMocks();
           }
         }
       );
 
-      // TEST 4: Sync Queue & Offline Mutation Enqueuing
+      // =========================================================================
+      // SYNC-04: Repeated same operation is idempotent
+      // =========================================================================
       await this.runTest(
         results,
         'SYNC-04',
-        'طابور المزامنة المحلي (Sync Queue) وتسجيل العمليات في وضع عدم الاتصال',
+        'ضمان idempotency عند استدعاء نفس العملية مراراً (Idempotent Execution)',
         async () => {
-          const initialQueueCount = await syncEngine.getPendingCount();
-          await syncEngine.enqueueMutation(
-            'transaction',
-            trx1.id,
-            'CREATE',
-            trx1,
-            trx1.operationId
-          );
-          const afterCount = await syncEngine.getPendingCount();
-          if (afterCount <= initialQueueCount) {
-            throw new Error('لم تتم إضافة العملية لطابور المزامنة');
+          const acc = await accountRepository.create({
+            name: `حساب اختبار idempotency ${Date.now()}`,
+          });
+
+          const sharedOpId = `op_idemp_check_${Date.now()}`;
+          const firstCall = await transactionEngine.createTransaction({
+            accountId: acc.id,
+            type: 'debit',
+            amount: 900,
+            date: '2026-09-08',
+            operationId: sharedOpId,
+          });
+
+          const secondCall = await transactionEngine.createTransaction({
+            accountId: acc.id,
+            type: 'debit',
+            amount: 900,
+            date: '2026-09-08',
+            operationId: sharedOpId,
+          });
+
+          if (firstCall.id !== secondCall.id) {
+            throw new Error('الاستدعاء المتكرر لنفس operationId أنتج معرفات مختلفة');
+          }
+
+          const count = await db.transactions.where('operationId').equals(sharedOpId).count();
+          if (count !== 1) {
+            throw new Error(`تكرر القيد المالي في قاعدة البيانات: عدد القيود = ${count}`);
+          }
+
+          // Also test enqueueMutation idempotency
+          const initialQueueCount = await db.syncQueue.where('operationId').equals(sharedOpId).count();
+          await syncEngine.enqueueMutation('transaction', firstCall.id, 'CREATE', firstCall, sharedOpId);
+          await syncEngine.enqueueMutation('transaction', firstCall.id, 'CREATE', firstCall, sharedOpId);
+          const finalQueueCount = await db.syncQueue.where('operationId').equals(sharedOpId).count();
+
+          if (finalQueueCount > initialQueueCount + 1) {
+            throw new Error('طابور المزامنة لم يطبق مبدأ Idempotency وتكرر تسجيل العملية');
           }
         }
       );
 
-      // TEST 5: Multi-Device Simulation & Financial Invariant Check
+      // =========================================================================
+      // SYNC-05: Network failure does not corrupt local data
+      // =========================================================================
       await this.runTest(
         results,
         'SYNC-05',
-        'محاكاة مزامنة جهازين (Device A + Device B) وتطابق الرصيد الختامي',
+        'فشل الشبكة لا يفسد أو يشوه البيانات المحلية (Network Failure Safety)',
         async () => {
-          // Device A registers +10,000 and +5,000
-          const accSim = await accountRepository.create({
-            name: `محاكاة جهاز ${Date.now()}`,
+          const acc = await accountRepository.create({
+            name: `حساب اختبار أمان الشبكة ${Date.now()}`,
           });
 
-          await transactionEngine.createTransaction({
-            accountId: accSim.id,
+          const trx = await transactionEngine.createTransaction({
+            accountId: acc.id,
             type: 'debit',
-            amount: 10000,
-            date: '2026-09-01',
-            operationId: `sim_devA_op1_${Date.now()}`,
+            amount: 4200,
+            date: '2026-09-08',
+            operationId: `op_net_fail_${Date.now()}`,
           });
 
-          await transactionEngine.createTransaction({
-            accountId: accSim.id,
-            type: 'debit',
-            amount: 5000,
-            date: '2026-09-01',
-            operationId: `sim_devA_op2_${Date.now()}`,
-          });
+          try {
+            googleDriveService.uploadJsonFile = async () => {
+              throw new Error('Connection lost: NET_ERR_TIMED_OUT');
+            };
 
-          // Device B adds +3,000 and Device A adds +7,000 offline
-          await transactionEngine.createTransaction({
-            accountId: accSim.id,
-            type: 'debit',
-            amount: 3000,
-            date: '2026-09-02',
-            operationId: `sim_devB_op1_${Date.now()}`,
-          });
+            try {
+              await syncEngine.performFullSync();
+            } catch {
+              // Expected rejection
+            }
 
-          await transactionEngine.createTransaction({
-            accountId: accSim.id,
-            type: 'debit',
-            amount: 7000,
-            date: '2026-09-02',
-            operationId: `sim_devA_op3_${Date.now()}`,
-          });
+            // Verify local data integrity is 100% unharmed
+            const verifyTrx = await db.transactions.get(trx.id);
+            if (!verifyTrx || verifyTrx.amount !== 4200) {
+              throw new Error('فسدت بيانات المعاملة المحلية بعد فشل الشبكة');
+            }
 
-          const refreshed = await accountRepository.getById(accSim.id);
-          if (!refreshed || refreshed.currentBalance !== 25000) {
-            throw new Error(`الرصيد غير متطابق: المتوقع 25,000 ولكن الفعلي ${refreshed?.currentBalance}`);
+            const verifyAcc = await db.accounts.get(acc.id);
+            if (!verifyAcc || verifyAcc.currentBalance !== 4200) {
+              throw new Error('فسد رصيد الحساب المحلي بعد فشل الشبكة');
+            }
+
+            const audit = await integrityService.auditIntegrity();
+            if (!audit.healthy) {
+              throw new Error('تدقيق السلامة المالية اكتشف أخطاء بعد انقطاع الشبكة');
+            }
+          } finally {
+            setupMocks();
           }
         }
       );
 
-      // TEST 6: OperationId Deduplication (Idempotency)
+      // =========================================================================
+      // SYNC-06: Financial transaction conflict does not destroy either version
+      // =========================================================================
       await this.runTest(
         results,
         'SYNC-06',
-        'منع تكرار المعاملات المتطابقة في المزامنة (Idempotency via operationId)',
+        'التعارض في المعاملات المالية يحافظ على النسختين دون حذف أحدهما (No Blind Last-Write-Wins)',
         async () => {
-          const uniqueOpId = `op_idemp_${Date.now()}`;
-          const trxFirst = await transactionEngine.createTransaction({
-            accountId: accA.id,
-            type: 'debit',
-            amount: 250,
-            date: '2026-09-01',
-            operationId: uniqueOpId,
+          setupMocks();
+
+          const acc = await accountRepository.create({
+            name: `حساب اختبار التعارض ${Date.now()}`,
           });
 
-          // Try re-creating with the exact same operationId
-          const trxSecond = await transactionEngine.createTransaction({
-            accountId: accA.id,
-            type: 'debit',
-            amount: 250,
-            date: '2026-09-01',
-            operationId: uniqueOpId,
-          });
+          const conflictTrxId = `trx_conflict_${Date.now()}`;
+          const localTrx = {
+            id: conflictTrxId,
+            accountId: acc.id,
+            type: 'debit' as const,
+            amount: 600,
+            amountMinor: 600,
+            date: '2026-09-08',
+            note: 'تعديل محلي',
+            createdAt: '2026-09-08T10:00:00.000Z',
+            updatedAt: '2026-09-08T10:30:00.000Z',
+          };
+          await db.transactions.put(localTrx);
 
-          if (trxFirst.id !== trxSecond.id) {
-            throw new Error('تم إنشاء معاملة مكررة بدلاً من إرجاع المعاملة الحالية!');
+          // Remote state has different amount concurrently edited
+          inMemoryCloudFile = {
+            version: 1,
+            deviceId: 'dev_remote_other',
+            deviceName: 'جهاز آخر',
+            lastModified: '2026-09-08T11:00:00.000Z',
+            accounts: [acc],
+            transactions: [
+              {
+                id: conflictTrxId,
+                accountId: acc.id,
+                type: 'debit' as const,
+                amount: 850,
+                amountMinor: 850,
+                date: '2026-09-08',
+                note: 'تعديل في السحابة',
+                createdAt: '2026-09-08T10:00:00.000Z',
+                updatedAt: '2026-09-08T11:00:00.000Z',
+              },
+            ],
+            tombstones: [],
+          };
+
+          const syncRes = await syncEngine.performFullSync();
+
+          // Verify conflict was detected and returned
+          const detected = syncRes.conflicts.find((c) => c.entityId === conflictTrxId);
+          if (!detected) {
+            throw new Error('لم يتم رصد التعارض المالي بين النسخة المحلية والسحابية');
+          }
+
+          // Verify neither version was destroyed
+          if (detected.localVersion.data.amount !== 600 || detected.remoteVersion.data.amount !== 850) {
+            throw new Error('تم تشويه بيانات النسخ أثناء حفظ التعارض');
+          }
+
+          // Verify local DB was NOT blindly overwritten by Last-Write-Wins
+          const localRecord = await db.transactions.get(conflictTrxId);
+          if (!localRecord || localRecord.amount !== 600) {
+            throw new Error('تم الكتابة فوق السجل المالي المحلي بشكل أعمى (Blind Last-Write-Wins violation)');
+          }
+
+          // Verify conflict is persisted in memory/localStorage
+          const persisted = syncEngine.getPersistedConflicts();
+          if (!persisted.some((c) => c.entityId === conflictTrxId)) {
+            throw new Error('لم يتم حفظ التعارض في التخزين الدائم للرجوع إليه');
           }
         }
       );
 
-      // TEST 7: Financial Integrity & Recalculation After Cloud Operations
+      // =========================================================================
+      // SYNC-07: amountMinor remains unchanged through sync
+      // =========================================================================
       await this.runTest(
         results,
         'SYNC-07',
-        'التدقيق المالي الشامل وإعادة حساب الأرصدة بعد عمليات السحابة',
+        'ثبات amountMinor بدقة متناهية دون أي انحراف (amountMinor Invariant)',
         async () => {
-          const res = await integrityService.auditIntegrity();
-          if (!res.healthy) {
-            throw new Error(`توجد مشاكل اتساق مالي بعد اختبارات السحابة: ${res.issues.map((i) => i.messageAr).join(', ')}`);
+          setupMocks();
+
+          const acc = await accountRepository.create({
+            name: `حساب minor unit ${Date.now()}`,
+          });
+
+          const trx = await transactionEngine.createTransaction({
+            accountId: acc.id,
+            type: 'debit',
+            amount: 5500,
+            date: '2026-09-08',
+            operationId: `op_exact_minor_${Date.now()}`,
+          });
+
+          await syncEngine.performFullSync();
+
+          // Verify in local DB
+          const refTrx = await db.transactions.get(trx.id);
+          if (!refTrx || refTrx.amountMinor === undefined) {
+            throw new Error(`حقل amountMinor مفقود في المعاملة المحلية`);
+          }
+
+          // Verify in cloud state
+          const cloudTrx = inMemoryCloudFile?.transactions?.find((t: any) => t.id === trx.id);
+          if (!cloudTrx || cloudTrx.amountMinor !== refTrx.amountMinor) {
+            throw new Error(`تغيرت قيمة amountMinor في السحابة: المتوقع ${refTrx.amountMinor} ولكن الفعلي ${cloudTrx?.amountMinor}`);
+          }
+        }
+      );
+
+      // =========================================================================
+      // SYNC-08: currentBalanceMinor remains consistent
+      // =========================================================================
+      await this.runTest(
+        results,
+        'SYNC-08',
+        'اتساق currentBalanceMinor مع مجموع المعاملات بعد المزامنة (Balance Consistency)',
+        async () => {
+          setupMocks();
+
+          const acc = await accountRepository.create({
+            name: `حساب اتساق الرصيد ${Date.now()}`,
+          });
+
+          await transactionEngine.createTransaction({
+            accountId: acc.id,
+            type: 'debit',
+            amount: 500,
+            date: '2026-09-08',
+          });
+
+          await transactionEngine.createTransaction({
+            accountId: acc.id,
+            type: 'credit',
+            amount: 200,
+            date: '2026-09-08',
+          });
+
+          await syncEngine.performFullSync();
+
+          const finalAcc = await db.accounts.get(acc.id);
+          if (!finalAcc) throw new Error('الحساب غير موجود');
+
+          // Expected: debit (500) - credit (200) = 300
+          if (finalAcc.currentBalance !== 300) {
+            throw new Error(`قيمة currentBalance غير متسقة: المتوقع 300 ولكن الفعلي ${finalAcc.currentBalance}`);
+          }
+          if (finalAcc.currentBalanceMinor === undefined) {
+            throw new Error('قيمة currentBalanceMinor مفقودة في الحساب');
+          }
+        }
+      );
+
+      // =========================================================================
+      // SYNC-09: Delete does not accidentally resurrect stale records
+      // =========================================================================
+      await this.runTest(
+        results,
+        'SYNC-09',
+        'منع إحياء السجلات المحذوفة عبر Tombstones (Tombstone Deletion Safety)',
+        async () => {
+          setupMocks();
+
+          const acc = await accountRepository.create({
+            name: `حساب اختبار الحذف ${Date.now()}`,
+          });
+
+          const trx = await transactionEngine.createTransaction({
+            accountId: acc.id,
+            type: 'debit',
+            amount: 350,
+            date: '2026-09-08',
+            operationId: `op_tomb_${Date.now()}`,
+          });
+
+          // First sync pushes record to cloud
+          await syncEngine.performFullSync();
+
+          // Local device deletes the transaction
+          await transactionEngine.deleteTransaction(trx.id);
+
+          // Verify deleted locally
+          const deletedLocal = await db.transactions.get(trx.id);
+          if (deletedLocal) throw new Error('المعاملة لم تحذف محلياً');
+
+          // Cloud still had the old copy; now run sync again
+          await syncEngine.performFullSync();
+
+          // Verify transaction was NOT resurrected locally!
+          const resurrected = await db.transactions.get(trx.id);
+          if (resurrected) {
+            throw new Error('حدث خطأ فادح: المعاملة المحذوفة عادت للحياة بعد المزامنة! (Zombie Record Resurrection)');
+          }
+
+          // Verify tombstone is recorded in cloud state
+          const tombstone = inMemoryCloudFile?.tombstones?.find((t: any) => t.id === trx.id);
+          if (!tombstone) {
+            throw new Error('لم يتم تسجيل الـ Tombstone في حالة السحابة');
+          }
+        }
+      );
+
+      // =========================================================================
+      // SYNC-10: Successful sync is reported only after actual success
+      // =========================================================================
+      await this.runTest(
+        results,
+        'SYNC-10',
+        'عرض حالة "مكتملة" فقط بعد النجاح الفعلي المؤكد (Accurate Sync Status Reporting)',
+        async () => {
+          setupMocks();
+
+          let lastObservedStatus: string | null = null;
+          const unsubscribe = syncEngine.subscribeStatus((status) => {
+            lastObservedStatus = status;
+          });
+
+          try {
+            // 1. When disconnected or upload fails, status must NOT be 'synced'
+            googleDriveService.uploadJsonFile = async () => {
+              throw new Error('Upload server error 500');
+            };
+            googleDriveService.updateJsonFile = async () => {
+              throw new Error('Update server error 500');
+            };
+
+            try {
+              await syncEngine.performFullSync();
+            } catch {
+              // Expected
+            }
+
+            if (lastObservedStatus === 'synced') {
+              throw new Error('تم الإبلاغ عن نجاح المزامنة مع أن العملية فشلت!');
+            }
+
+            // 2. When upload succeeds, status becomes 'synced'
+            googleDriveService.uploadJsonFile = async (name: string, content: any) => {
+              inMemoryCloudFile = content;
+              return { id: 'file_cloud_sync_1', name };
+            };
+            googleDriveService.updateJsonFile = async (id: string, name: string, content: any) => {
+              inMemoryCloudFile = content;
+              return { id, name };
+            };
+
+            await syncEngine.performFullSync();
+
+            if (lastObservedStatus !== 'synced' && lastObservedStatus !== 'conflict') {
+              throw new Error(`حالة المزامنة غير صحيحة بعد النجاح: ${lastObservedStatus}`);
+            }
+          } finally {
+            unsubscribe();
+            setupMocks();
           }
         }
       );
 
     } finally {
+      // Restore original googleDriveService methods
+      googleDriveService.listFiles = origListFiles;
+      googleDriveService.downloadJsonFile = origDownload;
+      googleDriveService.uploadJsonFile = origUpload;
+      googleDriveService.updateJsonFile = origUpdate;
+      googleDriveService.isConnected = origIsConnected;
+
       // Clean up test records
       try {
         await db.syncQueue.clear();

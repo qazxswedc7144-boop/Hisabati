@@ -20,6 +20,7 @@ import { useSyncStore, useUIStore } from '@/shared/stores';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
 import { DriveFileInfo, SyncConflictItem } from '@/shared/types';
 import { getDeviceName } from '@/core/utils/deviceId';
+import { googleDriveService } from '@/core/services/googleDrive.service';
 
 export const CloudBackupSection: React.FC = () => {
   const { showToast } = useUIStore();
@@ -70,9 +71,9 @@ export const CloudBackupSection: React.FC = () => {
 
   const handleSaveCustomToken = () => {
     if (!customToken.trim()) return;
-    const { googleDriveService } = useSyncStore.getState() as any;
-    // Set token via store
+    googleDriveService.setAccessToken(customToken.trim());
     useSyncStore.getState().checkDriveConnection();
+    useSyncStore.getState().fetchCloudBackups();
     showToast('تم تفعيل الاتصال برمز الوصول بنجاح', 'success');
     setShowTokenInput(false);
   };

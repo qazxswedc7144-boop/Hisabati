@@ -39,134 +39,135 @@ interface SyncStoreState {
   updatePendingCount: () => Promise<void>;
 }
 
-export const useSyncStore = create<SyncStoreState>((set, get) => {
-  // Subscribe to syncEngine events
-  syncEngine.subscribeStatus((status) => {
-    set({ syncStatus: status });
+export const useSyncStore = create<SyncStoreState>((set, get) => ({
+  isDriveConnected: googleDriveService.isConnected(),
+  userEmail: googleDriveService.getUserInfo()?.email || null,
+  userName: googleDriveService.getUserInfo()?.name || null,
+  syncStatus: 'idle',
+  lastSyncTime: typeof localStorage !== 'undefined' ? localStorage.getItem('hisabati_last_sync_time') : null,
+  pendingQueueCount: 0,
+  conflicts: syncEngine.getPersistedConflicts(),
+  cloudBackups: [],
+  isLoadingBackups: false,
+  autoSyncEnabled: true,
+  isRestoring: false,
+  isBackingUp: false,
+
+  checkDriveConnection: () => {
+    const connected = googleDriveService.isConnected();
+    const user = googleDriveService.getUserInfo();
+    set({
+      isDriveConnected: connected,
+      userEmail: user?.email || null,
+      userName: user?.name || null,
+    });
     get().updatePendingCount();
-  });
+  },
 
-  syncEngine.subscribeConflicts((conflicts) => {
-    set({ conflicts });
-  });
+  connectGoogleDrive: async () => {
+    const success = await googleDriveService.requestGoogleAuth();
+    get().checkDriveConnection();
+    if (success) {
+      get().fetchCloudBackups();
+      get().triggerManualSync();
+    }
+    return success;
+  },
 
-  return {
-    isDriveConnected: googleDriveService.isConnected(),
-    userEmail: googleDriveService.getUserInfo()?.email || null,
-    userName: googleDriveService.getUserInfo()?.name || null,
-    syncStatus: 'idle',
-    lastSyncTime: localStorage.getItem('hisabati_last_sync_time'),
-    pendingQueueCount: 0,
-    conflicts: [],
-    cloudBackups: [],
-    isLoadingBackups: false,
-    autoSyncEnabled: true,
-    isRestoring: false,
-    isBackingUp: false,
+  disconnectGoogleDrive: () => {
+    googleDriveService.disconnect();
+    set({
+      isDriveConnected: false,
+      userEmail: null,
+      userName: null,
+      cloudBackups: [],
+    });
+  },
 
-    checkDriveConnection: () => {
-      const connected = googleDriveService.isConnected();
-      const user = googleDriveService.getUserInfo();
+  updatePendingCount: async () => {
+    try {
+      const count = await syncEngine.getPendingCount();
+      set({ pendingQueueCount: count });
+    } catch {
+      // ignore
+    }
+  },
+
+  triggerManualSync: async () => {
+    try {
+      const res = await syncEngine.performFullSync();
       set({
-        isDriveConnected: connected,
-        userEmail: user?.email || null,
-        userName: user?.name || null,
+        lastSyncTime: new Date().toISOString(),
+        conflicts: res.conflicts || [],
       });
-      get().updatePendingCount();
-    },
+      await get().updatePendingCount();
+    } catch (err) {
+      console.warn('Manual sync failed:', err);
+      throw err;
+    }
+  },
 
-    connectGoogleDrive: async () => {
-      const success = await googleDriveService.requestGoogleAuth();
-      get().checkDriveConnection();
-      if (success) {
-        get().fetchCloudBackups();
-        get().triggerManualSync();
-      }
-      return success;
-    },
+  triggerManualBackup: async () => {
+    set({ isBackingUp: true });
+    try {
+      await backupService.uploadBackupToGoogleDrive();
+      await get().fetchCloudBackups();
+    } finally {
+      set({ isBackingUp: false });
+    }
+  },
 
-    disconnectGoogleDrive: () => {
-      googleDriveService.disconnect();
-      set({
-        isDriveConnected: false,
-        userEmail: null,
-        userName: null,
-        cloudBackups: [],
-      });
-    },
+  fetchCloudBackups: async () => {
+    if (!googleDriveService.isConnected()) return;
+    set({ isLoadingBackups: true });
+    try {
+      const files = await googleDriveService.listFiles();
+      // Filter backup files
+      const backups = files.filter((f) => f.name.startsWith('hisabati-backup'));
+      set({ cloudBackups: backups });
+    } catch (err) {
+      console.warn('Failed to fetch cloud backups:', err);
+    } finally {
+      set({ isLoadingBackups: false });
+    }
+  },
 
-    updatePendingCount: async () => {
-      try {
-        const count = await syncEngine.getPendingCount();
-        set({ pendingQueueCount: count });
-      } catch {
-        // ignore
-      }
-    },
+  deleteCloudBackup: async (fileId: string) => {
+    try {
+      await googleDriveService.deleteFile(fileId);
+      await get().fetchCloudBackups();
+    } catch (err) {
+      console.warn('Failed to delete cloud backup:', err);
+      throw err;
+    }
+  },
 
-    triggerManualSync: async () => {
-      try {
-        const res = await syncEngine.performFullSync();
-        set({
-          lastSyncTime: new Date().toISOString(),
-          conflicts: res.conflicts || [],
-        });
-        await get().updatePendingCount();
-      } catch (err) {
-        console.warn('Manual sync failed:', err);
-        throw err;
-      }
-    },
+  restoreFromDriveFile: async (fileId: string, mode = 'replace') => {
+    set({ isRestoring: true });
+    try {
+      await backupService.restoreBackupFromGoogleDrive(fileId, mode);
+    } finally {
+      set({ isRestoring: false });
+    }
+  },
 
-    triggerManualBackup: async () => {
-      set({ isBackingUp: true });
-      try {
-        await backupService.uploadBackupToGoogleDrive();
-        await get().fetchCloudBackups();
-      } finally {
-        set({ isBackingUp: false });
-      }
-    },
+  resolveConflict: async (conflict: SyncConflictItem, choice: 'local' | 'remote') => {
+    await syncEngine.resolveConflict(conflict, choice);
+    set((state) => ({
+      conflicts: state.conflicts.filter((c) => c.id !== conflict.id),
+    }));
+  },
+}));
 
-    fetchCloudBackups: async () => {
-      if (!googleDriveService.isConnected()) return;
-      set({ isLoadingBackups: true });
-      try {
-        const files = await googleDriveService.listFiles();
-        // Filter backup files
-        const backups = files.filter((f) => f.name.startsWith('hisabati-backup'));
-        set({ cloudBackups: backups });
-      } catch (err) {
-        console.warn('Failed to fetch cloud backups:', err);
-      } finally {
-        set({ isLoadingBackups: false });
-      }
-    },
+// Subscribe to syncEngine events after store initialization
+syncEngine.subscribeStatus((status) => {
+  useSyncStore.setState({ syncStatus: status });
+  const updatePending = useSyncStore.getState().updatePendingCount;
+  if (typeof updatePending === 'function') {
+    updatePending();
+  }
+});
 
-    deleteCloudBackup: async (fileId: string) => {
-      try {
-        await googleDriveService.deleteFile(fileId);
-        await get().fetchCloudBackups();
-      } catch (err) {
-        console.warn('Failed to delete cloud backup:', err);
-        throw err;
-      }
-    },
-
-    restoreFromDriveFile: async (fileId: string, mode = 'replace') => {
-      set({ isRestoring: true });
-      try {
-        await backupService.restoreBackupFromGoogleDrive(fileId, mode);
-      } finally {
-        set({ isRestoring: false });
-      }
-    },
-
-    resolveConflict: async (conflict: SyncConflictItem, choice: 'local' | 'remote') => {
-      await syncEngine.resolveConflict(conflict, choice);
-      set((state) => ({
-        conflicts: state.conflicts.filter((c) => c.id !== conflict.id),
-      }));
-    },
-  };
+syncEngine.subscribeConflicts((conflicts) => {
+  useSyncStore.setState({ conflicts });
 });

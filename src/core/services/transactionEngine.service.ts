@@ -148,6 +148,15 @@ export class FinancialTransactionEngine {
         console.warn('Audit trail write warning:', logErr);
       }
 
+      // Safe offline-first sync mutation enqueueing
+      await this.enqueueSyncMutation(
+        'transaction',
+        newTransaction.id,
+        'CREATE',
+        newTransaction,
+        newTransaction.operationId
+      );
+
       return newTransaction;
     } finally {
       // Release in-flight lock after short timeout or immediately
@@ -249,6 +258,15 @@ export class FinancialTransactionEngine {
       console.warn('Audit trail update write warning:', logErr);
     }
 
+    // Safe offline-first sync mutation enqueueing
+    await this.enqueueSyncMutation(
+      'transaction',
+      updatedTrx.id,
+      'UPDATE',
+      updatedTrx,
+      updatedTrx.operationId || updatedTrx.id
+    );
+
     return updatedTrx;
   }
 
@@ -293,6 +311,15 @@ export class FinancialTransactionEngine {
     } catch (logErr) {
       console.warn('Audit trail delete write warning:', logErr);
     }
+
+    // Safe offline-first sync mutation enqueueing (tombstone)
+    await this.enqueueSyncMutation(
+      'transaction',
+      id,
+      'DELETE',
+      { id, accountId },
+      id
+    );
 
     return true;
   }
@@ -411,6 +438,25 @@ export class FinancialTransactionEngine {
       totalCreditMinor: metrics.totalCreditMinor,
       netBalanceMinor: metrics.currentBalanceMinor,
     };
+  }
+
+  /**
+   * Safe offline-first sync mutation enqueueing.
+   * Uses dynamic import to prevent any circular dependency risks at module load time.
+   */
+  private async enqueueSyncMutation(
+    entityType: 'transaction',
+    entityId: string,
+    operation: 'CREATE' | 'UPDATE' | 'DELETE',
+    payload?: any,
+    operationId?: string
+  ): Promise<void> {
+    try {
+      const { syncEngine } = await import('./syncEngine.service');
+      await syncEngine.enqueueMutation(entityType, entityId, operation, payload, operationId);
+    } catch {
+      // Non-blocking safeguard
+    }
   }
 }
 

@@ -2,10 +2,16 @@ import { Account } from './account.types';
 import { Transaction } from './transaction.types';
 import { SettingsEntry } from './settings.types';
 
-export type SyncStatusType = 'idle' | 'syncing' | 'synced' | 'pending' | 'error' | 'offline';
+export type SyncStatusType = 'idle' | 'syncing' | 'synced' | 'pending' | 'error' | 'offline' | 'retrying' | 'conflict';
 
 export type SyncEntityType = 'account' | 'transaction' | 'setting';
 export type SyncOperationType = 'CREATE' | 'UPDATE' | 'DELETE';
+
+export interface SyncTombstone {
+  id: string;
+  entityType: SyncEntityType;
+  deletedAt: string;
+}
 
 export interface SyncQueueItem {
   id: string;

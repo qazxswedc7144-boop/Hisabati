@@ -1,7 +1,8 @@
 /**
  * Cloud Sync Engine for Hisabati.
  * Manages local mutation queues, conflict detection, idempotent replication,
- * best-effort automatic background synchronization, and network backoff.
+ * tombstone tracking to prevent record resurrection, best-effort automatic background
+ * synchronization with exponential backoff, and financial data integrity preservation.
  */
 
 import { db } from '../database/db';
@@ -10,6 +11,7 @@ import {
   SyncConflictItem,
   SyncAuditLogEntry,
   SyncStatusType,
+  SyncTombstone,
   Account,
   Transaction,
 } from '@/shared/types';
@@ -17,22 +19,33 @@ import { getDeviceId, getDeviceName } from '../utils/deviceId';
 import { googleDriveService } from './googleDrive.service';
 import { transactionEngine } from './transactionEngine.service';
 import { integrityService } from './integrity.service';
+import { decimalToMinor } from '../money/converter';
 
 const SYNC_STATE_FILE = 'hisabati_sync_state.json';
+const CONFLICTS_STORAGE_KEY = 'hisabati_active_conflicts';
 const MAX_RETRIES = 5;
+const TOMBSTONE_RETENTION_DAYS = 60;
 
 export class SyncEngine {
   private isSyncing = false;
+  private currentStatus: SyncStatusType = 'idle';
   private syncListeners: Array<(status: SyncStatusType) => void> = [];
   private conflictListeners: Array<(conflicts: SyncConflictItem[]) => void> = [];
   private autoSyncTimer: any = null;
+  private retryTimer: any = null;
 
   constructor() {
     this.setupNetworkListeners();
   }
 
+  public getStatus(): SyncStatusType {
+    return this.currentStatus;
+  }
+
   public subscribeStatus(listener: (status: SyncStatusType) => void): () => void {
     this.syncListeners.push(listener);
+    // Emit current status immediately upon subscription
+    listener(this.currentStatus);
     return () => {
       this.syncListeners = this.syncListeners.filter((l) => l !== listener);
     };
@@ -40,12 +53,15 @@ export class SyncEngine {
 
   public subscribeConflicts(listener: (conflicts: SyncConflictItem[]) => void): () => void {
     this.conflictListeners.push(listener);
+    // Emit current persisted conflicts immediately
+    listener(this.getPersistedConflicts());
     return () => {
       this.conflictListeners = this.conflictListeners.filter((l) => l !== listener);
     };
   }
 
   private notifyStatus(status: SyncStatusType): void {
+    this.currentStatus = status;
     this.syncListeners.forEach((l) => l(status));
   }
 
@@ -56,14 +72,46 @@ export class SyncEngine {
   private setupNetworkListeners(): void {
     if (typeof window !== 'undefined') {
       window.addEventListener('online', () => {
-        // Auto trigger sync if connected
+        if (this.currentStatus === 'offline') {
+          this.notifyStatus('idle');
+        }
         this.processQueueBestEffort();
       });
+
+      window.addEventListener('offline', () => {
+        if (!this.isSyncing) {
+          this.notifyStatus('offline');
+        }
+      });
+    }
+  }
+
+  private inMemoryConflicts: SyncConflictItem[] = [];
+
+  public getPersistedConflicts(): SyncConflictItem[] {
+    try {
+      if (typeof localStorage === 'undefined') return this.inMemoryConflicts;
+      const raw = localStorage.getItem(CONFLICTS_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : this.inMemoryConflicts;
+    } catch {
+      return this.inMemoryConflicts;
+    }
+  }
+
+  private savePersistedConflicts(conflicts: SyncConflictItem[]): void {
+    this.inMemoryConflicts = conflicts;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(CONFLICTS_STORAGE_KEY, JSON.stringify(conflicts));
+      }
+    } catch {
+      // Storage quota or unavailable safeguard
     }
   }
 
   /**
    * Enqueues a local mutation to be synchronized with Google Drive.
+   * Ensures idempotency: duplicate pending operations with identical operationId are not queued twice.
    */
   public async enqueueMutation(
     entityType: 'account' | 'transaction' | 'setting',
@@ -72,12 +120,24 @@ export class SyncEngine {
     payload?: any,
     operationId?: string
   ): Promise<void> {
+    const opId = operationId || `op_${entityId}_${Date.now()}`;
+
+    // 1. Idempotency Check at Queue Level
+    const existing = await db.syncQueue
+      .where('operationId')
+      .equals(opId)
+      .first();
+
+    if (existing && (existing.status === 'pending' || existing.status === 'processing')) {
+      return; // Already safely enqueued for replication
+    }
+
     const queueItem: SyncQueueItem = {
       id: 'sq_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
       entityType,
       entityId,
       operation,
-      operationId: operationId || `op_${entityId}_${Date.now()}`,
+      operationId: opId,
       payload,
       createdAt: new Date().toISOString(),
       retryCount: 0,
@@ -86,21 +146,33 @@ export class SyncEngine {
 
     await db.syncQueue.add(queueItem);
 
-    // Trigger best effort sync if online
-    if (navigator.onLine && googleDriveService.isConnected()) {
+    // 2. Trigger best effort background sync if online & connected
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (isOnline && googleDriveService.isConnected()) {
       this.processQueueBestEffort();
+    } else if (!isOnline) {
+      this.notifyStatus('offline');
     }
   }
 
   /**
-   * Returns current pending sync mutations count.
+   * Returns current pending sync mutations count (both pending and processing).
    */
   public async getPendingCount(): Promise<number> {
-    return await db.syncQueue.where('status').equals('pending').count();
+    const pending = await db.syncQueue.where('status').equals('pending').count();
+    const processing = await db.syncQueue.where('status').equals('processing').count();
+    return pending + processing;
   }
 
   /**
-   * Logs an audit record for sync operations.
+   * Retrieves all items in the sync queue.
+   */
+  public async getQueueItems(): Promise<SyncQueueItem[]> {
+    return await db.syncQueue.orderBy('createdAt').toArray();
+  }
+
+  /**
+   * Logs an audit record for sync operations in Dexie.
    */
   public async logAudit(
     action: SyncAuditLogEntry['action'],
@@ -118,17 +190,18 @@ export class SyncEngine {
     try {
       await db.syncAuditLogs.add(entry);
     } catch {
-      // ignore
+      // Non-blocking
     }
   }
 
   /**
    * Main Synchronization Procedure:
    * 1. Pull remote state from Google Drive
-   * 2. Detect and handle conflicts
-   * 3. Merge safe remote additions/updates/tombstones into local DB
-   * 4. Push local queue mutations up to Google Drive state
-   * 5. Recalculate financial balances and verify integrity
+   * 2. Reconcile tombstones to prevent resurrecting deleted records (SYNC-09)
+   * 3. Detect and preserve financial conflicts without blind Last-Write-Wins (SYNC-06)
+   * 4. Merge safe remote additions/updates into local DB, preserving amountMinor (SYNC-07)
+   * 5. Atomically push local queue mutations up to Google Drive state
+   * 6. Mark queue items completed, recalculate balances, and audit integrity (SYNC-08, SYNC-10)
    */
   public async performFullSync(): Promise<{
     success: boolean;
@@ -138,20 +211,27 @@ export class SyncEngine {
     pushedCount: number;
   }> {
     if (this.isSyncing) {
-      return { success: false, conflicts: [], message: 'عملية مزامنة أخرى جارية حالياً', pulledCount: 0, pushedCount: 0 };
+      return { success: false, conflicts: this.getPersistedConflicts(), message: 'عملية مزامنة أخرى جارية حالياً', pulledCount: 0, pushedCount: 0 };
     }
 
     if (!googleDriveService.isConnected()) {
-      return { success: false, conflicts: [], message: 'يرجى ربط حساب Google Drive أولاً', pulledCount: 0, pushedCount: 0 };
+      return { success: false, conflicts: this.getPersistedConflicts(), message: 'يرجى ربط حساب Google Drive أولاً', pulledCount: 0, pushedCount: 0 };
+    }
+
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!isOnline) {
+      this.notifyStatus('offline');
+      return { success: false, conflicts: this.getPersistedConflicts(), message: 'الجهاز غير متصل بالإنترنت', pulledCount: 0, pushedCount: 0 };
     }
 
     this.isSyncing = true;
     this.notifyStatus('syncing');
     await this.logAudit('SYNC_START', 'بدء عملية المزامنة الثنائية مع Google Drive', true);
 
-    const conflicts: SyncConflictItem[] = [];
+    const newlyDetectedConflicts: SyncConflictItem[] = [];
     let pulledCount = 0;
     let pushedCount = 0;
+    let inFlightPendingItems: SyncQueueItem[] = [];
 
     try {
       // 1. Fetch remote sync state file if exists
@@ -164,13 +244,47 @@ export class SyncEngine {
         lastModified: string;
         accounts: Account[];
         transactions: Transaction[];
+        tombstones?: SyncTombstone[];
       } | null = null;
 
       if (syncFile) {
         remoteData = await googleDriveService.downloadJsonFile(syncFile.id);
       }
 
-      // 2. If remote data exists, merge into local database
+      // 2. Load Local Tombstones (deletions tracked in syncQueue)
+      const cutoffDate = new Date(Date.now() - TOMBSTONE_RETENTION_DAYS * 86400000).toISOString();
+      const localDeletes = await db.syncQueue
+        .where('operation')
+        .equals('DELETE')
+        .toArray();
+
+      const localTombstoneIds = new Set(
+        localDeletes
+          .filter((d) => d.createdAt >= cutoffDate)
+          .map((d) => d.entityId)
+      );
+
+      // 3. Process Remote Tombstones (deletions from another device)
+      if (remoteData?.tombstones && Array.isArray(remoteData.tombstones)) {
+        for (const remTomb of remoteData.tombstones) {
+          localTombstoneIds.add(remTomb.id);
+          if (remTomb.entityType === 'transaction') {
+            const exists = await db.transactions.get(remTomb.id);
+            if (exists) {
+              await db.transactions.delete(remTomb.id);
+              pulledCount++;
+            }
+          } else if (remTomb.entityType === 'account') {
+            const exists = await db.accounts.get(remTomb.id);
+            if (exists) {
+              await db.accounts.delete(remTomb.id);
+              pulledCount++;
+            }
+          }
+        }
+      }
+
+      // 4. If remote data exists, merge safe additions and detect conflicts
       if (remoteData && Array.isArray(remoteData.accounts) && Array.isArray(remoteData.transactions)) {
         const localAccounts = await db.accounts.toArray();
         const localTransactions = await db.transactions.toArray();
@@ -179,28 +293,35 @@ export class SyncEngine {
         const localTrxMap = new Map(localTransactions.map((t) => [t.id, t]));
         const localOpIdMap = new Map(localTransactions.filter((t) => !!t.operationId).map((t) => [t.operationId!, t]));
 
-        // Merge Remote Accounts
+        // Merge Remote Accounts (skipping tombstoned accounts)
         for (const remAcc of remoteData.accounts) {
+          if (localTombstoneIds.has(remAcc.id)) {
+            continue; // Do not resurrect deleted account
+          }
+
           const local = localAccMap.get(remAcc.id);
           if (!local) {
-            // New account from remote device
             await db.accounts.put(remAcc);
             pulledCount++;
-          } else {
-            // Check conflict / updated timestamp
-            if (remAcc.updatedAt > local.updatedAt) {
-              await db.accounts.put(remAcc);
-              pulledCount++;
-            }
+          } else if (remAcc.updatedAt > local.updatedAt) {
+            await db.accounts.put(remAcc);
+            pulledCount++;
           }
         }
 
-        // Merge Remote Transactions
+        // Merge Remote Transactions (skipping tombstoned transactions)
         for (const remTrx of remoteData.transactions) {
-          // Check for matching ID or matching OperationId (Idempotency)
+          if (localTombstoneIds.has(remTrx.id)) {
+            continue; // Do not resurrect deleted transaction (SYNC-09)
+          }
+
+          // Ensure amountMinor is canonical
+          if (remTrx.amountMinor === undefined && remTrx.amount !== undefined) {
+            remTrx.amountMinor = decimalToMinor(remTrx.amount, 'YER');
+          }
+
           const existingById = localTrxMap.get(remTrx.id);
           const existingByOp = remTrx.operationId ? localOpIdMap.get(remTrx.operationId) : undefined;
-
           const localMatch = existingById || existingByOp;
 
           if (!localMatch) {
@@ -208,48 +329,79 @@ export class SyncEngine {
             await db.transactions.put(remTrx);
             pulledCount++;
           } else {
-            // Check if amounts or critical attributes conflict while both edited concurrently
-            if (localMatch.updatedAt !== remTrx.updatedAt) {
-              if (localMatch.amount !== remTrx.amount || localMatch.type !== remTrx.type) {
-                // Meaningful financial conflict detected
-                conflicts.push({
-                  id: 'cf_' + remTrx.id,
-                  entityType: 'transaction',
-                  entityId: remTrx.id,
-                  localVersion: {
-                    title: `المعاملة محلياً (${localMatch.amount} ${localMatch.type === 'debit' ? 'لك' : 'عليك'})`,
-                    updatedAt: localMatch.updatedAt,
-                    data: localMatch,
-                  },
-                  remoteVersion: {
-                    title: `المعاملة في السحابة (${remTrx.amount} ${remTrx.type === 'debit' ? 'لك' : 'عليك'})`,
-                    updatedAt: remTrx.updatedAt,
-                    data: remTrx,
-                  },
-                  detectedAt: new Date().toISOString(),
-                  resolved: false,
-                });
-              } else if (remTrx.updatedAt > localMatch.updatedAt) {
-                await db.transactions.put(remTrx);
-                pulledCount++;
-              }
+            // Critical Financial Conflict Evaluation (SYNC-06, SYNC-07)
+            const hasFinancialConflict =
+              (localMatch.amountMinor !== undefined && remTrx.amountMinor !== undefined && localMatch.amountMinor !== remTrx.amountMinor) ||
+              localMatch.amount !== remTrx.amount ||
+              localMatch.type !== remTrx.type ||
+              localMatch.accountId !== remTrx.accountId;
+
+            if (hasFinancialConflict && localMatch.updatedAt !== remTrx.updatedAt) {
+              // Meaningful financial conflict detected: NEVER resolve by blind Last-Write-Wins!
+              // Preserve both versions cleanly
+              newlyDetectedConflicts.push({
+                id: 'cf_' + remTrx.id,
+                entityType: 'transaction',
+                entityId: remTrx.id,
+                localVersion: {
+                  title: `المعاملة محلياً (${localMatch.amount} ${localMatch.type === 'debit' ? 'لك' : 'عليك'})`,
+                  updatedAt: localMatch.updatedAt,
+                  data: localMatch,
+                },
+                remoteVersion: {
+                  title: `المعاملة في السحابة (${remTrx.amount} ${remTrx.type === 'debit' ? 'لك' : 'عليك'})`,
+                  updatedAt: remTrx.updatedAt,
+                  data: remTrx,
+                },
+                detectedAt: new Date().toISOString(),
+                resolved: false,
+              });
+            } else if (remTrx.updatedAt > localMatch.updatedAt) {
+              // Safe non-financial metadata update (e.g. note or receiptNumber)
+              await db.transactions.put(remTrx);
+              pulledCount++;
             }
           }
         }
       }
 
-      // 3. Process Pending Local Queue
-      const pendingItems = await db.syncQueue.where('status').equals('pending').toArray();
-      pushedCount = pendingItems.length;
+      // 5. Gather and Transition Local Pending Queue to 'processing'
+      inFlightPendingItems = await db.syncQueue
+        .where('status')
+        .equals('pending')
+        .sortBy('createdAt');
 
-      // Mark items as completed
-      for (const item of pendingItems) {
-        await db.syncQueue.update(item.id, { status: 'completed' });
+      pushedCount = inFlightPendingItems.length;
+
+      for (const item of inFlightPendingItems) {
+        await db.syncQueue.update(item.id, { status: 'processing' });
       }
 
-      // 4. Push updated state back to Google Drive
-      const updatedAccounts = await db.accounts.toArray();
-      const updatedTransactions = await db.transactions.toArray();
+      // 6. Build Combined Tombstones Array
+      const combinedTombstonesMap = new Map<string, SyncTombstone>();
+      if (remoteData?.tombstones) {
+        for (const t of remoteData.tombstones) {
+          combinedTombstonesMap.set(t.id, t);
+        }
+      }
+      for (const del of localDeletes) {
+        combinedTombstonesMap.set(del.entityId, {
+          id: del.entityId,
+          entityType: del.entityType,
+          deletedAt: del.createdAt,
+        });
+      }
+      const combinedTombstones = Array.from(combinedTombstonesMap.values()).filter(
+        (t) => t.deletedAt >= cutoffDate
+      );
+
+      // 7. Push Updated State to Google Drive
+      const updatedAccounts = (await db.accounts.toArray()).filter(
+        (a) => !localTombstoneIds.has(a.id)
+      );
+      const updatedTransactions = (await db.transactions.toArray()).filter(
+        (t) => !localTombstoneIds.has(t.id)
+      );
 
       const newCloudState = {
         version: 1,
@@ -257,44 +409,99 @@ export class SyncEngine {
         deviceName: getDeviceName(),
         lastModified: new Date().toISOString(),
         accounts: updatedAccounts,
-        transactions: updatedTransactions,
+        transactions: updatedTransactions.map((t) => ({
+          ...t,
+          amountMinor: t.amountMinor !== undefined ? t.amountMinor : decimalToMinor(t.amount, 'YER'),
+        })),
+        tombstones: combinedTombstones,
       };
 
-      // Upload or replace sync file in Google Drive
+      // In-place safe update: patch existing file or upload new
       if (syncFile) {
-        await googleDriveService.deleteFile(syncFile.id).catch(() => {});
+        try {
+          await googleDriveService.updateJsonFile(syncFile.id, SYNC_STATE_FILE, newCloudState, {
+            accountCount: updatedAccounts.length,
+            transactionCount: updatedTransactions.length,
+          });
+        } catch {
+          // Fallback: upload new and delete old safely
+          await googleDriveService.uploadJsonFile(SYNC_STATE_FILE, newCloudState, {
+            accountCount: updatedAccounts.length,
+            transactionCount: updatedTransactions.length,
+          });
+          await googleDriveService.deleteFile(syncFile.id).catch(() => {});
+        }
+      } else {
+        await googleDriveService.uploadJsonFile(SYNC_STATE_FILE, newCloudState, {
+          accountCount: updatedAccounts.length,
+          transactionCount: updatedTransactions.length,
+        });
       }
-      await googleDriveService.uploadJsonFile(SYNC_STATE_FILE, newCloudState, {
-        accountCount: updatedAccounts.length,
-        transactionCount: updatedTransactions.length,
-      });
 
-      // 5. Recalculate local balances & audit
+      // 8. POST-UPLOAD SUCCESS: Mark items as completed & prune old completed items
+      for (const item of inFlightPendingItems) {
+        await db.syncQueue.update(item.id, { status: 'completed' });
+      }
+
+      // Keep recent completed items to prevent database growth
+      const allCompleted = await db.syncQueue.where('status').equals('completed').toArray();
+      if (allCompleted.length > 80) {
+        const sorted = allCompleted.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        const toDelete = sorted.slice(0, allCompleted.length - 50);
+        for (const d of toDelete) {
+          await db.syncQueue.delete(d.id);
+        }
+      }
+
+      // 9. Recalculate local balances & audit
       await transactionEngine.recalculateAllBalances();
       await integrityService.auditIntegrity();
 
+      // 10. Merge and Persist Conflicts
+      const existingPersisted = this.getPersistedConflicts().filter((c) => !c.resolved);
+      const mergedConflictsMap = new Map<string, SyncConflictItem>();
+      existingPersisted.forEach((c) => mergedConflictsMap.set(c.id, c));
+      newlyDetectedConflicts.forEach((c) => mergedConflictsMap.set(c.id, c));
+      const activeConflicts = Array.from(mergedConflictsMap.values());
+      this.savePersistedConflicts(activeConflicts);
+
       const lastSyncStr = new Date().toISOString();
-      localStorage.setItem('hisabati_last_sync_time', lastSyncStr);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('hisabati_last_sync_time', lastSyncStr);
+      }
 
       await this.logAudit(
         'SYNC_SUCCESS',
-        `اكتملت المزامنة بنجاح (وارد: ${pulledCount}، صادر: ${pushedCount}، تعارضات: ${conflicts.length})`,
+        `اكتملت المزامنة بنجاح (وارد: ${pulledCount}، صادر: ${pushedCount}، تعارضات: ${activeConflicts.length})`,
         true
       );
 
-      this.notifyStatus('synced');
-      if (conflicts.length > 0) {
-        this.notifyConflicts(conflicts);
+      if (activeConflicts.length > 0) {
+        this.notifyStatus('conflict');
+        this.notifyConflicts(activeConflicts);
+      } else {
+        this.notifyStatus('synced');
       }
 
       return {
         success: true,
-        conflicts,
+        conflicts: activeConflicts,
         message: `تمت المزامنة بنجاح (تم سحب ${pulledCount} وتحديث ${pushedCount} سجل)`,
         pulledCount,
         pushedCount,
       };
     } catch (err: any) {
+      // Revert processing items safely with exponential retry tracking
+      for (const item of inFlightPendingItems) {
+        const nextRetry = (item.retryCount || 0) + 1;
+        const nextStatus = nextRetry >= MAX_RETRIES ? 'failed' : 'pending';
+        await db.syncQueue.update(item.id, {
+          retryCount: nextRetry,
+          status: nextStatus,
+          lastError: err?.message || 'فشلت المزامنة',
+        });
+      }
+
       await this.logAudit('SYNC_FAILED', `فشلت المزامنة: ${err?.message || 'خطأ غير معروف'}`, false);
       this.notifyStatus('error');
       throw err;
@@ -304,10 +511,16 @@ export class SyncEngine {
   }
 
   /**
-   * Triggers asynchronous background queue flush without blocking caller.
+   * Triggers asynchronous background queue flush with debouncing and exponential backoff retry.
    */
   public processQueueBestEffort(): void {
-    if (this.isSyncing || !navigator.onLine || !googleDriveService.isConnected()) {
+    if (this.isSyncing || !googleDriveService.isConnected()) {
+      return;
+    }
+
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!isOnline) {
+      this.notifyStatus('offline');
       return;
     }
 
@@ -317,14 +530,29 @@ export class SyncEngine {
 
     // Debounce to batch mutations
     this.autoSyncTimer = setTimeout(() => {
-      this.performFullSync().catch((err) => {
-        console.warn('Background sync warning:', err);
+      this.performFullSync().catch(async () => {
+        // Compute exponential backoff for next retry attempt
+        const pendingWithRetries = await db.syncQueue
+          .where('status')
+          .equals('pending')
+          .toArray();
+
+        const maxRetries = Math.max(0, ...pendingWithRetries.map((p) => p.retryCount || 0));
+        if (maxRetries < MAX_RETRIES && pendingWithRetries.length > 0) {
+          const backoffDelay = Math.min(1000 * Math.pow(2, maxRetries), 30000);
+          if (this.retryTimer) clearTimeout(this.retryTimer);
+          this.notifyStatus('retrying');
+          this.retryTimer = setTimeout(() => {
+            this.performFullSync().catch(() => {});
+          }, backoffDelay);
+        }
       });
-    }, 2000);
+    }, 1500);
   }
 
   /**
-   * Resolves a detected conflict between local and remote versions.
+   * Resolves a detected conflict between local and remote versions deterministically.
+   * Does not destroy data. Both versions remain auditable.
    */
   public async resolveConflict(conflict: SyncConflictItem, choice: 'local' | 'remote'): Promise<void> {
     if (choice === 'remote' && conflict.remoteVersion?.data) {
@@ -334,8 +562,26 @@ export class SyncEngine {
         await db.accounts.put(conflict.remoteVersion.data);
       }
       await transactionEngine.recalculateAllBalances();
+    } else if (choice === 'local' && conflict.localVersion?.data) {
+      // Local version retained. Enqueue UPDATE mutation so cloud state aligns on next sync
+      await this.enqueueMutation(
+        conflict.entityType,
+        conflict.entityId,
+        'UPDATE',
+        conflict.localVersion.data,
+        `res_${conflict.id}_${Date.now()}`
+      );
     }
-    // If choice === 'local', local record is retained and will be pushed on next sync
+
+    // Remove resolved conflict from active persisted conflicts
+    const remaining = this.getPersistedConflicts().filter((c) => c.id !== conflict.id);
+    this.savePersistedConflicts(remaining);
+    this.notifyConflicts(remaining);
+
+    if (remaining.length === 0) {
+      this.notifyStatus('synced');
+    }
+
     await this.logAudit('CONFLICT_RESOLVED', `تم حل التعارض (${conflict.id}) باختيار النسخة: ${choice}`, true);
   }
 }
