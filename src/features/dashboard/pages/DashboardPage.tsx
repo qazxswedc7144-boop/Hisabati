@@ -23,7 +23,6 @@ import {
 import { StatCard, BalanceBadge, EmptyState } from '@/shared/components';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
 import { useI18n } from '@/shared/hooks/useI18n';
-import { OCRDraftsSection } from '@/features/ocr';
 import { FinancialHealthCard } from '../components/FinancialHealthCard';
 
 export const DashboardPage: React.FC = () => {
@@ -65,8 +64,8 @@ export const DashboardPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Quick Actions (Primary: تسجيل عملية, Secondary: مسح فاتورة OCR) */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
+        {/* Quick Actions (Primary: تسجيل عملية, Secondary: مسح (OCR), Tertiary: حساب جديد) */}
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap sm:flex-nowrap">
           <button
             id="btn-dash-add-trx"
             onClick={() => openQuickAdd()}
@@ -82,7 +81,7 @@ export const DashboardPage: React.FC = () => {
             className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-sky-200 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-xs sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[44px] shrink-0"
           >
             <ScanLine className="w-4 h-4 text-sky-600 dark:text-sky-400" />
-            <span>مسح فاتورة OCR</span>
+            <span>مسح (OCR)</span>
           </button>
 
           <button
@@ -322,9 +321,6 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* OCR Smart Drafts Section (Phase 7-B) */}
-      <OCRDraftsSection />
     </div>
   );
 };
