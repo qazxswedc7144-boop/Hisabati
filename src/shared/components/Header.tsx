@@ -96,24 +96,8 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Right (End): Actions (مسح OCR + Utility Icons) */}
+        {/* Right (End): Actions (Utility Icons) */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Scanner Action: زر 'مسح (OCR)' كأيقونة في الشريط العلوي */}
-          {showOCR && (
-            <button
-              id="btn-header-scan-ocr"
-              onClick={() => openScannerModal()}
-              aria-label="مسح فاتورة (OCR)"
-              title="مسح فاتورة ذكي (OCR)"
-              className="p-2 sm:p-2.5 rounded-xl border border-sky-200 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 transition min-h-[40px] min-w-[40px] flex items-center justify-center shrink-0 active:scale-[0.98]"
-            >
-              <ScanLine className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
-            </button>
-          )}
-
-          {/* Subtle Vertical Divider */}
-          <div className="hidden xs:block h-5 w-px bg-slate-200 dark:bg-slate-800 mx-0.5" />
-
           {/* Notification Bell Button */}
           <button
             id="btn-header-notifications"
