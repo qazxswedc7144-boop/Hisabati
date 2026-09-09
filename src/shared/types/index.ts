@@ -10,4 +10,4 @@ export * from './ocr.types';
 export * from './rbac.types';
 export * from './bi.types';
 export * from './money.types';
-
+export * from './invoice.types';
