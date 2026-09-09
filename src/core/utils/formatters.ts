@@ -235,3 +235,30 @@ export function getBalanceStatusDetails(balance: number) {
       };
   }
 }
+
+/**
+ * Formats an invoice or receipt number deterministically based on operational numbering settings.
+ * Pure function: Does NOT mutate financial records or database states.
+ */
+export function formatInvoiceNumber(
+  prefix: string = 'INV-',
+  sequenceNumber: number = 1,
+  format: 'sequential' | 'yearly_sequential' | 'manual' = 'sequential',
+  date: Date | string = new Date()
+): string {
+  if (format === 'manual') {
+    return '';
+  }
+  const safeSeq = Math.max(1, Math.floor(Number(sequenceNumber) || 1));
+  const padded = String(safeSeq).padStart(4, '0');
+  const cleanPrefix = (prefix || '').trim();
+
+  if (format === 'yearly_sequential') {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    const year = isNaN(d.getTime()) ? new Date().getFullYear() : d.getFullYear();
+    return `${cleanPrefix}${year}-${padded}`;
+  }
+
+  // Standard sequential
+  return `${cleanPrefix}${padded}`;
+}

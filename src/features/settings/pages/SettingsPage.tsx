@@ -1,11 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Settings,
-  Store,
-  Palette,
-  Globe,
-  Coins,
   Shield,
   Users,
   Bell,
@@ -24,11 +20,9 @@ import {
   ScanLine,
   ExternalLink,
   ShieldAlert,
-  Check,
 } from 'lucide-react';
 import { useSettingsStore, useUIStore } from '@/shared/stores';
-import { CurrencyCode, ThemeMode, LanguageCode } from '@/shared/types';
-import { SUPPORTED_CURRENCIES, formatNumber } from '@/core/utils/formatters';
+import { formatNumber } from '@/core/utils/formatters';
 import { useI18n } from '@/shared/hooks/useI18n';
 import { runFinancialEngineTests, EngineTestSuiteResult } from '@/core/tests/transactionEngine.test';
 import { ReportsTestSuite, TestResult as ReportTestResult } from '@/core/tests/reports.test';
@@ -36,29 +30,22 @@ import { CloudSyncTestSuite, TestResult as CloudSyncTestResult } from '@/core/te
 import { MessagingTestSuite, MessagingTestSuiteResult } from '@/core/tests/messaging.test';
 import { AITestSuite, AITestSuiteResult } from '@/core/tests/ai.test';
 import { OCRTestSuite, OCRTestSuiteSummary } from '@/core/tests/ocr.test';
+import { SettingsTestSuite, SettingsTestSuiteResult } from '@/core/tests/settings.test';
 import { MessagingSettingsSection } from '@/features/messaging/components/MessagingSettingsSection';
-import { DataControlCenter } from '../components/DataControlCenter';
+import {
+  BusinessProfileSection,
+  AppearanceSection,
+  LanguageSection,
+  CurrencySection,
+  InvoicePreferencesSection,
+  DataControlCenter,
+} from '../components';
 
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
-  const { t, changeLanguage } = useI18n();
-  const { settings, updateSettings, setTheme, setCurrency } = useSettingsStore();
+  const { t } = useI18n();
+  const { settings, updateSettings } = useSettingsStore();
   const showToast = useUIStore((state) => state.showToast);
-
-  // Business Info Form State
-  const [businessName, setBusinessName] = useState(settings.businessName || '');
-  const [ownerName, setOwnerName] = useState(settings.ownerName || '');
-  const [phone, setPhone] = useState(settings.phone || '');
-  const [businessAddress, setBusinessAddress] = useState(settings.businessAddress || '');
-  const [isSavingBusiness, setIsSavingBusiness] = useState(false);
-
-  // Synchronize with store updates
-  useEffect(() => {
-    setBusinessName(settings.businessName || '');
-    setOwnerName(settings.ownerName || '');
-    setPhone(settings.phone || '');
-    setBusinessAddress(settings.businessAddress || '');
-  }, [settings.businessName, settings.ownerName, settings.phone, settings.businessAddress]);
 
   // Diagnostics Panel Toggle
   const [showDiagnostics, setShowDiagnostics] = useState(false);
@@ -92,43 +79,13 @@ export const SettingsPage: React.FC = () => {
   const [isRunningOCRTests, setIsRunningOCRTests] = useState(false);
   const [ocrTestSuiteResult, setOcrTestSuiteResult] = useState<OCRTestSuiteSummary | null>(null);
 
+  const [isRunningSettingsTests, setIsRunningSettingsTests] = useState(false);
+  const [settingsTestSuiteResult, setSettingsTestSuiteResult] = useState<SettingsTestSuiteResult | null>(null);
+
   // FAQ Accordion State
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
 
   // Handlers
-  const handleSaveBusinessInfo = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSavingBusiness(true);
-    try {
-      await updateSettings({
-        businessName: businessName.trim(),
-        ownerName: ownerName.trim(),
-        phone: phone.trim(),
-        businessAddress: businessAddress.trim(),
-      });
-      showToast('تم حفظ بيانات المنشأة بنجاح', 'success');
-    } catch (err: any) {
-      showToast('فشل حفظ بيانات المنشأة', 'error');
-    } finally {
-      setIsSavingBusiness(false);
-    }
-  };
-
-  const handleThemeChange = async (newTheme: ThemeMode) => {
-    await setTheme(newTheme);
-    showToast('تم تحديث نمط المظهر', 'success');
-  };
-
-  const handleLanguageChange = async (newLang: LanguageCode) => {
-    await changeLanguage(newLang);
-    showToast(newLang === 'ar' ? 'تم ضبط اللغة إلى العربية' : 'Language set to English', 'success');
-  };
-
-  const handleCurrencyChange = async (newCurrency: CurrencyCode) => {
-    await setCurrency(newCurrency);
-    showToast('تم تحديث العملة الرئيسية للنظام', 'success');
-  };
-
   // Test Suite Triggers
   const handleRunTests = async () => {
     setIsRunningTests(true);
@@ -226,6 +183,22 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  const handleRunSettingsTests = async () => {
+    setIsRunningSettingsTests(true);
+    try {
+      const result = await SettingsTestSuite.runAll();
+      setSettingsTestSuiteResult(result);
+      showToast(
+        `اكتملت اختبارات الإعدادات والفواتير: ${result.passedCount} نجح من أصل ${result.totalCount}`,
+        result.failedCount === 0 ? 'success' : 'info'
+      );
+    } catch (e: any) {
+      showToast('فشل تشغيل اختبارات الإعدادات والفواتير', 'error');
+    } finally {
+      setIsRunningSettingsTests(false);
+    }
+  };
+
   return (
     <div id="settings-page" className="space-y-6 max-w-4xl animate-in fade-in duration-200">
       {/* Header */}
@@ -239,187 +212,22 @@ export const SettingsPage: React.FC = () => {
         </p>
       </div>
 
-      {/* 1. إعدادات المنشأة وبيانات العمل (Business Info) */}
-      <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
-        <div>
-          <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <Store className="w-4 h-4 text-teal-600" />
-            <span>بيانات المنشأة والنشاط التجاري</span>
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            تظهر هذه البيانات في ترويسة التقارير، كشوفات الحساب، ومطبوعات الـ PDF
-          </p>
-        </div>
+      {/* 1. إعدادات المنشأة والنشاط التجاري (Business Profile & Branding) */}
+      <BusinessProfileSection />
 
-        <form onSubmit={handleSaveBusinessInfo} className="space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                اسم المنشأة / المحل
-              </label>
-              <input
-                type="text"
-                value={businessName}
-                onChange={(e) => setBusinessName(e.target.value)}
-                placeholder="مثال: مؤسسة الأمل للتجارة"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-teal-500 min-h-[44px]"
-              />
-            </div>
+      {/* 2. المظهر ونمط العرض (Appearance & Theme) */}
+      <AppearanceSection />
 
-            <div>
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                اسم المالك / المسؤول
-              </label>
-              <input
-                type="text"
-                value={ownerName}
-                onChange={(e) => setOwnerName(e.target.value)}
-                placeholder="مثال: أحمد محمد"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-teal-500 min-h-[44px]"
-              />
-            </div>
+      {/* 3. لغة التطبيق وتوجيه الواجهة (Language & Direction) */}
+      <LanguageSection />
 
-            <div>
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                رقم الهاتف / للتواصل
-              </label>
-              <input
-                type="text"
-                dir="ltr"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+967 770 000 000"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-teal-500 min-h-[44px] text-end font-mono"
-              />
-            </div>
+      {/* 4. العملة الرئيسية للنظام (Base System Currency) */}
+      <CurrencySection />
 
-            <div>
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                العنوان / المدينة
-              </label>
-              <input
-                type="text"
-                value={businessAddress}
-                onChange={(e) => setBusinessAddress(e.target.value)}
-                placeholder="مثال: صنعاء - شارع الزبيري"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-teal-500 min-h-[44px]"
-              />
-            </div>
-          </div>
+      {/* 5. التفضيلات التشغيلية ونمط الفواتير (Operational & Invoice Preferences) */}
+      <InvoicePreferencesSection />
 
-          <div className="pt-2 flex justify-end">
-            <button
-              type="submit"
-              disabled={isSavingBusiness}
-              className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs transition shadow-xs min-h-[44px] disabled:opacity-50"
-            >
-              {isSavingBusiness ? 'جارٍ الحفظ...' : 'حفظ بيانات المنشأة'}
-            </button>
-          </div>
-        </form>
-      </section>
-
-      {/* 2. المظهر ولغة الواجهة (Appearance & Language) */}
-      <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
-        <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-          <Palette className="w-4 h-4 text-teal-600" />
-          المظهر واللغة
-        </h3>
-
-        {/* Theme Mode */}
-        <div>
-          <label className="text-xs font-bold text-slate-600 dark:text-slate-400 block mb-2">
-            نمط الواجهة
-          </label>
-          <div className="grid grid-cols-3 gap-2.5">
-            {[
-              { id: 'light', label: 'فاتح' },
-              { id: 'dark', label: 'داكن' },
-              { id: 'system', label: 'تلقائي (النظام)' },
-            ].map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleThemeChange(item.id as ThemeMode)}
-                className={`py-3 px-3 rounded-2xl border text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 min-h-[44px] ${
-                  settings.theme === item.id
-                    ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 shadow-xs'
-                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-                }`}
-              >
-                {settings.theme === item.id && <Check className="w-4 h-4 text-teal-600" />}
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Language Selector */}
-        <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-          <label className="text-xs font-bold text-slate-600 dark:text-slate-400 block mb-2 flex items-center gap-1.5">
-            <Globe className="w-4 h-4 text-teal-600" />
-            لغة التطبيق
-          </label>
-          <div className="grid grid-cols-2 gap-2.5">
-            {[
-              { id: 'ar', label: 'العربية (Arabic)' },
-              { id: 'en', label: 'English (الإنجليزية)' },
-            ].map((lang) => (
-              <button
-                key={lang.id}
-                type="button"
-                onClick={() => handleLanguageChange(lang.id as LanguageCode)}
-                className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-2 min-h-[44px] ${
-                  settings.language === lang.id
-                    ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300'
-                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-                }`}
-              >
-                {settings.language === lang.id && <Check className="w-3.5 h-3.5" />}
-                <span>{lang.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* 3. العملة الرئيسية للنظام (Base Currency) */}
-      <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
-        <div>
-          <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <Coins className="w-4 h-4 text-teal-600" />
-            العملة الرئيسية للنظام
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            العملة الافتراضية المستخدمة في التقارير وكشوفات الحسابات والتعاملات اليومية
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          {SUPPORTED_CURRENCIES.map((curr) => (
-            <button
-              key={curr.code}
-              type="button"
-              onClick={() => handleCurrencyChange(curr.code)}
-              className={`p-3 rounded-2xl border text-xs font-bold transition text-start flex flex-col justify-between min-h-[64px] ${
-                settings.currency === curr.code
-                  ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 shadow-xs'
-                  : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-extrabold">{curr.symbolAr}</span>
-                {settings.currency === curr.code && <Check className="w-3.5 h-3.5 text-teal-600" />}
-              </div>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">
-                {curr.nameAr}
-              </span>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* 4. الأمان وقفل التطبيق (Security & Privacy) */}
+      {/* 6. الأمان وقفل التطبيق (Security & Privacy) */}
       <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
         <div>
           <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">

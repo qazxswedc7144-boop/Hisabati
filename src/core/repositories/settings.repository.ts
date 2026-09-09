@@ -8,11 +8,22 @@ const DEFAULT_SETTINGS: AppSettings = {
   businessName: 'متجري / حساباتي',
   ownerName: 'المدير',
   phone: '',
+  businessAddress: '',
+  businessLogo: '',
   enablePinLock: false,
   enableBiometrics: false,
   enableNotifications: true,
   cloudSyncEnabled: false,
   autoBackupEnabled: false,
+  // Phase F - Part 2: Invoice & Operational Preferences
+  invoicePrefix: 'INV-',
+  nextInvoiceNumber: 1,
+  invoiceNumberingFormat: 'sequential',
+  defaultInvoiceNotes: 'شكراً لتعاملكم معنا',
+  showBusinessLogoOnInvoice: true,
+  showTaxNumberOnInvoice: true,
+  showPhoneOnInvoice: true,
+  showAddressOnInvoice: true,
 };
 
 export class SettingsRepository {
@@ -31,6 +42,12 @@ export class SettingsRepository {
     const now = new Date().toISOString();
     
     for (const [key, value] of Object.entries(partial)) {
+      // Clean up any legacy duplicates with non-standard id
+      const legacy = await db.settings.where('key').equals(key).filter((e) => e.id !== key).toArray();
+      for (const item of legacy) {
+        await db.settings.delete(item.id);
+      }
+
       const entry: SettingsEntry = {
         id: key,
         key,
@@ -50,12 +67,7 @@ export class SettingsRepository {
   }
 
   async set<T>(key: string, value: T): Promise<void> {
-    await db.settings.put({
-      id: key,
-      key,
-      value,
-      updatedAt: new Date().toISOString(),
-    });
+    await this.updateSettings({ [key]: value } as unknown as Partial<AppSettings>);
   }
 }
 

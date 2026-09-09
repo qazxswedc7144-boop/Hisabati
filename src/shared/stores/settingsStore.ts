@@ -21,11 +21,22 @@ const DEFAULT_SETTINGS: AppSettings = {
   businessName: 'متجري / حساباتي',
   ownerName: 'المدير',
   phone: '',
+  businessAddress: '',
+  businessLogo: '',
   enablePinLock: false,
   enableBiometrics: false,
   enableNotifications: true,
   cloudSyncEnabled: false,
   autoBackupEnabled: false,
+  // Phase F - Part 2: Invoice & Operational Preferences
+  invoicePrefix: 'INV-',
+  nextInvoiceNumber: 1,
+  invoiceNumberingFormat: 'sequential',
+  defaultInvoiceNotes: 'شكراً لتعاملكم معنا',
+  showBusinessLogoOnInvoice: true,
+  showTaxNumberOnInvoice: true,
+  showPhoneOnInvoice: true,
+  showAddressOnInvoice: true,
 };
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -75,15 +86,45 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 }));
 
-function applyThemeToDOM(theme: ThemeMode) {
-  if (typeof document === 'undefined') return;
-  const isDark =
-    theme === 'dark' ||
-    (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+let systemThemeMediaQueryListener: ((e: MediaQueryListEvent) => void) | null = null;
 
-  if (isDark) {
-    document.documentElement.classList.add('dark');
-  } else {
-    document.documentElement.classList.remove('dark');
+function applyThemeToDOM(theme: ThemeMode) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+  if (!window.matchMedia) {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    return;
+  }
+
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+  if (systemThemeMediaQueryListener) {
+    mediaQuery.removeEventListener('change', systemThemeMediaQueryListener);
+    systemThemeMediaQueryListener = null;
+  }
+
+  const updateClasses = () => {
+    const isDark =
+      theme === 'dark' ||
+      (theme === 'system' && mediaQuery.matches);
+
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
+
+  updateClasses();
+
+  if (theme === 'system') {
+    systemThemeMediaQueryListener = () => {
+      updateClasses();
+    };
+    mediaQuery.addEventListener('change', systemThemeMediaQueryListener);
   }
 }

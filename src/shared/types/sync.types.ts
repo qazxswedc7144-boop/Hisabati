@@ -107,7 +107,7 @@ export interface SyncConflictItem {
 
 export interface SyncAuditLogEntry {
   id: string;
-  action: 'SYNC_START' | 'SYNC_SUCCESS' | 'SYNC_FAILED' | 'BACKUP_CREATED' | 'BACKUP_RESTORED' | 'CONFLICT_DETECTED' | 'CONFLICT_RESOLVED';
+  action: 'SYNC_START' | 'SYNC_SUCCESS' | 'SYNC_FAILED' | 'BACKUP_CREATED' | 'BACKUP_RESTORED' | 'CONFLICT_DETECTED' | 'CONFLICT_RESOLVED' | 'QUEUE_RETRY' | 'QUEUE_CLEARED';
   timestamp: string;
   details: string;
   deviceId: string;

@@ -12,6 +12,7 @@ import { runBITests } from './bi.test';
 import { MoneyTestSuite } from './money.test';
 import { DualRepresentationTestSuite } from './dualRepresentation.test';
 import { FinancialIntegrationTestSuite } from './financialIntegration.test';
+import { SettingsTestSuite } from './settings.test';
 
 async function main() {
   console.log('====================================================');
@@ -265,6 +266,25 @@ async function main() {
     }
   } catch (err: any) {
     console.error('Phase B Final Integration Test Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // 12. Phase F Part 1: Settings Architecture & Financial Invariants Tests (SETTINGS-01 to SETTINGS-10)
+  console.log('\n--- [Phase F: Part 1] Settings Architecture, Profile & Currency Tests ---');
+  try {
+    const pSet = await SettingsTestSuite.runAll();
+    console.log(`Phase F Part 1 Settings Result: Passed ${pSet.passedCount}/${pSet.totalCount} (${pSet.durationMs}ms)`);
+    totalPassed += pSet.passedCount;
+    totalFailed += pSet.failedCount;
+    totalCount += pSet.totalCount;
+    if (pSet.failedCount > 0) {
+      for (const r of pSet.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ [${r.id}] ${r.description}: ${r.error}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Phase F Settings Test Suite crashed:', err);
     totalFailed++;
     totalCount++;
   }

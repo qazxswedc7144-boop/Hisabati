@@ -40,9 +40,11 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({
     syncStatus,
     lastSyncTime,
     pendingQueueCount,
+    queueStats,
     conflicts,
     triggerManualSync,
     connectGoogleDrive,
+    retryFailedQueue,
   } = useSyncStore();
 
   const handleManualSync = async () => {
@@ -169,12 +171,12 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({
       {showModal && (
         <div
           id="sync-status-modal-backdrop"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in"
           onClick={() => setShowModal(false)}
         >
           <div
             id="sync-status-modal"
-            className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4"
+            className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 max-h-[85vh] overflow-y-auto my-auto"
             onClick={(e) => e.stopPropagation()}
             dir="rtl"
           >
@@ -253,6 +255,28 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({
                   </span>
                 )}
               </div>
+
+              {/* Failed Queue Items Alert */}
+              {queueStats.failed > 0 && (
+                <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900/60 flex items-center justify-between">
+                  <div>
+                    <span className="text-rose-500 text-[11px] block">عمليات تعذر إرسالها</span>
+                    <span className="font-bold text-rose-800 dark:text-rose-200">
+                      {queueStats.failed} عملية بحاجة لإعادة محاولة
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const count = await retryFailedQueue();
+                      showToast(`تمت إعادة جدولة ${count} عملية للإرسال`, 'info');
+                    }}
+                    className="px-2.5 py-1 rounded-xl bg-rose-600 text-white text-[11px] font-bold hover:bg-rose-700 transition"
+                  >
+                    إعادة
+                  </button>
+                </div>
+              )}
 
               {/* Conflicts Alert */}
               {conflicts.length > 0 && (

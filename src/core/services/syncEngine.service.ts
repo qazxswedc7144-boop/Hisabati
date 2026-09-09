@@ -33,6 +33,7 @@ export class SyncEngine {
   private conflictListeners: Array<(conflicts: SyncConflictItem[]) => void> = [];
   private autoSyncTimer: any = null;
   private retryTimer: any = null;
+  private heartbeatTimer: any = null;
 
   constructor() {
     this.setupNetworkListeners();
@@ -84,6 +85,36 @@ export class SyncEngine {
         }
       });
     }
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+          if (isOnline && googleDriveService.isConnected()) {
+            this.processQueueBestEffort();
+          }
+        }
+      });
+    }
+
+    // Periodic Heartbeat Sync (every 5 minutes if online and connected)
+    if (typeof window !== 'undefined' && !this.heartbeatTimer) {
+      this.heartbeatTimer = setInterval(() => {
+        const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+        if (isOnline && googleDriveService.isConnected() && !this.isSyncing) {
+          this.processQueueBestEffort();
+        }
+      }, 5 * 60 * 1000);
+    }
+  }
+
+  public destroy(): void {
+    if (this.autoSyncTimer) clearTimeout(this.autoSyncTimer);
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.autoSyncTimer = null;
+    this.retryTimer = null;
+    this.heartbeatTimer = null;
   }
 
   private inMemoryConflicts: SyncConflictItem[] = [];
@@ -477,6 +508,13 @@ export class SyncEngine {
       );
 
       if (activeConflicts.length > 0) {
+        if (newlyDetectedConflicts.length > 0) {
+          await this.logAudit(
+            'CONFLICT_DETECTED',
+            `تم رصد ${newlyDetectedConflicts.length} تعارضات مالية جديدة تحتاج للمراجعة والحل`,
+            false
+          );
+        }
         this.notifyStatus('conflict');
         this.notifyConflicts(activeConflicts);
       } else {
@@ -511,7 +549,7 @@ export class SyncEngine {
   }
 
   /**
-   * Triggers asynchronous background queue flush with debouncing and exponential backoff retry.
+   * Triggers asynchronous background queue flush with debouncing and exponential backoff retry with jitter.
    */
   public processQueueBestEffort(): void {
     if (this.isSyncing || !googleDriveService.isConnected()) {
@@ -531,7 +569,7 @@ export class SyncEngine {
     // Debounce to batch mutations
     this.autoSyncTimer = setTimeout(() => {
       this.performFullSync().catch(async () => {
-        // Compute exponential backoff for next retry attempt
+        // Compute exponential backoff for next retry attempt with jitter
         const pendingWithRetries = await db.syncQueue
           .where('status')
           .equals('pending')
@@ -539,7 +577,8 @@ export class SyncEngine {
 
         const maxRetries = Math.max(0, ...pendingWithRetries.map((p) => p.retryCount || 0));
         if (maxRetries < MAX_RETRIES && pendingWithRetries.length > 0) {
-          const backoffDelay = Math.min(1000 * Math.pow(2, maxRetries), 30000);
+          const jitter = Math.floor(Math.random() * 500);
+          const backoffDelay = Math.min(1000 * Math.pow(2, maxRetries) + jitter, 30000);
           if (this.retryTimer) clearTimeout(this.retryTimer);
           this.notifyStatus('retrying');
           this.retryTimer = setTimeout(() => {
@@ -548,6 +587,75 @@ export class SyncEngine {
         }
       });
     }, 1500);
+  }
+
+  /**
+   * Manually resets failed queue mutations to pending and re-triggers background sync.
+   * Ensures no pending mutations are lost when network errors exceed MAX_RETRIES.
+   */
+  public async retryFailedQueueItems(): Promise<number> {
+    const failedItems = await db.syncQueue.where('status').equals('failed').toArray();
+    if (failedItems.length === 0) return 0;
+
+    for (const item of failedItems) {
+      await db.syncQueue.update(item.id, {
+        status: 'pending',
+        retryCount: 0,
+        lastError: undefined,
+      });
+    }
+
+    await this.logAudit(
+      'QUEUE_RETRY',
+      `إعادة محاولة يدويّة لـ ${failedItems.length} عمليات كانت في حالة الفشل`,
+      true
+    );
+
+    this.processQueueBestEffort();
+    return failedItems.length;
+  }
+
+  /**
+   * Retrieves granular statistics for all queue statuses.
+   */
+  public async getQueueStats(): Promise<{
+    pending: number;
+    processing: number;
+    failed: number;
+    completed: number;
+    total: number;
+  }> {
+    const all = await db.syncQueue.toArray();
+    const pending = all.filter((i) => i.status === 'pending').length;
+    const processing = all.filter((i) => i.status === 'processing').length;
+    const failed = all.filter((i) => i.status === 'failed').length;
+    const completed = all.filter((i) => i.status === 'completed').length;
+    return {
+      pending,
+      processing,
+      failed,
+      completed,
+      total: all.length,
+    };
+  }
+
+  /**
+   * Cleans up old completed queue items to prevent IndexedDB growth while keeping recent audit trail.
+   */
+  public async clearCompletedQueue(maxKeep = 20): Promise<number> {
+    const completed = await db.syncQueue.where('status').equals('completed').toArray();
+    if (completed.length <= maxKeep) return 0;
+    const sorted = completed.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const toDelete = sorted.slice(0, completed.length - maxKeep);
+    for (const item of toDelete) {
+      await db.syncQueue.delete(item.id);
+    }
+    await this.logAudit(
+      'QUEUE_CLEARED',
+      `تنظيف ${toDelete.length} من العمليات القديمة المكتملة في طابور المزامنة`,
+      true
+    );
+    return toDelete.length;
   }
 
   /**

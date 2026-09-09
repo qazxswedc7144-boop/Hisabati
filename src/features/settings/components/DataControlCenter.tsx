@@ -48,12 +48,15 @@ export const DataControlCenter: React.FC = () => {
     isLoadingBackups,
     isBackingUp,
     isRestoring: isSyncRestoring,
+    queueStats,
     connectGoogleDrive,
     disconnectGoogleDrive,
     triggerManualSync,
     triggerManualBackup,
     restoreFromDriveFile,
     deleteCloudBackup,
+    retryFailedQueue,
+    clearCompletedQueue,
   } = useSyncStore();
 
   // Modals & States
@@ -408,6 +411,33 @@ export const DataControlCenter: React.FC = () => {
                 </span>
               </div>
             </div>
+
+            {/* FAILED QUEUE RETRY ALERT */}
+            {queueStats.failed > 0 && (
+              <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <div>
+                    <p className="text-xs font-bold text-rose-900 dark:text-rose-200">
+                      يوجد {queueStats.failed} عمليات تعذر إرسالها بعد عدة محاولات
+                    </p>
+                    <p className="text-[11px] text-rose-700 dark:text-rose-300">
+                      بسبب انقطاع الشبكة. تم إيقاف المحاولات التلقائية لتوفير البيانات.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const count = await retryFailedQueue();
+                    showToast(`تمت إعادة جدولة ${count} عملية للإرسال فوراً`, 'info');
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shrink-0 min-h-[36px]"
+                >
+                  إعادة المحاولة الآن
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -672,8 +702,8 @@ export const DataControlCenter: React.FC = () => {
 
       {/* 2. Google Consent Modal */}
       {showConsentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 my-auto">
             <div className="w-12 h-12 rounded-2xl bg-teal-100 dark:bg-teal-950 text-teal-600 flex items-center justify-center mx-auto">
               <Cloud className="w-6 h-6" />
             </div>
@@ -720,8 +750,8 @@ export const DataControlCenter: React.FC = () => {
 
       {/* 3. Manual Token Input Modal */}
       {showTokenInput && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 my-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
                 إدخال رمز وصول Google Drive يدوياً
@@ -769,8 +799,8 @@ export const DataControlCenter: React.FC = () => {
 
       {/* 4. Google Drive Restore Modal */}
       {showDriveRestoreModal && selectedBackupForRestore && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 my-auto">
             <div className="w-12 h-12 rounded-2xl bg-teal-100 dark:bg-teal-950 text-teal-600 flex items-center justify-center mx-auto">
               <CloudDownload className="w-6 h-6" />
             </div>
@@ -849,8 +879,8 @@ export const DataControlCenter: React.FC = () => {
 
       {/* 5. Local JSON Restore Confirmation Modal */}
       {showLocalRestoreModal && pendingLocalRestorePayload && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 my-auto">
             <div className="w-12 h-12 rounded-2xl bg-teal-100 dark:bg-teal-950 text-teal-600 flex items-center justify-center mx-auto">
               <Upload className="w-6 h-6" />
             </div>
@@ -926,8 +956,8 @@ export const DataControlCenter: React.FC = () => {
 
       {/* 6. Clear Database Confirm Dialog */}
       {showClearConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 text-center space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 text-center space-y-4 my-auto">
             <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
               <Trash2 className="w-6 h-6" />
             </div>

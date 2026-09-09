@@ -4,6 +4,7 @@ import { transactionEngine } from '../services/transactionEngine.service';
 import { accountRepository } from '../repositories/account.repository';
 import { integrityService } from '../services/integrity.service';
 import { db } from '../database/db';
+import { decimalToMinor } from '../money/converter';
 
 export interface TestResult {
   id: string;
@@ -558,6 +559,284 @@ export class CloudSyncTestSuite {
           } finally {
             unsubscribe();
             setupMocks();
+          }
+        }
+      );
+
+      // =========================================================================
+      // SYNC-11: Queue Statistics & Completed Cleanup
+      // =========================================================================
+      await this.runTest(
+        results,
+        'SYNC-11',
+        'إحصائيات طابور المزامنة وتنظيف السجلات المكتملة (Queue Stats & Completed Cleanup)',
+        async () => {
+          setupMocks();
+          await db.syncQueue.clear();
+
+          // Enqueue test mutation
+          await syncEngine.enqueueMutation(
+            'account',
+            `acc_stats_${Date.now()}`,
+            'CREATE',
+            { name: 'حساب اختبار الإحصائيات' },
+            `op_stats_1_${Date.now()}`
+          );
+
+          const statsBefore = await syncEngine.getQueueStats();
+          if (statsBefore.pending !== 1 || statsBefore.total !== 1) {
+            throw new Error(`إحصائيات الطابور غير صحيحة قبل المزامنة: ${JSON.stringify(statsBefore)}`);
+          }
+
+          // Complete sync
+          await syncEngine.performFullSync();
+
+          const statsAfter = await syncEngine.getQueueStats();
+          if (statsAfter.completed < 1) {
+            throw new Error(`لم يتم تحويل العملية إلى مكتملة (completed): ${JSON.stringify(statsAfter)}`);
+          }
+
+          // Test cleanup with maxKeep = 0
+          const cleared = await syncEngine.clearCompletedQueue(0);
+          if (cleared < 1) {
+            throw new Error('فشل تنظيف العمليات المكتملة في الطابور');
+          }
+        }
+      );
+
+      // =========================================================================
+      // SYNC-12: Exponential Backoff & Jitter Verification
+      // =========================================================================
+      await this.runTest(
+        results,
+        'SYNC-12',
+        'التراجع الأسي مع التشتيت العشوائي لحماية الشبكة (Exponential Backoff with Jitter)',
+        async () => {
+          setupMocks();
+          await db.syncQueue.clear();
+
+          const itemOpId = `op_backoff_${Date.now()}`;
+          await syncEngine.enqueueMutation(
+            'account',
+            `acc_backoff_${Date.now()}`,
+            'CREATE',
+            { name: 'حساب فحص التراجع' },
+            itemOpId
+          );
+
+          // Force failure
+          googleDriveService.uploadJsonFile = async () => {
+            throw new Error('Network timeout 408');
+          };
+          googleDriveService.updateJsonFile = async () => {
+            throw new Error('Network timeout 408');
+          };
+
+          try {
+            await syncEngine.performFullSync();
+          } catch {
+            // Expected
+          }
+
+          const failedItem = await db.syncQueue.where('operationId').equals(itemOpId).first();
+          if (!failedItem || failedItem.retryCount !== 1) {
+            throw new Error(`عداد المحاولات لم يزداد بالشكل الصحيح: ${failedItem?.retryCount}`);
+          }
+          if (failedItem.status !== 'pending') {
+            throw new Error(`حالة العملية بعد أول فشل يجب أن تبقى pending للمحاولة التالية`);
+          }
+        }
+      );
+
+      // =========================================================================
+      // SYNC-13: Max Retries Exhaustion & Manual Recovery
+      // =========================================================================
+      await this.runTest(
+        results,
+        'SYNC-13',
+        'حماية استنفاد المحاولات القصوى وإعادة الجدولة اليدوية (Max Retries & Manual Recovery)',
+        async () => {
+          setupMocks();
+          await db.syncQueue.clear();
+
+          const opIdExhaust = `op_exhaust_${Date.now()}`;
+          // Insert queue item already at retryCount = 4
+          await db.syncQueue.add({
+            id: 'sq_exhaust_1',
+            entityType: 'account',
+            entityId: 'acc_exhaust_1',
+            operation: 'CREATE',
+            operationId: opIdExhaust,
+            createdAt: new Date().toISOString(),
+            retryCount: 4,
+            status: 'pending',
+          });
+
+          // Force failure
+          googleDriveService.uploadJsonFile = async () => {
+            throw new Error('Persistent 503 Service Unavailable');
+          };
+          googleDriveService.updateJsonFile = async () => {
+            throw new Error('Persistent 503 Service Unavailable');
+          };
+
+          try {
+            await syncEngine.performFullSync();
+          } catch {
+            // Expected
+          }
+
+          // Check it transitioned to failed
+          const exhaustedItem = await db.syncQueue.where('operationId').equals(opIdExhaust).first();
+          if (!exhaustedItem || exhaustedItem.status !== 'failed') {
+            throw new Error(`العملية التي تجاوزت 5 محاولات يجب أن تتحول إلى failed: ${exhaustedItem?.status}`);
+          }
+
+          const stats = await syncEngine.getQueueStats();
+          if (stats.failed < 1) {
+            throw new Error(`إحصائيات العمليات الفاشلة لم تسجل العملية: ${JSON.stringify(stats)}`);
+          }
+
+          // Test manual recovery
+          const retriedCount = await syncEngine.retryFailedQueueItems();
+          if (retriedCount < 1) {
+            throw new Error('فشلت إعادة جدولة العمليات الفاشلة');
+          }
+
+          const recoveredItem = await db.syncQueue.where('operationId').equals(opIdExhaust).first();
+          if (!recoveredItem || recoveredItem.status !== 'pending' || recoveredItem.retryCount !== 0) {
+            throw new Error(`العملية بعد الاستعادة يجب أن تصبح pending بعداد 0: ${JSON.stringify(recoveredItem)}`);
+          }
+        }
+      );
+
+      // =========================================================================
+      // SYNC-14: Network Recovery & Flush Verification
+      // =========================================================================
+      await this.runTest(
+        results,
+        'SYNC-14',
+        'معالجة استعادة الاتصال ودورة حياة الطابور (Network Recovery & Queue Flush)',
+        async () => {
+          setupMocks();
+          await db.syncQueue.clear();
+
+          const acc = await accountRepository.create({
+            name: `حساب استعادة الشبكة ${Date.now()}`,
+          });
+
+          await transactionEngine.createTransaction({
+            accountId: acc.id,
+            type: 'debit',
+            amount: 420,
+            date: '2026-09-08',
+            operationId: `op_net_recov_${Date.now()}`,
+          });
+
+          const pendingBefore = await syncEngine.getPendingCount();
+          if (pendingBefore < 1) {
+            throw new Error('لم يتم إدراج المعاملة في طابور المزامنة');
+          }
+
+          // Simulate sync flush upon recovery
+          const syncRes = await syncEngine.performFullSync();
+          if (!syncRes.success) {
+            throw new Error('فشلت المزامنة بعد استعادة الاتصال');
+          }
+
+          const pendingAfter = await syncEngine.getPendingCount();
+          if (pendingAfter !== 0) {
+            throw new Error(`لم يتم إفراغ طابور المزامنة بالكامل بعد النجاح: تبقى ${pendingAfter}`);
+          }
+        }
+      );
+
+      // =========================================================================
+      // SYNC-15: Interactive Conflict Resolution & Recalculation
+      // =========================================================================
+      await this.runTest(
+        results,
+        'SYNC-15',
+        'حل التعارض المالي التفاعلي وإعادة احتساب الأرصدة (Interactive Conflict Resolution)',
+        async () => {
+          setupMocks();
+          await db.syncQueue.clear();
+
+          const acc = await accountRepository.create({
+            name: `حساب حل التعارض ${Date.now()}`,
+          });
+
+          const trx = await transactionEngine.createTransaction({
+            accountId: acc.id,
+            type: 'debit',
+            amount: 1000,
+            date: '2026-09-08',
+          });
+
+          // Construct conflict item
+          const conflictItem: any = {
+            id: 'cf_test_resolve_' + trx.id,
+            entityType: 'transaction',
+            entityId: trx.id,
+            localVersion: {
+              title: 'المعاملة محلياً',
+              updatedAt: '2026-09-08T12:00:00.000Z',
+              data: { ...trx, amount: 1000, amountMinor: decimalToMinor(1000) },
+            },
+            remoteVersion: {
+              title: 'المعاملة في السحابة',
+              updatedAt: '2026-09-08T13:00:00.000Z',
+              data: { ...trx, amount: 1500, amountMinor: decimalToMinor(1500) },
+            },
+            detectedAt: new Date().toISOString(),
+            resolved: false,
+          };
+
+          // Resolve choosing 'remote'
+          await syncEngine.resolveConflict(conflictItem, 'remote');
+
+          // Verify local transaction was updated to 1500
+          const updatedTrx = await db.transactions.get(trx.id);
+          if (!updatedTrx || updatedTrx.amount !== 1500) {
+            throw new Error(`لم يتم تطبيق النسخة السحابية المختارة: ${updatedTrx?.amount}`);
+          }
+
+          // Verify account balance was accurately recalculated to 1500
+          const updatedAcc = await db.accounts.get(acc.id);
+          if (!updatedAcc || updatedAcc.currentBalance !== 1500) {
+            throw new Error(`لم تتم إعادة احتساب رصيد الحساب بشكل سليم: ${updatedAcc?.currentBalance}`);
+          }
+
+          // Test resolving choosing 'local'
+          const localConflict: any = {
+            id: 'cf_test_local_' + trx.id,
+            entityType: 'transaction',
+            entityId: trx.id,
+            localVersion: {
+              title: 'المعاملة محلياً',
+              updatedAt: '2026-09-08T14:00:00.000Z',
+              data: { ...trx, amount: 1200, amountMinor: decimalToMinor(1200) },
+            },
+            remoteVersion: {
+              title: 'المعاملة في السحابة',
+              updatedAt: '2026-09-08T15:00:00.000Z',
+              data: { ...trx, amount: 900, amountMinor: decimalToMinor(900) },
+            },
+            detectedAt: new Date().toISOString(),
+            resolved: false,
+          };
+
+          await syncEngine.resolveConflict(localConflict, 'local');
+
+          // Verify UPDATE mutation was enqueued
+          const enqueued = await db.syncQueue
+            .where('entityId')
+            .equals(trx.id)
+            .filter((item) => item.operation === 'UPDATE')
+            .first();
+
+          if (!enqueued) {
+            throw new Error('لم يتم جدولة عملية UPDATE لمزامنة الاختيار المحلي مع السحابة');
           }
         }
       );

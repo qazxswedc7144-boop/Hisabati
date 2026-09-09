@@ -19,6 +19,13 @@ interface SyncStoreState {
   syncStatus: SyncStatusType;
   lastSyncTime: string | null;
   pendingQueueCount: number;
+  queueStats: {
+    pending: number;
+    processing: number;
+    failed: number;
+    completed: number;
+    total: number;
+  };
   conflicts: SyncConflictItem[];
   cloudBackups: DriveFileInfo[];
   isLoadingBackups: boolean;
@@ -37,6 +44,8 @@ interface SyncStoreState {
   deleteCloudBackup: (fileId: string) => Promise<void>;
   resolveConflict: (conflict: SyncConflictItem, choice: 'local' | 'remote') => Promise<void>;
   updatePendingCount: () => Promise<void>;
+  retryFailedQueue: () => Promise<number>;
+  clearCompletedQueue: () => Promise<number>;
 }
 
 export const useSyncStore = create<SyncStoreState>((set, get) => ({
@@ -46,6 +55,7 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
   syncStatus: 'idle',
   lastSyncTime: typeof localStorage !== 'undefined' ? localStorage.getItem('hisabati_last_sync_time') : null,
   pendingQueueCount: 0,
+  queueStats: { pending: 0, processing: 0, failed: 0, completed: 0, total: 0 },
   conflicts: syncEngine.getPersistedConflicts(),
   cloudBackups: [],
   isLoadingBackups: false,
@@ -86,10 +96,35 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
 
   updatePendingCount: async () => {
     try {
-      const count = await syncEngine.getPendingCount();
-      set({ pendingQueueCount: count });
+      const [count, stats] = await Promise.all([
+        syncEngine.getPendingCount(),
+        syncEngine.getQueueStats(),
+      ]);
+      set({ pendingQueueCount: count, queueStats: stats });
     } catch {
       // ignore
+    }
+  },
+
+  retryFailedQueue: async () => {
+    try {
+      const retriedCount = await syncEngine.retryFailedQueueItems();
+      await get().updatePendingCount();
+      return retriedCount;
+    } catch (err) {
+      console.warn('Retry failed queue items failed:', err);
+      return 0;
+    }
+  },
+
+  clearCompletedQueue: async () => {
+    try {
+      const clearedCount = await syncEngine.clearCompletedQueue();
+      await get().updatePendingCount();
+      return clearedCount;
+    } catch (err) {
+      console.warn('Clear completed queue items failed:', err);
+      return 0;
     }
   },
 

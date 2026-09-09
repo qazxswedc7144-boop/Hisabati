@@ -1,5 +1,7 @@
 import { CurrencyCode, LanguageCode, ThemeMode } from './common.types';
 
+export type InvoiceNumberingFormat = 'sequential' | 'yearly_sequential' | 'manual';
+
 export interface AppSettings {
   currency: CurrencyCode;
   language: LanguageCode;
@@ -8,6 +10,7 @@ export interface AppSettings {
   ownerName?: string;
   phone?: string;
   businessAddress?: string;
+  businessLogo?: string;
   enablePinLock: boolean;
   enableBiometrics: boolean;
   enableNotifications: boolean;
@@ -22,6 +25,15 @@ export interface AppSettings {
   enableWhatsAppDirect?: boolean;
   enableScheduler?: boolean;
   autoRemindDueDebts?: boolean;
+  // Phase F - Part 2: Invoice & Operational Preferences
+  invoicePrefix?: string;
+  nextInvoiceNumber?: number;
+  invoiceNumberingFormat?: InvoiceNumberingFormat;
+  defaultInvoiceNotes?: string;
+  showBusinessLogoOnInvoice?: boolean;
+  showTaxNumberOnInvoice?: boolean;
+  showPhoneOnInvoice?: boolean;
+  showAddressOnInvoice?: boolean;
 }
 
 export interface SettingsEntry {
