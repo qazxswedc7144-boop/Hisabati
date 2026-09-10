@@ -28,21 +28,23 @@ export const Toast: React.FC = () => {
   const Icon = config.icon;
 
   return (
-    <div
-      id="app-toast-notification"
-      className={`fixed top-6 left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:rtl:translate-x-1/2 z-100 flex items-center justify-between gap-3 px-4 py-3.5 rounded-2xl shadow-2xl border backdrop-blur-lg text-xs sm:text-sm font-bold animate-in fade-in slide-in-from-top-4 duration-300 sm:max-w-md ${config.bg}`}
-    >
-      <div className="flex items-center gap-2.5 min-w-0">
-        <Icon className="w-5 h-5 shrink-0" />
-        <span className="truncate leading-relaxed">{message}</span>
-      </div>
-      <button
-        onClick={hide}
-        className="p-1 text-white/70 hover:text-white ms-1 rounded-md"
-        aria-label="Close"
+    <div className="fixed top-6 inset-x-0 z-100 flex justify-center px-4 pointer-events-none">
+      <div
+        id="app-toast-notification"
+        className={`pointer-events-auto flex items-center justify-between gap-3 px-4 py-3.5 rounded-2xl shadow-2xl border backdrop-blur-lg text-xs sm:text-sm font-bold animate-in fade-in slide-in-from-top-4 duration-300 w-full sm:w-auto sm:min-w-[320px] sm:max-w-md ${config.bg}`}
       >
-        <X className="w-3.5 h-3.5" />
-      </button>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <Icon className="w-5 h-5 shrink-0" />
+          <span className="truncate leading-relaxed">{message}</span>
+        </div>
+        <button
+          onClick={hide}
+          className="p-1 text-white/70 hover:text-white ms-1 rounded-md"
+          aria-label="Close"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
     </div>
   );
 };
