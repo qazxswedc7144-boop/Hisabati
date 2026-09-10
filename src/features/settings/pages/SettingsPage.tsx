@@ -39,6 +39,10 @@ import {
   CurrencySection,
   InvoicePreferencesSection,
   DataControlCenter,
+  SecurityIntegritySection,
+  TeamAccessSection,
+  HelpSupportSection,
+  PrivacyIntegrationsSection,
 } from '../components';
 
 export const SettingsPage: React.FC = () => {
@@ -227,182 +231,25 @@ export const SettingsPage: React.FC = () => {
       {/* 5. التفضيلات التشغيلية ونمط الفواتير (Operational & Invoice Preferences) */}
       <InvoicePreferencesSection />
 
-      {/* 6. الأمان وقفل التطبيق (Security & Privacy) */}
-      <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
-        <div>
-          <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <Shield className="w-4 h-4 text-teal-600" />
-            <span>الأمان وحماية السجلات</span>
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            بياناتك مشفرة ومخزنة محلياً في جهازك بدون أي مشاركة خارجية
-          </p>
-        </div>
+      {/* 6. الأمان وسلامة البيانات (Security & Financial Integrity) */}
+      <SecurityIntegritySection />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
-            <span className="font-bold text-slate-900 dark:text-slate-100 block">
-              🔒 تخزين محلي معزول 100%
-            </span>
-            <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
-              جميع العمليات والأرصدة محفوظة داخل IndexedDB المحلي على جهازك ولا تمر عبر خوادم مركزية غير مصرح بها.
-            </p>
-          </div>
-
-          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
-            <span className="font-bold text-slate-900 dark:text-slate-100 block">
-              🛡️ تشفير SHA-256 للنسخ
-            </span>
-            <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
-              تحتوي كل نسخة احتياطية على توقيع رقمي مشفر يمنع التلاعب بالسجلات المالية قبل الاستعادة.
-            </p>
-          </div>
-        </div>
-
-        <div className="p-3.5 rounded-2xl bg-teal-50/60 dark:bg-teal-950/30 border border-teal-200/80 dark:border-teal-900/60 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            <Lock className="w-4 h-4 text-teal-600 shrink-0" />
-            <div>
-              <span className="font-bold text-slate-900 dark:text-slate-100 block">
-                قفل التطبيق برمز PIN أو البصمة
-              </span>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                ميزة اختيارية لحماية الخصوصية عند فتح التطبيق
-              </span>
-            </div>
-          </div>
-          <span className="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] font-bold">
-            ميزة المرحلة 11
-          </span>
-        </div>
-      </section>
-
-      {/* 5. إدارة الفريق والصلاحيات (Users & Roles) */}
-      <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <Users className="w-4 h-4 text-teal-600" />
-              <span>إدارة الفريق والصلاحيات (Team & Roles)</span>
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              التحكم في أدوار المستخدمين وسجلات التدقيق المحاسبي (RBAC)
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate('/team')}
-            className="px-3.5 py-2 rounded-xl bg-teal-50 dark:bg-teal-950/50 border border-teal-200 dark:border-teal-800 text-teal-700 dark:text-teal-300 text-xs font-bold hover:bg-teal-100 dark:hover:bg-teal-900/60 transition flex items-center gap-1.5 min-h-[40px]"
-          >
-            <span>فتح شاشة الفريق</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs">
-          <div>
-            <span className="font-bold text-slate-900 dark:text-slate-100 block">
-              دورك الحالي: المدير العام (Admin)
-            </span>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400">
-              صلاحيات كاملة لإدارة الحسابات، التعديل المالي، وإجراء المزامنة والنسخ
-            </span>
-          </div>
-          <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">
-            نشط
-          </span>
-        </div>
-      </section>
+      {/* 7. إدارة الفريق والوصول (Users & Roles) */}
+      <TeamAccessSection />
 
       {/* 6. التنبيهات والأتمتة والرسائل (Notifications & Automation) */}
       <MessagingSettingsSection />
 
-      {/* 7. مركز التحكم بالبيانات والنسخ الاحتياطي والمزامنة (Data Control Center) */}
+      {/* 9. مركز التحكم بالبيانات والنسخ الاحتياطي والمزامنة (Data Control Center) */}
       <DataControlCenter />
 
-      {/* 8. التكامل والخصوصية (Integrations & Privacy) */}
-      <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
-        <div>
-          <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <Cloud className="w-4 h-4 text-teal-600" />
-            <span>التكامل والخصوصية (Integrations & Privacy)</span>
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            السياسات والضوابط الصارمة لخصوصية السجلات المالية
-          </p>
-        </div>
+      {/* 10. التكامل والخصوصية (Integrations & Privacy) */}
+      <PrivacyIntegrationsSection />
 
-        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs space-y-2 text-slate-600 dark:text-slate-300">
-          <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100">
-            <ShieldAlert className="w-4 h-4 text-teal-600" />
-            <span>ميثاق النزاهة والخصوصية المحاسبية:</span>
-          </div>
-          <ul className="list-disc list-inside space-y-1 text-[11px] leading-relaxed">
-            <li>التطبيق لا يحتوي على أي أكواد تتبع أو إعلانات تجارية أو تحليلات سرية.</li>
-            <li>لا يتم إرسال أي معاملات أو مبالغ لنماذج الذكاء الاصطناعي دون طلب وموافقة صريحة.</li>
-            <li>تظل بيانات Google Drive في مساحتك الشخصية المعزولة ولا يمكن للمطور أو خوادم وسيطة قراءتها.</li>
-          </ul>
-        </div>
-      </section>
+      {/* 11. المساعدة والدعم ومعلومات الإصدار (Help & Support) */}
+      <HelpSupportSection />
 
-      {/* 9. المساعدة والدعم ومعلومات الإصدار (Help & Support) */}
-      <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <HelpCircle className="w-4 h-4 text-teal-600" />
-              <span>المساعدة والدعم ومعلومات الإصدار</span>
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              إرشادات الاستخدام والأسئلة الأكثر شيوعاً
-            </p>
-          </div>
-          <span className="text-xs font-bold font-mono px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-            v1.0.0
-          </span>
-        </div>
-
-        {/* FAQ list */}
-        <div className="space-y-2">
-          {[
-            {
-              q: 'كيف تعمل المزامنة في حال انقطاع الإنترنت؟',
-              a: 'يعمل التطبيق بشكل كامل وبأعلى كفاءة في وضع عدم الاتصال (Offline-First). تسجل جميع المعاملات في طابور المزامنة المحلي وتنتقل تلقائياً إلى السحابة فور عودة الاتصال دون أي تدخل منك.',
-            },
-            {
-              q: 'كيف يتعامل النظام مع تعارض التعديل من جهازين مختلفين؟',
-              a: 'عند تعديل نفس الحساب أو المعاملة على جهازين دون اتصال، يرصد محرك المزامنة التعارض تلقائياً ويقوم بعزله في مركز التحكم ليمنحك خيار اعتماد النسخة المحلية أو نسخة السحابة بأمان محاسبي تام.',
-            },
-            {
-              q: 'هل يمكنني استعادة بياناتي إذا قمت بتغيير هاتفي؟',
-              a: 'نعم، بكل سهولة. يمكنك ربط حساب Google Drive في الهاتف الجديد واستعادة أحدث نسخة احتياطية بضغطة زر واحدة، أو تصدير ملف JSON مشفر من الهاتف القديم واستيراده مباشرة.',
-            },
-          ].map((item, idx) => (
-            <div
-              key={idx}
-              className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 overflow-hidden"
-            >
-              <button
-                type="button"
-                onClick={() => setExpandedFaq(expandedFaq === idx ? null : idx)}
-                className="w-full p-3.5 flex items-center justify-between text-start text-xs font-bold text-slate-800 dark:text-slate-200 hover:bg-slate-100/60 dark:hover:bg-slate-800 transition min-h-[44px]"
-              >
-                <span>{item.q}</span>
-                <span className="text-slate-400">
-                  {expandedFaq === idx ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </span>
-              </button>
-              {expandedFaq === idx && (
-                <div className="p-3.5 pt-0 text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed border-t border-slate-100 dark:border-slate-800">
-                  {item.a}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* 10. أدوات التشخيص والصيانة البرمجية المتقدمة (Diagnostic & Dev Tools) */}
+      {/* 12. أدوات التشخيص والصيانة البرمجية المتقدمة (Diagnostic & Dev Tools) */}
       <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs">
         <button
           type="button"

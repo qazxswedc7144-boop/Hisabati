@@ -197,8 +197,8 @@ export const INITIAL_MOCK_TRANSACTIONS: Transaction[] = [
 export async function seedMockDataIfEmpty(): Promise<boolean> {
   const accountCount = await db.accounts.count();
   if (accountCount === 0) {
-    await db.accounts.bulkAdd(INITIAL_MOCK_ACCOUNTS);
-    await db.transactions.bulkAdd(INITIAL_MOCK_TRANSACTIONS);
+    await db.accounts.bulkPut(INITIAL_MOCK_ACCOUNTS);
+    await db.transactions.bulkPut(INITIAL_MOCK_TRANSACTIONS);
     return true;
   }
   return false;
@@ -215,8 +215,8 @@ export async function seedInitialMockData(force = false): Promise<boolean> {
 export async function resetToMockData(): Promise<void> {
   await db.transactions.clear();
   await db.accounts.clear();
-  await db.accounts.bulkAdd(INITIAL_MOCK_ACCOUNTS);
-  await db.transactions.bulkAdd(INITIAL_MOCK_TRANSACTIONS);
+  await db.accounts.bulkPut(INITIAL_MOCK_ACCOUNTS);
+  await db.transactions.bulkPut(INITIAL_MOCK_TRANSACTIONS);
 }
 
 export async function clearAllData(): Promise<void> {

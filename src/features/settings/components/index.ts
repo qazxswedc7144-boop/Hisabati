@@ -6,3 +6,7 @@ export * from './AppearanceSection';
 export * from './LanguageSection';
 export * from './CurrencySection';
 export * from './InvoicePreferencesSection';
+export * from './SecurityIntegritySection';
+export * from './TeamAccessSection';
+export * from './HelpSupportSection';
+export * from './PrivacyIntegrationsSection';

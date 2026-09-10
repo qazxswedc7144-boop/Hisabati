@@ -363,6 +363,7 @@ export class SettingsTestSuite {
           type: 'debit',
           amount: 500,
           receiptNumber: 'HISTORIC-INV-777',
+          date: new Date().toISOString().split('T')[0],
         });
 
         const accBefore = await accountRepository.getById(acc.id);
@@ -406,6 +407,7 @@ export class SettingsTestSuite {
           type: 'credit',
           amount: 350,
           receiptNumber: originalReceipt,
+          date: new Date().toISOString().split('T')[0],
         });
 
         // Change settings
@@ -473,6 +475,223 @@ export class SettingsTestSuite {
         if (s.nextInvoiceNumber !== 8844) {
           throw new Error('فشل حفظ الرقم التالي للفاتورة');
         }
+      },
+      results
+    );
+    
+    // 17. SETTINGS-17: Default transaction type persistence
+    await this.runTest(
+      'SETTINGS-17',
+      'حفظ واسترجاع نوع العملية الافتراضي (debit/credit) وتأثيره على الواجهة',
+      async () => {
+        await settingsRepository.updateSettings({ defaultTransactionType: 'credit' });
+        const s = await settingsRepository.getSettings();
+        if (s.defaultTransactionType !== 'credit') {
+          throw new Error('فشل حفظ نوع العملية الافتراضي كـ credit');
+        }
+        
+        await useSettingsStore.getState().updateSettings({ defaultTransactionType: 'debit' });
+        const inStore = useSettingsStore.getState().settings.defaultTransactionType;
+        if (inStore !== 'debit') {
+          throw new Error('فشل تحديث نوع العملية الافتراضي في الـ Store');
+        }
+      },
+      results
+    );
+
+    // 18. SETTINGS-18: Auto-increment invoice number on addTransaction
+    await this.runTest(
+      'SETTINGS-18',
+      'التحقق من زيادة رقم الفاتورة تلقائياً عند إضافة عملية جديدة بنجاح',
+      async () => {
+        const { useTransactionStore } = await import('@/shared/stores/transactionStore');
+        
+        await settingsRepository.updateSettings({
+          invoiceNumberingFormat: 'sequential',
+          nextInvoiceNumber: 500,
+          invoicePrefix: 'AUTO-',
+        });
+        
+        await useSettingsStore.getState().loadSettings();
+        
+        const acc = await accountRepository.create({ name: 'حساب اختبار الترقيم' });
+        try {
+          const trx = await useTransactionStore.getState().addTransaction({
+            accountId: acc.id,
+            type: 'debit',
+            amount: 100,
+            date: new Date().toISOString().split('T')[0],
+          });
+          
+          if (trx.receiptNumber !== 'AUTO-0500') {
+            throw new Error(`رقم الفاتورة المولد غير صحيح: ${trx.receiptNumber}`);
+          }
+          
+          const updatedSettings = await settingsRepository.getSettings();
+          if (updatedSettings.nextInvoiceNumber !== 501) {
+            throw new Error(`لم يتم زيادة الرقم التالي للفاتورة. القيمة الحالية: ${updatedSettings.nextInvoiceNumber}`);
+          }
+        } finally {
+          await accountRepository.delete(acc.id);
+        }
+      },
+      results
+    );
+
+    // 19. SETTINGS-19: Integrity Check Detection
+    await this.runTest(
+      'SETTINGS-19',
+      'التحقق من قدرة نظام النزاهة على رصد عدم تطابق الأرصدة (Integrity Detection)',
+      async () => {
+        const { integrityService } = await import('@/core/services/integrity.service');
+        const { db } = await import('@/core/database/db');
+        
+        const acc = await accountRepository.create({ name: 'حساب فحص النزاهة' });
+        try {
+          // Manually corrupt account balance in DB
+          await db.accounts.update(acc.id, { currentBalance: 999999 });
+          
+          const report = await integrityService.verifyFinancialIntegrity();
+          const issue = report.inconsistencies.find(i => i.entityId === acc.id && i.type === 'balance_mismatch');
+          
+          if (!issue) {
+            throw new Error('فشل نظام النزاهة في رصد التلاعب المتعمد بالرصيد');
+          }
+        } finally {
+          await accountRepository.delete(acc.id);
+        }
+      },
+      results
+    );
+
+    // 20. SETTINGS-20: Recalculate Balances Safety & Correctness
+    await this.runTest(
+      'SETTINGS-20',
+      'التحقق من سلامة وصحة عملية إعادة احتساب الأرصدة (Recalculate Correction)',
+      async () => {
+        const { integrityService } = await import('@/core/services/integrity.service');
+        const { db } = await import('@/core/database/db');
+        
+        const acc = await accountRepository.create({ name: 'حساب اختبار الإصلاح' });
+        try {
+          // Add a real transaction
+          await transactionEngine.createTransaction({
+            accountId: acc.id,
+            type: 'debit',
+            amount: 1250.50,
+            date: '2026-01-01'
+          });
+          
+          // Corrupt balance
+          await db.accounts.update(acc.id, { currentBalance: 0, totalDebit: 0 });
+          
+          // Repair
+          await integrityService.repairFinancialIntegrity();
+          
+          const repaired = await accountRepository.getById(acc.id);
+          if (repaired?.currentBalance !== 1250.50) {
+            throw new Error(`فشل إصلاح الرصيد. القيمة الحالية: ${repaired?.currentBalance}`);
+          }
+          
+          const report = await integrityService.verifyFinancialIntegrity();
+          if (!report.valid && report.inconsistencies.some(i => i.entityId === acc.id)) {
+            throw new Error('لا يزال هناك تعارض في البيانات بعد عملية الإصلاح');
+          }
+        } finally {
+          await accountRepository.delete(acc.id);
+        }
+      },
+      results
+    );
+
+    // 21. SETTINGS-21: Invoice Number Atomic Increment
+    await this.runTest(
+      'SETTINGS-21',
+      'التحقق من ذرية زيادة رقم الفاتورة ومنع التكرار في العمليات المتتالية',
+      async () => {
+        const { useTransactionStore } = await import('@/shared/stores/transactionStore');
+        
+        await settingsRepository.updateSettings({
+          invoiceNumberingFormat: 'sequential',
+          nextInvoiceNumber: 1000,
+          invoicePrefix: 'ATOMIC-',
+        });
+        
+        const acc = await accountRepository.create({ name: 'حساب اختبار الذرية' });
+        try {
+          // Concurrent-like additions (Sequential but rapid)
+          const p1 = useTransactionStore.getState().addTransaction({
+            accountId: acc.id, type: 'debit', amount: 10, date: '2026-01-01'
+          });
+          const p2 = useTransactionStore.getState().addTransaction({
+            accountId: acc.id, type: 'debit', amount: 20, date: '2026-01-01'
+          });
+          
+          const [t1, t2] = await Promise.all([p1, p2]);
+          
+          if (t1.receiptNumber === t2.receiptNumber) {
+            throw new Error(`حدث تكرار في رقم الفاتورة: ${t1.receiptNumber}`);
+          }
+          
+          const numbers = [t1.receiptNumber, t2.receiptNumber].sort();
+          if (numbers[0] !== 'ATOMIC-1000' || numbers[1] !== 'ATOMIC-1001') {
+            throw new Error(`الأرقام المولدة غير متسلسلة بشكل صحيح: ${numbers.join(', ')}`);
+          }
+        } finally {
+          await accountRepository.delete(acc.id);
+        }
+      },
+      results
+    );
+    
+    // 22. SETTINGS-22: Notification Settings Persistence
+    await this.runTest(
+      'SETTINGS-22',
+      'التحقق من حفظ واستمرار تفضيلات التنبيهات (Notification Persistence)',
+      async () => {
+        await settingsRepository.updateSettings({
+          enableWebPushNotifications: true,
+          enableSoundAlerts: false
+        });
+        
+        const s1 = await settingsRepository.getSettings();
+        if (s1.enableWebPushNotifications !== true || s1.enableSoundAlerts !== false) {
+          throw new Error('فشل حفظ إعدادات التنبيهات');
+        }
+        
+        await settingsRepository.updateSettings({ enableSoundAlerts: true });
+        const s2 = await settingsRepository.getSettings();
+        if (s2.enableWebPushNotifications !== true || s2.enableSoundAlerts !== true) {
+          throw new Error('تحديث إعداد واحد أدى لفقدان إعداد آخر (Partial Update Failure)');
+        }
+      },
+      results
+    );
+
+    // 23. SETTINGS-23: Backup Validation Logic
+    await this.runTest(
+      'SETTINGS-23',
+      'التحقق من نظام تدقيق صحة ملف النسخة الاحتياطية (Backup Validation)',
+      async () => {
+        const { backupService } = await import('@/core/services/backup.service');
+        
+        // 1. Invalid Structure
+        const v1 = await backupService.validateBackupPayload({ foo: 'bar' });
+        if (v1.isValid) throw new Error('فشل كشف هيكل النسخة غير الصالح');
+        
+        // 2. Corrupt Transaction
+        const validPayload = await backupService.generateBackupPayload();
+        const corruptPayload = JSON.parse(JSON.stringify(validPayload));
+        corruptPayload.transactions[0].amount = -500; // Invalid amount
+        
+        const v2 = await backupService.validateBackupPayload(corruptPayload);
+        if (v2.isValid) throw new Error('فشل كشف مبلغ معاملة غير صالح في النسخة');
+        
+        // 3. Integrity Hash Mismatch
+        const hashPayload = JSON.parse(JSON.stringify(validPayload));
+        hashPayload.metadata.integrityHash = 'wrong_hash';
+        const v3 = await backupService.validateBackupPayload(hashPayload);
+        if (v3.isValid) throw new Error('فشل كشف تعارض بصمة النزاهة (Integrity Hash Mismatch)');
       },
       results
     );

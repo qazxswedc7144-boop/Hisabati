@@ -14,10 +14,14 @@ import {
   computeStatementRunningBalances,
   StatementItem,
 } from '../utils/financial';
-import { validateTransactionForm } from '../utils/validators';
+import { 
+  validateTransactionForm,
+} from '../utils/validators';
+import { formatInvoiceNumber } from '../utils/formatters';
 import { rbacGuard } from './rbac/RBACGuard.service';
 import { auditTrailService } from './rbac/AuditTrail.service';
 import { settingsRepository } from '../repositories/settings.repository';
+import { useSettingsStore } from '@/shared/stores/settingsStore';
 import { decimalToMinor } from '../money/converter';
 import { getCurrencyDecimals } from '../money/currency';
 import { assertDualMoneyRepresentation } from '../money/validator';
@@ -88,8 +92,9 @@ export class FinancialTransactionEngine {
       const id = 'trx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
       const safeAmount = roundMoney(Math.abs(dto.amount));
 
-      // Resolve active currency and compute/validate canonical integer minor units
-      const activeCurrency = (await settingsRepository.get<CurrencyCode>('currency', 'YER')) || 'YER';
+      // Resolve active settings and compute/validate canonical integer minor units
+      const settings = await settingsRepository.getSettings();
+      const activeCurrency = settings.currency || 'YER';
       let amountMinor: number;
 
       if (dto.amountMinor !== undefined) {
@@ -122,7 +127,35 @@ export class FinancialTransactionEngine {
       };
 
       // Atomic write transaction
-      await db.transaction('rw', db.transactions, db.accounts, async () => {
+      await db.transaction('rw', db.transactions, db.accounts, db.settings, async () => {
+        // Auto-generate invoice number if needed inside the transaction
+        if (!newTransaction.receiptNumber && settings.invoiceNumberingFormat !== 'manual') {
+          const generated = formatInvoiceNumber(
+            settings.invoicePrefix,
+            settings.nextInvoiceNumber,
+            settings.invoiceNumberingFormat,
+            newTransaction.date
+          );
+          
+          if (generated) {
+            newTransaction.receiptNumber = generated;
+            
+            // Increment next sequence number in database directly
+            const nextVal = (settings.nextInvoiceNumber || 1) + 1;
+            await db.settings.put({
+              id: 'nextInvoiceNumber',
+              key: 'nextInvoiceNumber',
+              value: nextVal,
+              updatedAt: now,
+            });
+            
+            // Also update the store to keep UI in sync
+            useSettingsStore.getState().updateSettings({
+              nextInvoiceNumber: nextVal,
+            });
+          }
+        }
+
         await db.transactions.add(newTransaction);
         await this.recalculateAccountBalance(dto.accountId, activeCurrency);
       });

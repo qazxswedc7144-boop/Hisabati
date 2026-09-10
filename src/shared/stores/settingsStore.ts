@@ -37,6 +37,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   showTaxNumberOnInvoice: true,
   showPhoneOnInvoice: true,
   showAddressOnInvoice: true,
+  defaultTransactionType: 'debit',
 };
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({

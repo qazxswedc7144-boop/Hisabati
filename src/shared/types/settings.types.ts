@@ -1,4 +1,5 @@
 import { CurrencyCode, LanguageCode, ThemeMode } from './common.types';
+import { TransactionType } from './transaction.types';
 
 export type InvoiceNumberingFormat = 'sequential' | 'yearly_sequential' | 'manual';
 
@@ -34,6 +35,10 @@ export interface AppSettings {
   showTaxNumberOnInvoice?: boolean;
   showPhoneOnInvoice?: boolean;
   showAddressOnInvoice?: boolean;
+  defaultTransactionType?: TransactionType;
+  // Phase F - Part 4: Privacy & Reporting
+  enableAIDataAnalysis?: boolean;
+  enableErrorReporting?: boolean;
 }
 
 export interface SettingsEntry {

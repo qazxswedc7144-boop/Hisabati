@@ -10,9 +10,11 @@ import {
   Save,
   RotateCcw,
   Layers,
+  ArrowUpRight,
+  ArrowDownLeft,
 } from 'lucide-react';
 import { useSettingsStore, useUIStore } from '@/shared/stores';
-import { InvoiceNumberingFormat } from '@/shared/types';
+import { InvoiceNumberingFormat, TransactionType } from '@/shared/types';
 import { formatInvoiceNumber } from '@/core/utils/formatters';
 
 export const InvoicePreferencesSection: React.FC = () => {
@@ -29,6 +31,9 @@ export const InvoicePreferencesSection: React.FC = () => {
   const [showTaxNumber, setShowTaxNumber] = useState<boolean>(settings.showTaxNumberOnInvoice !== false);
   const [showPhone, setShowPhone] = useState<boolean>(settings.showPhoneOnInvoice !== false);
   const [showAddress, setShowAddress] = useState<boolean>(settings.showAddressOnInvoice !== false);
+  const [defaultTransactionType, setDefaultTransactionType] = useState<TransactionType>(
+    settings.defaultTransactionType || 'debit'
+  );
   const [defaultNotes, setDefaultNotes] = useState<string>(
     settings.defaultInvoiceNotes || 'شكراً لتعاملكم معنا'
   );
@@ -43,6 +48,7 @@ export const InvoicePreferencesSection: React.FC = () => {
     setShowTaxNumber(settings.showTaxNumberOnInvoice !== false);
     setShowPhone(settings.showPhoneOnInvoice !== false);
     setShowAddress(settings.showAddressOnInvoice !== false);
+    setDefaultTransactionType(settings.defaultTransactionType || 'debit');
     setDefaultNotes(settings.defaultInvoiceNotes || 'شكراً لتعاملكم معنا');
   }, [
     settings.invoiceNumberingFormat,
@@ -52,6 +58,7 @@ export const InvoicePreferencesSection: React.FC = () => {
     settings.showTaxNumberOnInvoice,
     settings.showPhoneOnInvoice,
     settings.showAddressOnInvoice,
+    settings.defaultTransactionType,
     settings.defaultInvoiceNotes,
   ]);
 
@@ -68,6 +75,7 @@ export const InvoicePreferencesSection: React.FC = () => {
     setShowTaxNumber(true);
     setShowPhone(true);
     setShowAddress(true);
+    setDefaultTransactionType('debit');
     setDefaultNotes('شكراً لتعاملكم معنا');
     showToast('تمت استعادة القيم الافتراضية للتفضيلات', 'info');
   };
@@ -88,6 +96,7 @@ export const InvoicePreferencesSection: React.FC = () => {
         showTaxNumberOnInvoice: showTaxNumber,
         showPhoneOnInvoice: showPhone,
         showAddressOnInvoice: showAddress,
+        defaultTransactionType: defaultTransactionType,
         defaultInvoiceNotes: sanitizedNotes,
       });
 
@@ -293,7 +302,51 @@ export const InvoicePreferencesSection: React.FC = () => {
           </div>
         </div>
 
-        {/* 4. الشروط والملاحظات الافتراضية */}
+        {/* 4. التفضيلات التشغيلية والافتراضية */}
+        <div className="pt-2">
+          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2 flex items-center gap-1.5">
+            <RotateCcw className="w-3.5 h-3.5 text-teal-600" />
+            <span>التفضيلات التشغيلية والافتراضية</span>
+          </label>
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80 space-y-4">
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-2">
+                نوع العملية الافتراضي عند الإضافة السريعة
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDefaultTransactionType('debit')}
+                  className={`flex items-center justify-center gap-2 py-2 rounded-xl border text-[11px] font-bold transition ${
+                    defaultTransactionType === 'debit'
+                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
+                  }`}
+                >
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                  <span>لي (أعطيته / مطلوب منه)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDefaultTransactionType('credit')}
+                  className={`flex items-center justify-center gap-2 py-2 rounded-xl border text-[11px] font-bold transition ${
+                    defaultTransactionType === 'credit'
+                      ? 'border-rose-500 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
+                  }`}
+                >
+                  <ArrowDownLeft className="w-3.5 h-3.5" />
+                  <span>علي (أخذت منه / مستحق له)</span>
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1.5">
+                سيتم اختيار هذا النوع تلقائياً عند فتح شاشة "تسجيل عملية سريعة".
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 5. الشروط والملاحظات الافتراضية */}
         <div>
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5 flex items-center gap-1.5">
             <AlignLeft className="w-3.5 h-3.5 text-teal-600" />

@@ -139,6 +139,7 @@ export const BusinessProfileSection: React.FC = () => {
                 src={businessLogo}
                 alt="شعار المنشأة"
                 className="w-full h-full object-contain p-1.5"
+                referrerPolicy="no-referrer"
               />
             ) : (
               <Building2 className="w-8 h-8 text-slate-400 dark:text-slate-500" />

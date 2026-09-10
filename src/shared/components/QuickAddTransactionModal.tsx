@@ -13,11 +13,12 @@ export const QuickAddTransactionModal: React.FC = () => {
   const showToast = useUIStore((state) => state.showToast);
 
   const accounts = useAccountStore((state) => state.accounts);
-  const currency = useSettingsStore((state) => state.settings.currency);
+  const settings = useSettingsStore((state) => state.settings);
+  const currency = settings.currency;
   const addTransaction = useTransactionStore((state) => state.addTransaction);
 
   const [accountId, setAccountId] = useState<string>('');
-  const [type, setType] = useState<TransactionType>('debit'); // 'debit' = لي | 'credit' = علي
+  const [type, setType] = useState<TransactionType>('debit'); 
   const [amount, setAmount] = useState<string>('');
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [note, setNote] = useState<string>('');
@@ -29,7 +30,7 @@ export const QuickAddTransactionModal: React.FC = () => {
   useEffect(() => {
     if (isOpen) {
       setAccountId(preselectedAccountId || (accounts.length > 0 ? accounts[0].id : ''));
-      setType('debit');
+      setType(settings.defaultTransactionType || 'debit');
       setAmount('');
       setDate(new Date().toISOString().split('T')[0]);
       setNote('');
@@ -37,7 +38,7 @@ export const QuickAddTransactionModal: React.FC = () => {
       setShowMoreFields(false);
       setErrors({});
     }
-  }, [isOpen, preselectedAccountId, accounts]);
+  }, [isOpen, preselectedAccountId, accounts, settings.defaultTransactionType]);
 
   if (!isOpen) return null;
 
@@ -304,14 +305,25 @@ export const QuickAddTransactionModal: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1 flex items-center gap-1.5">
-                  <Hash className="w-3.5 h-3.5 text-slate-400" />
-                  رقم الإيصال / السند
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                    <Hash className="w-3.5 h-3.5 text-slate-400" />
+                    رقم الإيصال / السند
+                  </label>
+                  {settings.invoiceNumberingFormat !== 'manual' && (
+                    <span className="text-[10px] text-teal-600 dark:text-teal-400 font-bold">
+                      سيتم التوليد تلقائياً إذا ترك فارغاً
+                    </span>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={receiptNumber}
-                  placeholder="مثال: REC-1002"
+                  placeholder={
+                    settings.invoiceNumberingFormat === 'manual'
+                      ? 'مثال: REC-1002'
+                      : 'اتركه فارغاً للتوليد التلقائي'
+                  }
                   onChange={(e) => setReceiptNumber(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition"
                 />

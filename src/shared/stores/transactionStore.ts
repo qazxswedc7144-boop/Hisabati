@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { Transaction, TransactionSummary, CreateTransactionDTO, UpdateTransactionDTO } from '@/shared/types';
 import { transactionRepository } from '@/core/repositories/transaction.repository';
 import { useAccountStore } from './accountStore';
+import { useSettingsStore } from './settingsStore';
+import { formatInvoiceNumber } from '@/core/utils/formatters';
 
 interface TransactionState {
   transactions: Transaction[];
