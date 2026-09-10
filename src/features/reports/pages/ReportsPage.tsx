@@ -56,58 +56,62 @@ export const ReportsPage: React.FC = () => {
         </p>
       </div>
 
-      {/* Tabs Navigation */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-200 dark:border-slate-800 no-scrollbar">
+      {/* Tabs Navigation - Grid 2x2 for Mobile, Flex for Desktop */}
+      <div className="grid grid-cols-2 md:flex items-center gap-2 md:gap-1 border-b border-slate-100 dark:border-slate-800 pb-4 md:pb-0">
         <button
+          id="btn-report-tab-statement"
           type="button"
           onClick={() => handleTabChange('statement')}
-          className={`px-3.5 py-2 rounded-t-xl text-xs sm:text-sm font-bold flex items-center gap-2 whitespace-nowrap transition border-b-2 -mb-px ${
+          className={`flex items-center justify-center md:justify-start gap-2 px-3.5 py-3 md:py-2 md:rounded-t-xl md:rounded-b-none rounded-xl text-[11px] sm:text-sm font-bold transition border-2 md:border-b-2 md:border-t-0 md:border-x-0 -mb-px min-h-[48px] md:min-h-0 ${
             currentTab === 'statement'
               ? 'border-teal-600 text-teal-700 dark:text-teal-400 bg-teal-50/50 dark:bg-teal-950/20'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+              : 'border-transparent md:border-transparent border-slate-100 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40'
           }`}
         >
-          <FileText className="w-4 h-4" />
-          كشف الحساب
+          <FileText className="w-4 h-4 shrink-0" />
+          <span className="truncate">كشف الحساب</span>
         </button>
 
         <button
+          id="btn-report-tab-summary"
           type="button"
           onClick={() => handleTabChange('summary')}
-          className={`px-3.5 py-2 rounded-t-xl text-xs sm:text-sm font-bold flex items-center gap-2 whitespace-nowrap transition border-b-2 -mb-px ${
+          className={`flex items-center justify-center md:justify-start gap-2 px-3.5 py-3 md:py-2 md:rounded-t-xl md:rounded-b-none rounded-xl text-[11px] sm:text-sm font-bold transition border-2 md:border-b-2 md:border-t-0 md:border-x-0 -mb-px min-h-[48px] md:min-h-0 ${
             currentTab === 'summary'
               ? 'border-teal-600 text-teal-700 dark:text-teal-400 bg-teal-50/50 dark:bg-teal-950/20'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+              : 'border-transparent md:border-transparent border-slate-100 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40'
           }`}
         >
-          <Activity className="w-4 h-4" />
-          الملخص وحركة الفترة
+          <Activity className="w-4 h-4 shrink-0" />
+          <span className="truncate">الملخص وحركة الفترة</span>
         </button>
 
         <button
+          id="btn-report-tab-receivables"
           type="button"
           onClick={() => handleTabChange('receivables')}
-          className={`px-3.5 py-2 rounded-t-xl text-xs sm:text-sm font-bold flex items-center gap-2 whitespace-nowrap transition border-b-2 -mb-px ${
+          className={`flex items-center justify-center md:justify-start gap-2 px-3.5 py-3 md:py-2 md:rounded-t-xl md:rounded-b-none rounded-xl text-[11px] sm:text-sm font-bold transition border-2 md:border-b-2 md:border-t-0 md:border-x-0 -mb-px min-h-[48px] md:min-h-0 ${
             currentTab === 'receivables'
               ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+              : 'border-transparent md:border-transparent border-slate-100 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40'
           }`}
         >
-          <TrendingUp className="w-4 h-4 text-emerald-600" />
-          المستحقات لك (المدينون)
+          <TrendingUp className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span className="truncate">المستحقات لك (المدينون)</span>
         </button>
 
         <button
+          id="btn-report-tab-payables"
           type="button"
           onClick={() => handleTabChange('payables')}
-          className={`px-3.5 py-2 rounded-t-xl text-xs sm:text-sm font-bold flex items-center gap-2 whitespace-nowrap transition border-b-2 -mb-px ${
+          className={`flex items-center justify-center md:justify-start gap-2 px-3.5 py-3 md:py-2 md:rounded-t-xl md:rounded-b-none rounded-xl text-[11px] sm:text-sm font-bold transition border-2 md:border-b-2 md:border-t-0 md:border-x-0 -mb-px min-h-[48px] md:min-h-0 ${
             currentTab === 'payables'
               ? 'border-rose-600 text-rose-700 dark:text-rose-400 bg-rose-50/50 dark:bg-rose-950/20'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+              : 'border-transparent md:border-transparent border-slate-100 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40'
           }`}
         >
-          <TrendingDown className="w-4 h-4 text-rose-600" />
-          الديون عليك (الدائنون)
+          <TrendingDown className="w-4 h-4 text-rose-600 shrink-0" />
+          <span className="truncate">الديون عليك (الدائنون)</span>
         </button>
       </div>
 
