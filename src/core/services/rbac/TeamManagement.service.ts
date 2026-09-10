@@ -36,7 +36,7 @@ export class TeamManagementService {
         createdAt: now,
         updatedAt: now,
       };
-      await db.teams.add(team);
+      await db.teams.put(team);
 
       // Add default owner
       const defaultOwner: TeamMember = {
@@ -90,7 +90,7 @@ export class TeamManagementService {
         joinedAt: now,
       };
 
-      await db.teamMembers.bulkAdd([
+      await db.teamMembers.bulkPut([
         defaultOwner,
         defaultAccountant,
         defaultEmployee,

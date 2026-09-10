@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Bell,
   X,
@@ -32,12 +32,26 @@ export const NotificationCenterDrawer: React.FC = () => {
 
   const [filterType, setFilterType] = useState<string>('all');
   const navigate = useNavigate();
+  const drawerRef = useRef<HTMLDivElement>(null);
 
+  // Handle Escape key and body scroll lock
   useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isNotificationCenterOpen) {
+        openNotificationCenter(false);
+      }
+    };
+
     if (isNotificationCenterOpen) {
-      fetchNotifications();
+      document.body.style.overflow = 'hidden';
+      window.addEventListener('keydown', handleKeyDown);
     }
-  }, [isNotificationCenterOpen, fetchNotifications]);
+
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isNotificationCenterOpen, openNotificationCenter]);
 
   if (!isNotificationCenterOpen) return null;
 
@@ -93,10 +107,16 @@ export const NotificationCenterDrawer: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-slate-950/40 backdrop-blur-xs flex justify-end animate-in fade-in duration-200">
+    <div 
+      className="fixed inset-0 z-50 overflow-hidden bg-slate-950/40 backdrop-blur-xs flex justify-end animate-in fade-in duration-200"
+      onClick={() => openNotificationCenter(false)}
+    >
       <div
+        ref={drawerRef}
+        onClick={(e) => e.stopPropagation()}
         className="w-full max-w-md bg-white dark:bg-slate-900 h-full shadow-2xl flex flex-col border-s border-slate-200 dark:border-slate-800 animate-in slide-in-from-right duration-300"
         role="dialog"
+        aria-modal="true"
         aria-label="مركز الإشعارات والتنبيهات"
       >
         {/* Drawer Header */}
@@ -231,16 +251,19 @@ export const NotificationCenterDrawer: React.FC = () => {
                         e.stopPropagation();
                         deleteNotification(notif.id);
                       }}
+                      aria-label="حذف الإشعار"
                       title="حذف الإشعار"
-                      className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 p-1 transition"
+                      className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 text-slate-400 hover:text-rose-600 p-2 sm:p-1 transition min-h-[40px] min-w-[40px] flex items-center justify-center"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                     </button>
                   </div>
                 </div>
               </div>
             ))
           )}
+          {/* Safe bottom area for mobile */}
+          <div className="h-10 pb-safe" />
         </div>
       </div>
     </div>
