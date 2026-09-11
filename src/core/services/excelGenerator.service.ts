@@ -189,6 +189,60 @@ export class ExcelGeneratorService {
   }
 
   /**
+   * Generates Financial Summary Excel (.xlsx)
+   */
+  public async generateFinancialSummaryExcel(
+    report: FinancialSummaryReport,
+    currency: string = 'ر.س'
+  ): Promise<Blob> {
+    const wb = XLSX.utils.book_new();
+
+    const data: any[][] = [
+      ['حساباتي | Hisabati — تقرير ملخص حركة الفترة المالي'],
+      ['الفترة الزمنية:', `${report.dateRange.startDate} إلى ${report.dateRange.endDate}`],
+      ['تاريخ الاستخراج:', new Date().toISOString().split('T')[0]],
+      [],
+      ['ملخص الحركة المالية القائمة'],
+      ['إجمالي لك (مدين +)', 'إجمالي عليك (دائن -)', 'صافي الحركة'],
+      [report.totalDebit, report.totalCredit, report.netBalance],
+      [],
+      ['إحصائيات الحسابات'],
+      ['إجمالي الحسابات', 'حسابات لك عندهم', 'حسابات عليك لهم', 'حسابات متكافئة'],
+      [report.totalAccounts, report.owedToMeCount, report.owedByMeCount, report.settledAccountsCount],
+      [],
+      ['الحركة اليومية المفصلة خلال الفترة'],
+      ['التاريخ', 'عدد العمليات', 'لك (+)', 'عليك (-)', 'صافي اليوم'],
+    ];
+
+    report.dailyBreakdown.forEach((day) => {
+      data.push([
+        day.date,
+        day.transactionCount,
+        day.debit,
+        day.credit,
+        day.net,
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = [
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 18 },
+    ];
+    (ws as any)['!views'] = [{ RTL: true }];
+
+    XLSX.utils.book_append_sheet(wb, ws, 'ملخص حركة الفترة');
+
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    return new Blob([wbout], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+  }
+
+  /**
    * Exports raw statement data as CSV with proper UTF-8 BOM encoding for Excel compatibility
    */
   public exportStatementCSV(statement: AccountStatementReport, filename: string): void {

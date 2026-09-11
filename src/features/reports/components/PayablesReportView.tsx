@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
@@ -11,8 +11,17 @@ import {
   AlertCircle,
   FileText,
   Filter,
+  MoreVertical,
+  Activity,
+  Share2,
+  Table as TableIcon,
+  Loader2,
+  Scale,
+  Users,
+  TrendingUp,
+  TrendingDown,
 } from 'lucide-react';
-import { useSettingsStore } from '@/shared/stores';
+import { useSettingsStore, useUIStore } from '@/shared/stores';
 import { reportService, excelGenerator } from '@/core/services';
 import { PayablesReport } from '@/shared/types';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
@@ -20,15 +29,20 @@ import { formatCurrency, formatDate } from '@/core/utils/formatters';
 export const PayablesReportView: React.FC = () => {
   const navigate = useNavigate();
   const currency = useSettingsStore((state) => state.settings.currency);
+  const { showToast: uiShowToast } = useUIStore();
 
   const [search, setSearch] = useState('');
   const [minBalance, setMinBalance] = useState<number>(0);
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [sortBy, setSortBy] = useState<'balance' | 'name'>('balance');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [report, setReport] = useState<PayablesReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   const loadReport = useCallback(() => {
     let isMounted = true;
@@ -65,16 +79,26 @@ export const PayablesReportView: React.FC = () => {
     return cleanup;
   }, [loadReport]);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
-  };
-
   const handleResetFilters = () => {
     setSearch('');
     setMinBalance(0);
     setIncludeArchived(false);
+    setSortBy('balance');
+    setSortOrder('desc');
   };
+
+  const sortedItems = useMemo(() => {
+    if (!report) return [];
+    return [...report.items].sort((a, b) => {
+      if (sortBy === 'balance') {
+        return sortOrder === 'desc' ? b.balance - a.balance : a.balance - b.balance;
+      } else {
+        return sortOrder === 'desc' 
+          ? b.account.name.localeCompare(a.account.name, 'ar') 
+          : a.account.name.localeCompare(b.account.name, 'ar');
+      }
+    });
+  }, [report, sortBy, sortOrder]);
 
   const hasActiveFilters = Boolean(search.trim() || minBalance > 0 || includeArchived);
 
@@ -85,10 +109,10 @@ export const PayablesReportView: React.FC = () => {
       const blob = await excelGenerator.generatePayablesExcel(report, currency);
       const filename = `تقرير_الديون_عليك_${new Date().toISOString().split('T')[0]}.xlsx`;
       excelGenerator.downloadBlob(blob, filename);
-      showToast('تم تصدير تقرير الديون والالتزامات بصيغة Excel');
+      uiShowToast('تم تصدير تقرير الديون والالتزامات بصيغة Excel', 'success');
     } catch (err) {
       console.error('Export failed:', err);
-      showToast('حدث خطأ أثناء تصدير الملف');
+      uiShowToast('حدث خطأ أثناء تصدير الملف', 'error');
     } finally {
       setExporting(false);
     }
@@ -96,76 +120,201 @@ export const PayablesReportView: React.FC = () => {
 
   return (
     <div className="space-y-4 sm:space-y-5">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-xs font-bold shadow-lg flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          {toastMessage}
+      {/* Unified Header: Title, Search, Export & More Menu */}
+      <div className="flex items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs sticky top-0 z-10">
+        {/* Right: Title */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200/60 dark:border-teal-800/60 text-teal-600 flex items-center justify-center">
+            <Users className="w-5 h-5" />
+          </div>
+          <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">الديون عليك</h3>
         </div>
-      )}
 
-      {/* Filter Bar */}
-      <div className="rounded-2xl sm:rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 sm:p-5 shadow-xs space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-          {/* Search */}
-          <div className="sm:col-span-5 relative">
-            <Search className="w-4 h-4 absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="بحث بالاسم أو الهاتف..."
-              className="w-full text-xs font-semibold ps-9 pe-8 py-2.5 min-h-[44px] rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500"
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                className="absolute end-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                title="مسح البحث"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
+        {/* Middle: Search Bar */}
+        <div className="flex-1 max-w-[120px] sm:max-w-xs relative">
+          <div className="absolute inset-y-0 start-0 ps-2.5 flex items-center pointer-events-none">
+            <Search className="w-3 h-3 text-slate-400" />
           </div>
+          <input
+            type="text"
+            placeholder="بحث..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 rounded-xl py-1.5 ps-8 pe-3 text-[10px] font-bold text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500/50 outline-none transition-all"
+          />
+        </div>
 
-          {/* Min Balance */}
-          <div className="sm:col-span-4">
-            <input
-              type="number"
-              value={minBalance === 0 ? '' : minBalance}
-              onChange={(e) => setMinBalance(Math.max(0, Number(e.target.value) || 0))}
-              placeholder="الحد الأدنى لمبلغ الدين..."
-              className="w-full text-xs font-semibold px-3.5 py-2.5 min-h-[44px] rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
-            />
-          </div>
+        {/* Left: Export Merged & More Menu */}
+        <div className="flex items-center gap-1">
+          {/* Merged Export Icon (PDF + Excel) */}
+          <button
+            type="button"
+            onClick={() => setIsExportModalOpen(true)}
+            className="relative w-10 h-10 flex items-center justify-center rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition group"
+            title="تصدير (PDF / Excel)"
+          >
+            <div className="relative flex items-center justify-center">
+              <FileText className="w-5 h-5 text-rose-600 transition-transform group-hover:-translate-x-1" />
+              <div className="absolute -bottom-1 -end-1 p-0.5 rounded-md bg-white dark:bg-slate-800 shadow-xs border border-slate-100 dark:border-slate-700">
+                <TableIcon className="w-3 h-3 text-emerald-600 transition-transform group-hover:translate-x-1" />
+              </div>
+            </div>
+          </button>
 
-          {/* Include Archived toggle & Clear */}
-          <div className="sm:col-span-3 flex items-center justify-between sm:justify-end gap-3">
-            <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 select-none py-1">
-              <input
-                type="checkbox"
-                checked={includeArchived}
-                onChange={(e) => setIncludeArchived(e.target.checked)}
-                className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 border-slate-300 dark:border-slate-700"
-              />
-              <span>تضمين المؤرشف</span>
-            </label>
+          <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-0.5" />
 
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="text-[11px] font-bold text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 flex items-center gap-1 transition py-1 px-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                title="إعادة ضبط الفلاتر"
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span>إعادة ضبط</span>
-              </button>
+          {/* More Menu Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              className={`w-10 h-10 flex items-center justify-center rounded-2xl transition shadow-sm ${
+                isMenuOpen 
+                  ? 'bg-teal-600 text-white' 
+                  : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
+              }`}
+            >
+              <MoreVertical className="w-5 h-5" />
+            </button>
+
+            {isMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsMenuOpen(false)} />
+                <div className="absolute top-full mt-2 end-0 w-64 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 py-2 z-50 animate-in fade-in zoom-in-95 duration-200">
+                  <div className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50 dark:border-slate-800 mb-1">
+                    ترتيب العرض
+                  </div>
+                  {[
+                    { id: 'sort-balance-desc', label: 'الأعلى رصيداً أولاً', icon: TrendingUp, active: sortBy === 'balance' && sortOrder === 'desc' },
+                    { id: 'sort-balance-asc', label: 'الأقل رصيداً أولاً', icon: TrendingDown, active: sortBy === 'balance' && sortOrder === 'asc' },
+                    { id: 'sort-name-asc', label: 'ترتيب أبجدي (أ-ي)', icon: Users, active: sortBy === 'name' && sortOrder === 'asc' },
+                    { id: 'divider-1', isDivider: true },
+                    { id: 'reset', label: 'إعادة ضبط العرض', icon: RotateCcw },
+                  ].map((item) => (
+                    item.isDivider ? (
+                      <div key={item.id} className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
+                    ) : (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          if (item.id === 'sort-balance-desc') { setSortBy('balance'); setSortOrder('desc'); }
+                          else if (item.id === 'sort-balance-asc') { setSortBy('balance'); setSortOrder('asc'); }
+                          else if (item.id === 'sort-name-asc') { setSortBy('name'); setSortOrder('asc'); }
+                          else if (item.id === 'reset') handleResetFilters();
+                          
+                          setIsMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-4 py-2.5 text-xs font-bold transition text-right ${
+                          item.active 
+                            ? 'text-teal-600 bg-teal-50/50 dark:bg-teal-900/20' 
+                            : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          {item.icon && <item.icon className={`w-4 h-4 ${item.active ? 'text-teal-600' : 'text-slate-400'}`} />}
+                          <span>{item.label}</span>
+                        </div>
+                        {item.active && <CheckCircle2 className="w-4 h-4 text-teal-600" />}
+                      </button>
+                    )
+                  ))}
+                  <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
+                  <button
+                    onClick={() => {
+                      uiShowToast('جاري مشاركة التطبيق...', 'info');
+                      setIsMenuOpen(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-right"
+                  >
+                    <Share2 className="w-4 h-4 text-teal-600" />
+                    <span>شارك التطبيق</span>
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>
       </div>
+
+      {/* Export & Filter Modal */}
+      {isExportModalOpen && (
+        <div className="fixed inset-0 z-100 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div 
+            className="w-full max-w-md bg-white dark:bg-slate-900 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-6 animate-in slide-in-from-bottom-8 duration-300"
+            onClick={(e) => e.stopPropagation()}
+            dir="rtl"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <Filter className="w-5 h-5 text-teal-600" />
+                خيارات التصفية والتصدير
+              </h3>
+              <button 
+                onClick={() => setIsExportModalOpen(false)}
+                className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Filter Options */}
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-slate-400 block uppercase tracking-wider">الحد الأدنى للرصيد</label>
+                <input
+                  type="number"
+                  value={minBalance === 0 ? '' : minBalance}
+                  onChange={(e) => setMinBalance(Math.max(0, Number(e.target.value) || 0))}
+                  placeholder="0.00"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl py-3 px-4 text-sm font-bold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 outline-none transition-all"
+                />
+              </div>
+
+              <label className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 cursor-pointer group">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 flex items-center justify-center shadow-xs border border-slate-100 dark:border-slate-700">
+                    <Activity className="w-5 h-5 text-teal-600" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">تضمين الحسابات المؤرشفة</span>
+                    <span className="text-[10px] text-slate-500 font-medium">إظهار الحسابات التي تم أرشفتها سابقاً</span>
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={includeArchived}
+                  onChange={(e) => setIncludeArchived(e.target.checked)}
+                  className="w-5 h-5 rounded-lg text-teal-600 focus:ring-teal-500 border-slate-300 dark:border-slate-700 transition"
+                />
+              </label>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+              <span className="text-[11px] font-bold text-slate-400 block uppercase tracking-wider">عمليات التصدير والمشاركة</span>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => uiShowToast('قريباً: تصدير PDF', 'info')}
+                  className="flex flex-col items-center justify-center gap-2 p-4 rounded-3xl bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40 text-rose-600 hover:bg-rose-100 transition"
+                >
+                  <FileText className="w-6 h-6" />
+                  <span className="text-[10px] font-black">PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  className="flex flex-col items-center justify-center gap-2 p-4 rounded-3xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 text-emerald-600 hover:bg-emerald-100 transition"
+                >
+                  <TableIcon className="w-6 h-6" />
+                  <span className="text-[10px] font-black">EXCEL</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Loading State */}
       {loading ? (
@@ -260,7 +409,7 @@ export const PayablesReportView: React.FC = () => {
             <>
               {/* Mobile Card List (sm:hidden) */}
               <div className="sm:hidden space-y-2.5">
-                {report.items.map((item, idx) => (
+                {sortedItems.map((item, idx) => (
                   <div
                     key={item.account.id}
                     className="p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs space-y-2.5"
@@ -344,7 +493,7 @@ export const PayablesReportView: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-                      {report.items.map((item, idx) => (
+                      {sortedItems.map((item, idx) => (
                         <tr key={item.account.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
                           <td className="py-3 px-3 text-center text-slate-400 font-mono text-[11px]">
                             {idx + 1}

@@ -24,9 +24,15 @@ import {
   Share2,
   User,
   X,
+  Activity,
+  Filter,
+  ArrowUpRight,
+  Scale,
+  Users,
+  Table as TableIcon,
 } from 'lucide-react';
 
-import { useAccountStore, useSettingsStore } from '@/shared/stores';
+import { useAccountStore, useSettingsStore, useUIStore } from '@/shared/stores';
 import {
   reportService,
   excelGenerator,
@@ -118,15 +124,17 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
     useState<AccountStatementReport | null>(null);
 
   const [loading, setLoading] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const [selectedDocTrx, setSelectedDocTrx] = useState<Transaction | null>(null);
+
+  const { showToast: uiShowToast } = useUIStore();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   const accountSearchRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
   const bottomActionsRef = useRef<HTMLDivElement>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestIdRef = useRef(0);
   const lastInitialAccountIdRef = useRef<string | undefined>(initialAccountId);
 
@@ -221,22 +229,8 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
   }, []);
 
   const showToast = useCallback((message: string) => {
-    setToastMessage(message);
-
-    if (toastTimerRef.current) {
-      clearTimeout(toastTimerRef.current);
-    }
-
-    toastTimerRef.current = setTimeout(() => {
-      setToastMessage(null);
-    }, 3500);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    };
-  }, []);
+    uiShowToast(message);
+  }, [uiShowToast]);
 
   const handleSelectAccount = (account: AccountSearchable) => {
     setSelectedAccountId(account.id);
@@ -292,7 +286,7 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
 
         console.error('Failed to load account statement:', error);
         setStatement(null);
-        showToast('تعذر استخراج كشف الحساب');
+        uiShowToast('تعذر استخراج كشف الحساب', 'error');
       })
       .finally(() => {
         if (!cancelled && requestId === requestIdRef.current) {
@@ -456,8 +450,6 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
   if (!selectedAccountId) {
     return (
       <div className="relative min-h-[60dvh] pb-28">
-        {toastMessage && <Toast message={toastMessage} />}
-
         <div className="rounded-3xl border border-slate-200/80 bg-white p-3.5 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-5">
           <AccountSearch
             accountSearch={accountSearch}
@@ -491,7 +483,206 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
 
   return (
     <div className="relative space-y-3 pb-44 sm:pb-40">
-      {toastMessage && <Toast message={toastMessage} />}
+      {/* Unified Header: Title, Search, Export & More Menu */}
+      <div className="flex items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs sticky top-0 z-10">
+        {/* Right: Title */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200/60 dark:border-teal-800/60 text-teal-600 flex items-center justify-center">
+            <FileText className="w-5 h-5" />
+          </div>
+          <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">كشف الحساب</h3>
+        </div>
+
+        {/* Middle: Search Bar (Transaction Search) */}
+        <div className="flex-1 max-w-[120px] sm:max-w-xs relative">
+          <div className="absolute inset-y-0 start-0 ps-2.5 flex items-center pointer-events-none">
+            <Search className="w-3 h-3 text-slate-400" />
+          </div>
+          <input
+            type="text"
+            placeholder="بحث في الحركات..."
+            value={transactionSearch}
+            onChange={(e) => setTransactionSearch(e.target.value)}
+            className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 rounded-xl py-1.5 ps-8 pe-3 text-[10px] font-bold text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500/50 outline-none transition-all"
+          />
+        </div>
+
+        {/* Left: Export Merged & More Menu */}
+        <div className="flex items-center gap-1">
+          {/* Merged Export Icon (PDF + Excel) */}
+          <button
+            type="button"
+            onClick={() => setIsExportModalOpen(true)}
+            className="relative w-10 h-10 flex items-center justify-center rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition group"
+            title="تصدير (PDF / Excel)"
+          >
+            <div className="relative flex items-center justify-center">
+              <FileText className="w-5 h-5 text-rose-600 transition-transform group-hover:-translate-x-1" />
+              <div className="absolute -bottom-1 -end-1 p-0.5 rounded-md bg-white dark:bg-slate-800 shadow-xs border border-slate-100 dark:border-slate-700">
+                <TableIcon className="w-3 h-3 text-emerald-600 transition-transform group-hover:translate-x-1" />
+              </div>
+            </div>
+          </button>
+
+          <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-0.5" />
+
+          {/* More Menu Dropdown */}
+          <div className="relative" ref={actionsRef}>
+            <button
+              type="button"
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              className={`w-10 h-10 flex items-center justify-center rounded-2xl transition shadow-sm ${
+                isMenuOpen 
+                  ? 'bg-teal-600 text-white' 
+                  : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
+              }`}
+            >
+              <MoreVertical className="w-5 h-5" />
+            </button>
+
+            {isMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsMenuOpen(false)} />
+                <div className="absolute top-full mt-2 end-0 w-64 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 py-2 z-50 animate-in fade-in zoom-in-95 duration-200">
+                  <div className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50 dark:border-slate-800 mb-1">
+                    أدوات العرض
+                  </div>
+                  {[
+                    { id: 'print', label: 'طباعة كشف الحساب', icon: Printer, action: handlePrint },
+                    { id: 'excel', label: 'تصدير Excel', icon: FileSpreadsheet, action: handleExportExcel },
+                    { id: 'whatsapp', label: 'مشاركة واتساب', icon: MessageCircle, action: handleShareWhatsApp },
+                    { id: 'divider-1', isDivider: true },
+                    { id: 'search-account', label: 'تغيير الحساب المختار', icon: RefreshCw, action: handleClearAccount },
+                    { id: 'divider-2', isDivider: true },
+                    { id: 'share', label: 'شارك التطبيق', icon: Share2, action: () => uiShowToast('جاري مشاركة التطبيق...', 'info') },
+                  ].map((item) => (
+                    item.isDivider ? (
+                      <div key={item.id} className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
+                    ) : (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          item.action?.();
+                          setIsMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-right"
+                      >
+                        {item.icon && <item.icon className="w-4 h-4 text-teal-600" />}
+                        <span>{item.label}</span>
+                      </button>
+                    )
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Export & Filter Modal */}
+      {isExportModalOpen && (
+        <div className="fixed inset-0 z-100 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div 
+            className="w-full max-w-md bg-white dark:bg-slate-900 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-6 animate-in slide-in-from-bottom-8 duration-300"
+            onClick={(e) => e.stopPropagation()}
+            dir="rtl"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <Filter className="w-5 h-5 text-teal-600" />
+                خيارات التصدير والفترة
+              </h3>
+              <button 
+                onClick={() => setIsExportModalOpen(false)}
+                className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Period Buttons: [الكل] | [هذا الشهر] | [تخصيص] */}
+            <div className="space-y-3">
+              <span className="text-[11px] font-bold text-slate-400 block uppercase tracking-wider">الفترة الزمنية</span>
+              <div className="flex items-center gap-2">
+                {[
+                  { id: 'all', label: 'الكل' },
+                  { id: 'this_month', label: 'هذا الشهر' },
+                  { id: 'custom', label: 'تخصيص' }
+                ].map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setPreset(p.id as DatePreset)}
+                    className={`flex-1 py-3 px-2 rounded-2xl text-xs font-bold transition border-2 ${
+                      preset === p.id 
+                        ? 'border-teal-600 bg-teal-50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-400 shadow-sm' 
+                        : 'border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Custom Date Inputs (only if custom is selected) */}
+              {preset === 'custom' && (
+                <div className="grid grid-cols-2 gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 animate-in zoom-in-95 duration-200">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400">من تاريخ</label>
+                    <input
+                      type="date"
+                      value={customRange.startDate}
+                      onChange={(e) => setCustomRange({ ...customRange, startDate: e.target.value })}
+                      className="w-full text-xs font-bold p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-teal-500 outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400">إلى تاريخ</label>
+                    <input
+                      type="date"
+                      value={customRange.endDate}
+                      onChange={(e) => setCustomRange({ ...customRange, endDate: e.target.value })}
+                      className="w-full text-xs font-bold p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-teal-500 outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Action & Export Buttons */}
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+              <span className="text-[11px] font-bold text-slate-400 block uppercase tracking-wider">عمليات التصدير والمشاركة</span>
+              <div className="grid grid-cols-3 gap-3">
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  className="flex flex-col items-center justify-center gap-2 p-4 rounded-3xl bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40 text-rose-600 hover:bg-rose-100 transition"
+                >
+                  <FileText className="w-6 h-6" />
+                  <span className="text-[10px] font-black">PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  className="flex flex-col items-center justify-center gap-2 p-4 rounded-3xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 text-emerald-600 hover:bg-emerald-100 transition"
+                >
+                  <TableIcon className="w-6 h-6" />
+                  <span className="text-[10px] font-black">EXCEL</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleShareWhatsApp}
+                  className="flex flex-col items-center justify-center gap-2 p-4 rounded-3xl bg-sky-50 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/40 text-sky-600 hover:bg-sky-100 transition"
+                >
+                  <MessageCircle className="w-6 h-6" />
+                  <span className="text-[10px] font-black">واتساب</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top Filter and Search Control */}
       <section className="rounded-3xl border border-slate-200/80 bg-white p-3 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-4">
@@ -540,95 +731,6 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
               currency={currency}
             />
           )}
-
-          {/* Internal Transaction Search */}
-          <div className="relative">
-            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-
-            <input
-              type="search"
-              value={transactionSearch}
-              onChange={(event) => setTransactionSearch(event.target.value)}
-              placeholder="بحث داخل تفاصيل الحركات أو رقم السند..."
-              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 ps-9 pe-10 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/15 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-100"
-            />
-
-            {transactionSearch && (
-              <button
-                type="button"
-                onClick={() => setTransactionSearch('')}
-                className="absolute end-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
-                aria-label="مسح البحث"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Date Range & Presets */}
-          <div>
-            <div className="mb-1.5 flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 dark:text-slate-400">
-                <Calendar className="h-3.5 w-3.5 text-teal-600" />
-                فترة الكشف
-              </span>
-
-              <button
-                type="button"
-                onClick={() => setPreset('custom' as DatePreset)}
-                className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold transition ${
-                  preset === ('custom' as DatePreset)
-                    ? 'bg-teal-50 text-teal-700 dark:bg-teal-950/50 dark:text-teal-300'
-                    : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-                }`}
-              >
-                <CalendarDays className="h-3.5 w-3.5" />
-                مخصص
-              </button>
-            </div>
-
-            <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800 sm:grid-cols-6">
-              {datePresets.map((item) => (
-                <button
-                  key={String(item.value)}
-                  type="button"
-                  onClick={() => setPreset(item.value)}
-                  className={`min-w-0 rounded-lg px-1.5 py-2 text-[10px] font-black transition ${
-                    preset === item.value
-                      ? 'bg-white text-teal-700 shadow-xs dark:bg-slate-700 dark:text-teal-300'
-                      : 'text-slate-600 hover:bg-white/70 dark:text-slate-300 dark:hover:bg-slate-700/70'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-
-            {preset === ('custom' as DatePreset) && (
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <DateInput
-                  label="من تاريخ"
-                  value={customRange.startDate}
-                  onChange={(value) =>
-                    setCustomRange((current) => ({
-                      ...current,
-                      startDate: value,
-                    }))
-                  }
-                />
-                <DateInput
-                  label="إلى تاريخ"
-                  value={customRange.endDate}
-                  onChange={(value) =>
-                    setCustomRange((current) => ({
-                      ...current,
-                      endDate: value,
-                    }))
-                  }
-                />
-              </div>
-            )}
-          </div>
         </div>
       </section>
 
@@ -1167,12 +1269,5 @@ const ReportAction: React.FC<{
     <span>{label}</span>
     <ChevronDown className="ms-auto h-3.5 w-3.5 rotate-90 text-slate-300" />
   </button>
-);
-
-const Toast: React.FC<{ message: string }> = ({ message }) => (
-  <div className="fixed left-1/2 top-4 z-[100] flex -translate-x-1/2 items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white shadow-xl dark:bg-white dark:text-slate-900 animate-in fade-in slide-in-from-top-2 duration-150">
-    <CheckCircle2 className="h-4 w-4 text-teal-400 dark:text-teal-600" />
-    {message}
-  </div>
 );
 
