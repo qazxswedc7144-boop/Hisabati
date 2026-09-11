@@ -6,16 +6,16 @@ import {
   Wallet2,
   Cloud,
   RefreshCw,
-  Bell,
   Sparkles,
   ScanLine,
   ShieldCheck,
   MoreVertical,
   SlidersHorizontal,
 } from 'lucide-react';
-import { useSettingsStore, useMessagingStore, useOCRStore } from '@/shared/stores';
+import { useSettingsStore, useOCRStore } from '@/shared/stores';
 import { PWAInstallPrompt } from './PWAInstallPrompt';
 import { SyncStatusIndicator } from './SyncStatusIndicator';
+import { NotificationCenterDrawer } from '@/features/messaging/components/NotificationCenterDrawer';
 import { useI18n } from '@/shared/hooks/useI18n';
 
 interface HeaderProps {
@@ -37,13 +37,8 @@ export const Header: React.FC<HeaderProps> = ({
 
   const theme = useSettingsStore((state) => state.settings.theme);
   const setTheme = useSettingsStore((state) => state.setTheme);
-  const { unreadNotificationsCount, openNotificationCenter, fetchNotifications } = useMessagingStore();
   const openScannerModal = useOCRStore((state) => state.openScannerModal);
   const { t } = useI18n();
-
-  useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
 
   // Handle click outside tools menu
   useEffect(() => {
@@ -98,21 +93,8 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right (End): Actions (Utility Icons) */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Notification Bell Button */}
-          <button
-            id="btn-header-notifications"
-            onClick={() => openNotificationCenter(true)}
-            aria-label="مركز الإشعارات والتنبيهات"
-            title="الإشعارات والتنبيهات"
-            className="relative p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/60 dark:border-slate-800 transition flex items-center justify-center min-h-[40px] min-w-[40px] shrink-0"
-          >
-            <Bell className="w-4 h-4" />
-            {unreadNotificationsCount > 0 && (
-              <span className="absolute -top-1 -start-1 min-w-[18px] h-[18px] rounded-full bg-rose-600 text-white text-[10px] font-extrabold flex items-center justify-center px-1 shadow-xs">
-                {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
-              </span>
-            )}
-          </button>
+          {/* Notification Center Dropdown */}
+          <NotificationCenterDrawer />
 
           {/* Cloud & Connection Sync Status Indicator */}
           <SyncStatusIndicator />

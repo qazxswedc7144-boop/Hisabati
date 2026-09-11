@@ -59,16 +59,21 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   updateSettings: async (partial: Partial<AppSettings>) => {
+    // Instant optimistic update & DOM application
+    set((state) => ({
+      settings: { ...state.settings, ...partial }
+    }));
+
+    if (partial.theme) {
+      applyThemeToDOM(partial.theme);
+    }
+    if (partial.language) {
+      setLanguage(partial.language);
+    }
+
     try {
       const updated = await settingsRepository.updateSettings(partial);
       set({ settings: updated });
-
-      if (partial.theme) {
-        applyThemeToDOM(partial.theme);
-      }
-      if (partial.language) {
-        setLanguage(partial.language);
-      }
     } catch (e) {
       console.error('Failed to update settings:', e);
     }

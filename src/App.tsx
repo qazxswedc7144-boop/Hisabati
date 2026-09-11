@@ -17,32 +17,14 @@ import { useSettingsStore } from '@/shared/stores';
 
 export default function App() {
   const [isReady, setIsReady] = useState(false);
-  const theme = useSettingsStore((state) => state.settings.theme);
-
-  useEffect(() => {
-    // Apply theme class to document element
-    const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-    } else if (theme === 'light') {
-      root.classList.remove('dark');
-    } else {
-      // System preference
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      if (prefersDark) {
-        root.classList.add('dark');
-      } else {
-        root.classList.remove('dark');
-      }
-    }
-  }, [theme]);
 
   useEffect(() => {
     async function initApp() {
       try {
         await seedInitialMockData(false);
+        await useSettingsStore.getState().loadSettings();
       } catch (e) {
-        console.error('Failed initializing mock seed:', e);
+        console.error('Failed initializing app data:', e);
       } finally {
         setIsReady(true);
       }

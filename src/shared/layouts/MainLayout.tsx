@@ -7,7 +7,6 @@ import { QuickAddTransactionModal } from '@/shared/components/QuickAddTransactio
 import { AddAccountModal } from '@/shared/components/AddAccountModal';
 import { Toast } from '@/shared/components/Toast';
 import { OfflineIndicator } from '@/shared/components/OfflineIndicator';
-import { NotificationCenterDrawer } from '@/features/messaging/components/NotificationCenterDrawer';
 import { SendMessageModal } from '@/features/messaging/components/SendMessageModal';
 import { OCRReceiptScannerModal, SmartReceiptReviewModal, ReceiptToTransactionModal } from '@/features/ocr';
 import { useSettingsStore, useAccountStore, useTransactionStore, useOCRStore } from '@/shared/stores';
@@ -45,7 +44,6 @@ export const MainLayout: React.FC = () => {
         <BottomNav />
         <QuickAddTransactionModal />
         <AddAccountModal />
-        <NotificationCenterDrawer />
         <SendMessageModal />
         <OCRReceiptScannerModal />
         <SmartReceiptReviewModal />
