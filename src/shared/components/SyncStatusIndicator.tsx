@@ -204,7 +204,7 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({
           role="dialog"
           aria-modal="true"
           aria-label="تفاصيل المزامنة"
-          className="absolute end-0 top-full mt-2 w-80 sm:w-96 max-w-[calc(100vw-1.5rem)] bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 z-50 animate-in fade-in zoom-in-95 duration-150 origin-top-right"
+          className="fixed inset-x-4 top-20 mx-auto max-w-sm sm:absolute sm:inset-auto sm:end-0 sm:top-full sm:mt-2 sm:w-96 bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 z-50 animate-in fade-in zoom-in-95 duration-150"
           dir="rtl"
         >
           {/* Header */}

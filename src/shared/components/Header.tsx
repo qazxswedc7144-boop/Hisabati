@@ -172,7 +172,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             {isToolsOpen && (
-              <div className="absolute end-0 top-full mt-2 w-56 p-1.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl z-50 animate-in fade-in zoom-in-95 duration-150 divide-y divide-slate-100 dark:divide-slate-800">
+              <div className="fixed inset-x-4 top-20 mx-auto max-w-xs sm:absolute sm:inset-auto sm:end-0 sm:top-full sm:mt-2 sm:w-56 p-1.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl z-50 animate-in fade-in zoom-in-95 duration-150 divide-y divide-slate-100 dark:divide-slate-800">
                 <div className="py-1">
                   <button
                     onClick={() => {
