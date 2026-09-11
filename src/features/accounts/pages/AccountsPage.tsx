@@ -116,13 +116,13 @@ export const AccountsPage: React.FC = () => {
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+      <div className="flex items-center gap-1 overflow-x-auto pb-1 no-scrollbar">
         {filterTabs.map((tab) => (
           <button
             key={tab.id}
             id={`filter-tab-${tab.id}`}
             onClick={() => handleFilterChange(tab.id)}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all min-h-[38px] ${
+            className={`px-2.5 py-1 rounded-xl text-[11px] sm:text-xs font-bold whitespace-nowrap transition-all min-h-[34px] ${
               filterType === tab.id
                 ? 'bg-teal-600 text-white shadow-xs'
                 : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60'
