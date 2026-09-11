@@ -84,14 +84,30 @@ export class GoogleDriveService {
     if (typeof window === 'undefined') return false;
 
     if (!googleClientId) {
-      throw new Error('معرف العميل (VITE_GOOGLE_CLIENT_ID) غير مُعرّف في متغيرات البيئة. يرجى إضافته في إعدادات التطبيق أو ملف البيئة.');
+      console.error('[Hisabati OAuth] VITE_GOOGLE_CLIENT_ID is missing');
+      throw new Error('معرف العميل (VITE_GOOGLE_CLIENT_ID) غير مُعرّف في متغيرات البيئة. يرجى إضافته في إعدادات Vercel أو ملف البيئة.');
     }
 
-    // Check if google accounts library is loaded
-    const google = (window as any).google;
+    // Safe diagnostic logging (masked client id)
+    const maskedId = googleClientId.length > 8 ? googleClientId.substring(0, 6) + '...' : '***';
+    console.info(`[Hisabati OAuth] Initializing Google Auth for Origin: ${window.location.origin}, ClientID: ${maskedId}`);
+
+    // Wait up to 1.5s if google script is still loading asynchronously (common on Vercel production edge)
+    let google = (window as any).google;
     if (!google?.accounts?.oauth2) {
+      for (let i = 0; i < 15; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        google = (window as any).google;
+        if (google?.accounts?.oauth2) break;
+      }
+    }
+
+    if (!google?.accounts?.oauth2) {
+      console.error('[Hisabati OAuth] Google Identity Services script not loaded');
       throw new Error('مكتبة Google Identity Services لم يتم تحميلها بعد. يرجى التحقق من اتصال الإنترنت أو السماح لسكريبتات Google بالعمل.');
     }
+
+    console.info('[Hisabati OAuth] GIS script loaded successfully. Creating Token Client...');
 
     return new Promise<boolean>((resolve, reject) => {
       try {
@@ -99,6 +115,7 @@ export class GoogleDriveService {
           client_id: googleClientId,
           scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
           callback: async (response: any) => {
+            console.info('[Hisabati OAuth] Callback received. Has token:', !!response?.access_token, 'Error:', response?.error);
             if (response && response.access_token) {
               // Fetch profile
               let profile: GoogleDriveUser | undefined;
@@ -114,8 +131,8 @@ export class GoogleDriveService {
                     picture: userData.picture,
                   };
                 }
-              } catch {
-                // Ignore user info fetch error
+              } catch (err) {
+                console.warn('[Hisabati OAuth] Failed to fetch user profile:', err);
               }
 
               this.setAccessToken(
@@ -125,27 +142,28 @@ export class GoogleDriveService {
               );
               resolve(true);
             } else if (response && response.error) {
-              reject(new Error(`خطأ مصادقة Google OAuth (${response.error}): ${response.error_description || 'تم رفض الوصول (403 Access Denied) أو لم يتم التحقق من التطبيق في وحدة تحكم Google Cloud.'}`));
+              reject(new Error(`خطأ مصادقة Google OAuth (${response.error}): ${response.error_description || 'تم رفض الوصول (403 Access Denied) أو أن النطاق الحالي (Origin) غير مسجل في Authorized JavaScript Origins بوحدة تحكم Google Cloud.'}`));
             } else {
               resolve(false);
             }
           },
           error_callback: (err: any) => {
-            console.warn('Google Identity OAuth Error:', err);
+            console.warn('[Hisabati OAuth] Google Identity OAuth Error:', err);
             const errType = err?.type || 'unknown';
             const errMsg = err?.message || 'خطأ غير معروف';
             if (errType === 'popup_failed_to_open') {
               reject(new Error('تعذر فتح نافذة المصادقة المنبثقة. قد يكون المتصفح قد حظر النافذة المنبثقة (Popup Blocked).'));
             } else if (errType === 'access_denied') {
-              reject(new Error('خطأ 403 (Access Denied): لم يتم التحقق من التطبيق أو أن حسابك ليس ضمن قائمة مستخدمي الاختبار (Test Users) في Google Cloud Console، أو أن نطاق التطبيق غير مصرح به.'));
+              reject(new Error(`خطأ 403 (Access Denied): النطاق الحالي (${window.location.origin}) غير مسجل في Authorized JavaScript Origins في Google Cloud Console، أو أن حسابك ليس ضمن Test Users.`));
             } else {
-              reject(new Error(`خطأ مصادقة Google (${errType}): ${errMsg}. يرجى مراجعة إعدادات مشروع Google Cloud Console.`));
+              reject(new Error(`خطأ مصادقة Google (${errType}): ${errMsg}. يرجى إضافة ${window.location.origin} إلى Authorized JavaScript Origins في Google Cloud Console.`));
             }
           },
         });
+        console.info('[Hisabati OAuth] Calling requestAccessToken()...');
         client.requestAccessToken();
       } catch (err: any) {
-        console.warn('Google Identity Client exception:', err);
+        console.warn('[Hisabati OAuth] Google Identity Client exception:', err);
         reject(err);
       }
     });
