@@ -79,7 +79,8 @@ export const DEFAULT_CURRENCY: CurrencyCode = 'YER';
 export function getCurrencyConfig(code?: string | CurrencyCode): CurrencyPrecisionConfig {
   if (!code) return CURRENCY_PRECISION_MAP[DEFAULT_CURRENCY];
   const upper = code.toUpperCase() as CurrencyCode;
-  return CURRENCY_PRECISION_MAP[upper] || CURRENCY_PRECISION_MAP[DEFAULT_CURRENCY];
+  const config = CURRENCY_PRECISION_MAP[upper] || CURRENCY_PRECISION_MAP[DEFAULT_CURRENCY];
+  return config;
 }
 
 /**

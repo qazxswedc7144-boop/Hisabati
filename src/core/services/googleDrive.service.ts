@@ -83,54 +83,72 @@ export class GoogleDriveService {
     
     if (typeof window === 'undefined') return false;
 
-    // Check if google accounts library is loaded
-    const google = (window as any).google;
-    if (google?.accounts?.oauth2 && googleClientId) {
-      return new Promise<boolean>((resolve) => {
-        try {
-          const client = google.accounts.oauth2.initTokenClient({
-            client_id: googleClientId,
-            scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
-            callback: async (response: any) => {
-              if (response && response.access_token) {
-                // Fetch profile
-                let profile: GoogleDriveUser | undefined;
-                try {
-                  const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-                    headers: { Authorization: `Bearer ${response.access_token}` },
-                  });
-                  if (userRes.ok) {
-                    const userData = await userRes.json();
-                    profile = {
-                      email: userData.email,
-                      name: userData.name,
-                      picture: userData.picture,
-                    };
-                  }
-                } catch {
-                  // Ignore user info fetch error
-                }
-
-                this.setAccessToken(
-                  response.access_token,
-                  response.expires_in ? parseInt(response.expires_in, 10) : 3600,
-                  profile || { email: 'حساب Google متصل', name: 'Google User' }
-                );
-                resolve(true);
-              } else {
-                resolve(false);
-              }
-            },
-          });
-          client.requestAccessToken();
-        } catch (err) {
-          console.warn('Google Identity Client error:', err);
-          resolve(false);
-        }
-      });
+    if (!googleClientId) {
+      throw new Error('معرف العميل (VITE_GOOGLE_CLIENT_ID) غير مُعرّف في متغيرات البيئة. يرجى إضافته في إعدادات التطبيق أو ملف البيئة.');
     }
 
-    return false;
+    // Check if google accounts library is loaded
+    const google = (window as any).google;
+    if (!google?.accounts?.oauth2) {
+      throw new Error('مكتبة Google Identity Services لم يتم تحميلها بعد. يرجى التحقق من اتصال الإنترنت أو السماح لسكريبتات Google بالعمل.');
+    }
+
+    return new Promise<boolean>((resolve, reject) => {
+      try {
+        const client = google.accounts.oauth2.initTokenClient({
+          client_id: googleClientId,
+          scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
+          callback: async (response: any) => {
+            if (response && response.access_token) {
+              // Fetch profile
+              let profile: GoogleDriveUser | undefined;
+              try {
+                const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                  headers: { Authorization: `Bearer ${response.access_token}` },
+                });
+                if (userRes.ok) {
+                  const userData = await userRes.json();
+                  profile = {
+                    email: userData.email,
+                    name: userData.name,
+                    picture: userData.picture,
+                  };
+                }
+              } catch {
+                // Ignore user info fetch error
+              }
+
+              this.setAccessToken(
+                response.access_token,
+                response.expires_in ? parseInt(response.expires_in, 10) : 3600,
+                profile || { email: 'حساب Google متصل', name: 'Google User' }
+              );
+              resolve(true);
+            } else if (response && response.error) {
+              reject(new Error(`خطأ مصادقة Google OAuth (${response.error}): ${response.error_description || 'تم رفض الوصول (403 Access Denied) أو لم يتم التحقق من التطبيق في وحدة تحكم Google Cloud.'}`));
+            } else {
+              resolve(false);
+            }
+          },
+          error_callback: (err: any) => {
+            console.warn('Google Identity OAuth Error:', err);
+            const errType = err?.type || 'unknown';
+            const errMsg = err?.message || 'خطأ غير معروف';
+            if (errType === 'popup_failed_to_open') {
+              reject(new Error('تعذر فتح نافذة المصادقة المنبثقة. قد يكون المتصفح قد حظر النافذة المنبثقة (Popup Blocked).'));
+            } else if (errType === 'access_denied') {
+              reject(new Error('خطأ 403 (Access Denied): لم يتم التحقق من التطبيق أو أن حسابك ليس ضمن قائمة مستخدمي الاختبار (Test Users) في Google Cloud Console، أو أن نطاق التطبيق غير مصرح به.'));
+            } else {
+              reject(new Error(`خطأ مصادقة Google (${errType}): ${errMsg}. يرجى مراجعة إعدادات مشروع Google Cloud Console.`));
+            }
+          },
+        });
+        client.requestAccessToken();
+      } catch (err: any) {
+        console.warn('Google Identity Client exception:', err);
+        reject(err);
+      }
+    });
   }
 
   /**
@@ -162,7 +180,21 @@ export class GoogleDriveService {
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => '');
-        throw new Error(`خطأ من خادم Google Drive (${response.status}): ${errorText.substring(0, 150)}`);
+        let parsedMessage = errorText;
+        try {
+          const errJson = JSON.parse(errorText);
+          if (errJson?.error?.message) {
+            parsedMessage = errJson.error.message;
+            if (parsedMessage.includes('Google Drive API has not been used') || parsedMessage.includes('disabled')) {
+              throw new Error(`خطأ 403: Google Drive API غير مفعلة في مشروع Google Cloud الحالي. يرجى تفعيلها بالانتقال إلى الرابط التالي: https://console.developers.google.com/apis/api/drive.googleapis.com/overview`);
+            }
+          }
+        } catch (e: any) {
+          if (e.message && e.message.includes('Google Drive API غير مفعلة')) {
+            throw e;
+          }
+        }
+        throw new Error(`خطأ من خادم Google Drive (${response.status}): ${parsedMessage.substring(0, 200)}`);
       }
 
       return response;

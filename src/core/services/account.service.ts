@@ -1,5 +1,5 @@
 import { db } from '../database/db';
-import { Account, CreateAccountDTO, UpdateAccountDTO, AccountFilterType } from '@/shared/types';
+import { Account, CreateAccountDTO, UpdateAccountDTO, AccountFilterType, CurrencyCode } from '@/shared/types';
 import { validateAccountForm } from '../utils/validators';
 import { transactionEngine } from './transactionEngine.service';
 import { roundMoney } from '../utils/financial';
@@ -30,12 +30,17 @@ export class AccountService {
     const now = new Date().toISOString();
     const id = 'acc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
 
+    // Fetch system default currency if not provided
+    const settings = await db.settings.get('currency');
+    const resolvedCurrency = dto.currency || (settings?.value as CurrencyCode) || 'YER';
+
     const newAccount: Account = {
       id,
       name: dto.name.trim(),
       phone: dto.phone?.trim() || undefined,
       note: dto.note?.trim() || undefined,
       category: dto.category || 'personal',
+      currency: resolvedCurrency,
       createdAt: now,
       updatedAt: now,
       archived: false,

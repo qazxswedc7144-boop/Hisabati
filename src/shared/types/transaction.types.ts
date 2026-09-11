@@ -1,3 +1,5 @@
+import { CurrencyCode } from './common.types';
+
 export type TransactionType = 'debit' | 'credit'; // 'debit' = لي (أعطيته / مستحق لي) | 'credit' = علي (استلمت منه / مستحق له)
 
 export interface Transaction {
@@ -6,6 +8,7 @@ export interface Transaction {
   type: TransactionType;
   amount: number;
   amountMinor?: number; // Phase B: Canonical integer minor units (Safe Integer)
+  currency?: CurrencyCode;
   date: string; // YYYY-MM-DD or ISO
   note?: string;
   receiptNumber?: string;
@@ -47,6 +50,7 @@ export interface CreateTransactionDTO {
   type: TransactionType;
   amount: number;
   amountMinor?: number; // Optional Phase B pre-calculated integer minor units
+  currency?: CurrencyCode;
   date: string;
   note?: string;
   receiptNumber?: string;
@@ -61,6 +65,7 @@ export interface UpdateTransactionDTO {
   type?: TransactionType;
   amount?: number;
   amountMinor?: number;
+  currency?: CurrencyCode;
   date?: string;
   note?: string;
   receiptNumber?: string;

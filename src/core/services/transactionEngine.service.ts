@@ -20,7 +20,7 @@ import {
 import { formatInvoiceNumber } from '../utils/formatters';
 import { rbacGuard } from './rbac/RBACGuard.service';
 import { auditTrailService } from './rbac/AuditTrail.service';
-import { settingsRepository } from '../repositories/settings.repository';
+import { settingsRepository, DEFAULT_SETTINGS } from '../repositories/settings.repository';
 import { useSettingsStore } from '@/shared/stores/settingsStore';
 import { decimalToMinor } from '../money/converter';
 import { getCurrencyDecimals } from '../money/currency';
@@ -92,29 +92,15 @@ export class FinancialTransactionEngine {
       const id = 'trx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
       const safeAmount = roundMoney(Math.abs(dto.amount));
 
-      // Resolve active settings and compute/validate canonical integer minor units
-      const settings = await settingsRepository.getSettings();
-      const activeCurrency = settings.currency || 'YER';
-      let amountMinor: number;
-
-      if (dto.amountMinor !== undefined) {
-        assertDualMoneyRepresentation(safeAmount, dto.amountMinor, activeCurrency);
-        amountMinor = dto.amountMinor;
-      } else {
-        if (safeAmount % 1 !== 0 && getCurrencyDecimals(activeCurrency) === 0) {
-          amountMinor = decimalToMinor(safeAmount, 'SAR', 'HALF_UP');
-        } else {
-          amountMinor = decimalToMinor(safeAmount, activeCurrency, 'HALF_UP');
-        }
-        assertDualMoneyRepresentation(safeAmount, amountMinor, activeCurrency);
-      }
+      const account = await db.accounts.get(dto.accountId);
+      if (!account) throw new Error(`الحساب رقم ${dto.accountId} غير موجود`);
 
       const newTransaction: Transaction = {
         id,
         accountId: dto.accountId,
         type: dto.type,
         amount: safeAmount,
-        amountMinor,
+        amountMinor: 0, // Will be set inside transaction
         date: dto.date || now.split('T')[0],
         note: dto.note?.trim() || undefined,
         receiptNumber: dto.receiptNumber?.trim() || undefined,
@@ -128,12 +114,36 @@ export class FinancialTransactionEngine {
 
       // Atomic write transaction
       await db.transaction('rw', db.transactions, db.accounts, db.settings, async () => {
+        // Fetch FRESH settings inside the transaction to prevent race conditions
+        const freshSettingsEntries = await db.settings.toArray();
+        const freshSettings: Record<string, any> = { ...DEFAULT_SETTINGS }; // Include defaults
+        for (const entry of freshSettingsEntries) {
+          freshSettings[entry.key] = entry.value;
+        }
+
+        // Priority: Transaction DTO -> Account Currency -> Global Settings Currency -> Fallback YER
+        const activeCurrency = dto.currency || account.currency || freshSettings.currency || 'YER';
+
+        let amountMinor: number;
+        // Recalculate amountMinor if not provided, or validate if provided
+        if (dto.amountMinor !== undefined) {
+          assertDualMoneyRepresentation(safeAmount, dto.amountMinor, activeCurrency);
+          amountMinor = dto.amountMinor;
+        } else {
+          amountMinor = decimalToMinor(safeAmount, activeCurrency, 'HALF_UP');
+        }
+
+        // Apply updated amountMinor and invoice number to the transaction object
+        newTransaction.amountMinor = amountMinor;
+        newTransaction.amount = safeAmount;
+        newTransaction.currency = activeCurrency;
+
         // Auto-generate invoice number if needed inside the transaction
-        if (!newTransaction.receiptNumber && settings.invoiceNumberingFormat !== 'manual') {
+        if (!newTransaction.receiptNumber && freshSettings.invoiceNumberingFormat !== 'manual') {
           const generated = formatInvoiceNumber(
-            settings.invoicePrefix,
-            settings.nextInvoiceNumber,
-            settings.invoiceNumberingFormat,
+            freshSettings.invoicePrefix || 'INV-',
+            freshSettings.nextInvoiceNumber || 1,
+            freshSettings.invoiceNumberingFormat || 'sequential',
             newTransaction.date
           );
           
@@ -141,7 +151,7 @@ export class FinancialTransactionEngine {
             newTransaction.receiptNumber = generated;
             
             // Increment next sequence number in database directly
-            const nextVal = (settings.nextInvoiceNumber || 1) + 1;
+            const nextVal = (freshSettings.nextInvoiceNumber || 1) + 1;
             await db.settings.put({
               id: 'nextInvoiceNumber',
               key: 'nextInvoiceNumber',
@@ -221,29 +231,31 @@ export class FinancialTransactionEngine {
     const oldAccountId = existing.accountId;
     const targetAccountId = dto.accountId || oldAccountId;
 
-    // Check target account existence if changing account
-    if (targetAccountId !== oldAccountId) {
-      const targetAcc = await db.accounts.get(targetAccountId);
-      if (!targetAcc) {
-        throw new Error('الحساب الجديد المحدد غير موجود');
-      }
+    // Fetch account and settings for currency resolution
+    const [account, freshSettingsEntries] = await Promise.all([
+      db.accounts.get(targetAccountId),
+      db.settings.toArray()
+    ]);
+
+    if (!account) throw new Error('الحساب المرتبط غير موجود');
+
+    const freshSettings: Record<string, any> = { ...DEFAULT_SETTINGS };
+    for (const entry of freshSettingsEntries) {
+      freshSettings[entry.key] = entry.value;
     }
+
+    // Priority: DTO -> Existing Trx -> Account -> Global Settings
+    const activeCurrency = dto.currency || existing.currency || account.currency || freshSettings.currency || 'YER';
 
     const safeAmount = dto.amount !== undefined ? roundMoney(Math.abs(dto.amount)) : existing.amount;
     const now = new Date().toISOString();
-
-    const activeCurrency = (await settingsRepository.get<CurrencyCode>('currency', 'YER')) || 'YER';
     let amountMinor: number;
 
     if (dto.amountMinor !== undefined) {
       assertDualMoneyRepresentation(safeAmount, dto.amountMinor, activeCurrency);
       amountMinor = dto.amountMinor;
-    } else if (dto.amount !== undefined) {
-      if (safeAmount % 1 !== 0 && getCurrencyDecimals(activeCurrency) === 0) {
-        amountMinor = decimalToMinor(safeAmount, 'SAR', 'HALF_UP');
-      } else {
-        amountMinor = decimalToMinor(safeAmount, activeCurrency, 'HALF_UP');
-      }
+    } else if (dto.amount !== undefined || dto.currency !== undefined) {
+      amountMinor = decimalToMinor(safeAmount, activeCurrency, 'HALF_UP');
       assertDualMoneyRepresentation(safeAmount, amountMinor, activeCurrency);
     } else {
       amountMinor = existing.amountMinor !== undefined
@@ -257,6 +269,7 @@ export class FinancialTransactionEngine {
       type: dto.type || existing.type,
       amount: safeAmount,
       amountMinor,
+      currency: activeCurrency,
       date: dto.date || existing.date,
       note: dto.note !== undefined ? (dto.note.trim() || undefined) : existing.note,
       receiptNumber: dto.receiptNumber !== undefined ? (dto.receiptNumber.trim() || undefined) : existing.receiptNumber,

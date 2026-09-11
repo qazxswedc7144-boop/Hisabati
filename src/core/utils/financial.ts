@@ -75,27 +75,24 @@ export function computeAccountMetricsFromTransactions(
   let lastDate: string | undefined = undefined;
 
   const effectiveCurrency = currency || 'YER';
+  const currencyDecimals = getCurrencyDecimals(effectiveCurrency);
+  
+  // Decide on decimal representation for the final summary (decimal fields)
+  // If any transaction has fractions, we might need decimals in the display fields even for YER
   const hasFractions = transactions.some((t) => t.amount % 1 !== 0);
-  const useTwoDecimals = hasFractions || (currency !== undefined && getCurrencyDecimals(effectiveCurrency) === 2);
+  const displayDecimals = (hasFractions || currencyDecimals === 2) ? 2 : currencyDecimals;
 
   for (const trx of transactions) {
     let amountUnits: number;
-    if (hasFractions) {
-      if (
-        trx.amountMinor !== undefined &&
-        isValidMinorUnit(trx.amountMinor) &&
-        Math.abs(trx.amountMinor) === Math.round(Math.abs(trx.amount) * 100)
-      ) {
-        amountUnits = Math.abs(trx.amountMinor);
-      } else {
-        amountUnits = toMinorUnits(Math.abs(trx.amount), 2);
-      }
-    } else if (trx.amountMinor !== undefined && isValidMinorUnit(trx.amountMinor)) {
+    
+    // 1. Primary Source: Existing valid amountMinor
+    if (trx.amountMinor !== undefined && isValidMinorUnit(trx.amountMinor)) {
       amountUnits = Math.abs(trx.amountMinor);
-    } else if (currency) {
-      amountUnits = Math.abs(getAmountMinor(trx, currency as CurrencyCode));
-    } else {
-      amountUnits = Math.abs(getAmountMinor(trx, 'YER'));
+    } 
+    // 2. Secondary Source: Fallback to currency-based conversion from legacy amount
+    else {
+      // Use displayDecimals to ensure all transactions in this calculation are on the same scale
+      amountUnits = toMinorUnits(Math.abs(trx.amount), displayDecimals);
     }
 
     if (trx.type === 'debit') {
@@ -115,15 +112,9 @@ export function computeAccountMetricsFromTransactions(
   let totalCredit: number;
   let currentBalance: number;
 
-  if (useTwoDecimals) {
-    totalDebit = roundMoney(debitUnits / 100, 2);
-    totalCredit = roundMoney(creditUnits / 100, 2);
-    currentBalance = roundMoney(currentBalanceUnits / 100, 2);
-  } else {
-    totalDebit = minorToDecimal(debitUnits, effectiveCurrency);
-    totalCredit = minorToDecimal(creditUnits, effectiveCurrency);
-    currentBalance = minorToDecimal(currentBalanceUnits, effectiveCurrency);
-  }
+  totalDebit = fromMinorUnits(debitUnits, displayDecimals);
+  totalCredit = fromMinorUnits(creditUnits, displayDecimals);
+  currentBalance = fromMinorUnits(currentBalanceUnits, displayDecimals);
 
   return {
     totalDebit,
@@ -154,8 +145,9 @@ export function computeStatementRunningBalances(
   if (transactions.length === 0) return [];
 
   const effectiveCurrency = currency || 'YER';
+  const currencyDecimals = getCurrencyDecimals(effectiveCurrency);
   const hasFractions = transactions.some((t) => t.amount % 1 !== 0);
-  const useTwoDecimals = hasFractions || (currency !== undefined && getCurrencyDecimals(effectiveCurrency) === 2);
+  const displayDecimals = (hasFractions || currencyDecimals === 2) ? 2 : currencyDecimals;
 
   // Sort chronological (oldest first)
   const chronological = [...transactions].sort((a, b) => {
@@ -169,22 +161,15 @@ export function computeStatementRunningBalances(
 
   for (const trx of chronological) {
     let units: number;
-    if (hasFractions) {
-      if (
-        trx.amountMinor !== undefined &&
-        isValidMinorUnit(trx.amountMinor) &&
-        Math.abs(trx.amountMinor) === Math.round(Math.abs(trx.amount) * 100)
-      ) {
-        units = Math.abs(trx.amountMinor);
-      } else {
-        units = toMinorUnits(Math.abs(trx.amount), 2);
-      }
-    } else if (trx.amountMinor !== undefined && isValidMinorUnit(trx.amountMinor)) {
+    
+    // 1. Primary Source: Existing valid amountMinor
+    if (trx.amountMinor !== undefined && isValidMinorUnit(trx.amountMinor)) {
       units = Math.abs(trx.amountMinor);
-    } else if (currency) {
-      units = Math.abs(getAmountMinor(trx, currency as CurrencyCode));
-    } else {
-      units = Math.abs(getAmountMinor(trx, 'YER'));
+    } 
+    // 2. Fallback: Currency-aware conversion
+    else {
+      const effectiveDecimals = (trx.amount % 1 !== 0 && currencyDecimals === 0) ? 2 : currencyDecimals;
+      units = toMinorUnits(Math.abs(trx.amount), effectiveDecimals);
     }
 
     if (trx.type === 'debit') {
@@ -193,9 +178,7 @@ export function computeStatementRunningBalances(
       runningUnits -= units;
     }
 
-    const decimalVal = useTwoDecimals
-      ? roundMoney(runningUnits / 100, 2)
-      : minorToDecimal(runningUnits, effectiveCurrency);
+    const decimalVal = fromMinorUnits(runningUnits, displayDecimals);
 
     itemMap.set(trx.id, {
       decimal: decimalVal,

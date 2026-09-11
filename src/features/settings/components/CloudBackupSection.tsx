@@ -60,12 +60,15 @@ export const CloudBackupSection: React.FC = () => {
 
   const handleConsentAccept = async () => {
     setShowConsentModal(false);
-    const success = await connectGoogleDrive();
-    if (success) {
-      showToast('تم الاتصال بحساب Google Drive بنجاح', 'success');
-    } else {
-      // Show token input option if Google popup wasn't configured with a client ID yet
-      setShowTokenInput(true);
+    try {
+      const success = await connectGoogleDrive();
+      if (success) {
+        showToast('تم الاتصال بحساب Google Drive بنجاح', 'success');
+      } else {
+        showToast('لم يتم إكمال عملية المصادقة', 'info');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'فشل الاتصال بـ Google Drive بسبب خطأ في المصادقة', 'error');
     }
   };
 

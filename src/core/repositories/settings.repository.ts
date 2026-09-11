@@ -1,7 +1,7 @@
 import { db } from '../database/db';
 import { AppSettings, SettingsEntry } from '@/shared/types';
 
-const DEFAULT_SETTINGS: AppSettings = {
+export const DEFAULT_SETTINGS: AppSettings = {
   currency: 'YER',
   language: 'ar',
   theme: 'light',
