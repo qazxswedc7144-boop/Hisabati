@@ -52,11 +52,11 @@ export const BusinessProfileSection: React.FC = () => {
       return;
     }
 
-    // Limit to 100KB to keep IndexedDB and backup files lean and fast
-    const MAX_BYTES = 100 * 1024;
+    // Limit to 1MB to keep IndexedDB and backup files lean and fast
+    const MAX_BYTES = 1024 * 1024;
     if (file.size > MAX_BYTES) {
       showToast(
-        `حجم الصورة (${Math.round(file.size / 1024)}KB) يتجاوز الحد الأقصى المسموح به (100KB)`,
+        `حجم الصورة (${Math.round(file.size / 1024)}KB) يتجاوز الحد الأقصى المسموح به (1MB)`,
         'error'
       );
       return;
@@ -152,7 +152,7 @@ export const BusinessProfileSection: React.FC = () => {
                 شعار المنشأة / المحل
               </span>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                صورة مربعة واضحة (الحد الأقصى 100 كيلوبايت - PNG أو JPG)
+                صورة مربعة واضحة (الحد الأقصى 1 ميغابايت - PNG أو JPG)
               </p>
             </div>
 
