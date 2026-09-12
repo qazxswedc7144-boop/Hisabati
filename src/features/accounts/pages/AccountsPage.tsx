@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Plus, ArrowUpDown, Filter, Phone, Clock, ChevronLeft, PlusCircle } from 'lucide-react';
+import { Search, Plus, ArrowUpDown, Filter, ChevronDown, Check, Phone, Clock, ChevronLeft, PlusCircle } from 'lucide-react';
 import { useAccountStore, useSettingsStore, useUIStore } from '@/shared/stores';
 import { BalanceBadge, EmptyState } from '@/shared/components';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
@@ -24,12 +24,14 @@ export const AccountsPage: React.FC = () => {
   const openQuickAdd = useUIStore((state) => state.openQuickAddTransaction);
   const openAddAccount = useUIStore((state) => state.openAddAccount);
 
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+
   const filteredAccounts = getFilteredAccounts();
 
   // Sync URL search params with store filter
   useEffect(() => {
     const filterParam = searchParams.get('filter');
-    if (filterParam && ['all', 'owed_to_me', 'owed_by_me', 'settled'].includes(filterParam)) {
+    if (filterParam && ['all', 'owed_to_me', 'owed_by_me', 'settled', 'archived'].includes(filterParam)) {
       setFilterType(filterParam as AccountFilterType);
     }
   }, [searchParams, setFilterType]);
@@ -51,6 +53,8 @@ export const AccountsPage: React.FC = () => {
     { id: 'settled', label: 'متعادل' },
     { id: 'archived', label: 'المؤرشفة' },
   ];
+
+  const activeFilterLabel = filterTabs.find(tab => tab.id === filterType)?.label || 'الكل';
 
   return (
     <div id="accounts-page" className="space-y-4 sm:space-y-5 animate-in fade-in duration-200">
@@ -75,8 +79,8 @@ export const AccountsPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Search & Sort Controls */}
-      <div className="flex flex-col sm:flex-row gap-2.5">
+      {/* Search, Filter & Sort Controls */}
+      <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center">
         {/* Search Input */}
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-slate-400 absolute start-3.5 top-1/2 -translate-y-1/2" />
@@ -98,39 +102,74 @@ export const AccountsPage: React.FC = () => {
           )}
         </div>
 
-        {/* Sort Select */}
-        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
-          <ArrowUpDown className="w-4 h-4 text-slate-400 shrink-0" />
-          <select
-            id="select-sort-accounts"
-            value={sortField}
-            onChange={(e) => setSortField(e.target.value as AccountSortField)}
-            className="px-3 py-2 rounded-xl border border-slate-300/80 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-teal-500 transition min-h-[42px]"
-          >
-            <option value="recent">الترتيب: الأحدث حركة</option>
-            <option value="balance">الترتيب: الأعلى رصيداً</option>
-            <option value="name">الترتيب: أبجدياً</option>
-            <option value="createdAt">الترتيب: تاريخ الإنشاء</option>
-          </select>
-        </div>
-      </div>
+        {/* Filter & Sort Controls Row */}
+        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+          {/* Filter Dropdown Button */}
+          <div className="relative">
+            <button
+              id="btn-filter-dropdown"
+              onClick={() => setIsFilterOpen(!isFilterOpen)}
+              className="px-3.5 py-2 rounded-xl border border-slate-300/80 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-teal-500 transition min-h-[42px] flex items-center gap-2 cursor-pointer shadow-xs"
+            >
+              <Filter className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+              <span>التصنيف: {activeFilterLabel}</span>
+              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform ${isFilterOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-      {/* Filter Tabs */}
-      <div className="flex items-center gap-1 overflow-x-auto pb-1 no-scrollbar">
-        {filterTabs.map((tab) => (
-          <button
-            key={tab.id}
-            id={`filter-tab-${tab.id}`}
-            onClick={() => handleFilterChange(tab.id)}
-            className={`px-2.5 py-1 rounded-xl text-[11px] sm:text-xs font-bold whitespace-nowrap transition-all min-h-[34px] ${
-              filterType === tab.id
-                ? 'bg-teal-600 text-white shadow-xs'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+            {isFilterOpen && (
+              <>
+                {/* Backdrop */}
+                <div 
+                  className="fixed inset-0 z-30" 
+                  onClick={() => setIsFilterOpen(false)} 
+                />
+                {/* Popover Menu */}
+                <div className="absolute start-0 sm:end-0 sm:start-auto mt-1.5 w-52 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl z-40 py-1.5 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-3 py-2 text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">
+                    فلترة حسب التصنيف
+                  </div>
+                  {filterTabs.map((tab) => {
+                    const isActive = filterType === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        id={`filter-option-${tab.id}`}
+                        onClick={() => {
+                          handleFilterChange(tab.id);
+                          setIsFilterOpen(false);
+                        }}
+                        className={`w-full text-start px-3.5 py-2.5 text-xs font-medium flex items-center justify-between transition-colors ${
+                          isActive 
+                            ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 font-bold' 
+                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                        }`}
+                      >
+                        <span>{tab.label}</span>
+                        {isActive && <Check className="w-4 h-4 text-teal-600 dark:text-teal-400" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Sort Select */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <ArrowUpDown className="w-4 h-4 text-slate-400 shrink-0" />
+            <select
+              id="select-sort-accounts"
+              value={sortField}
+              onChange={(e) => setSortField(e.target.value as AccountSortField)}
+              className="px-3 py-2 rounded-xl border border-slate-300/80 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-teal-500 transition min-h-[42px]"
+            >
+              <option value="recent">الترتيب: الأحدث حركة</option>
+              <option value="balance">الترتيب: الأعلى رصيداً</option>
+              <option value="name">الترتيب: أبجدياً</option>
+              <option value="createdAt">الترتيب: تاريخ الإنشاء</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       {/* Accounts List */}

@@ -52,8 +52,8 @@ export const BusinessProfileSection: React.FC = () => {
       return;
     }
 
-    // Limit to 1MB to keep IndexedDB and backup files lean and fast
-    const MAX_BYTES = 1024 * 1024;
+    // Limit to 1,000,000 bytes (1MB) to keep IndexedDB and backup files lean and fast
+    const MAX_BYTES = 1000000;
     if (file.size > MAX_BYTES) {
       showToast(
         `حجم الصورة (${Math.round(file.size / 1024)}KB) يتجاوز الحد الأقصى المسموح به (1MB)`,
