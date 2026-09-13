@@ -79,7 +79,7 @@ export class GoogleDriveService {
    * Initializes Google Identity Services Token Client if available in window, or prompts token acquisition.
    */
   public async requestGoogleAuth(clientId?: string): Promise<boolean> {
-    const googleClientId = clientId || (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
+    const googleClientId = clientId || import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
     
     if (typeof window === 'undefined') return false;
 
