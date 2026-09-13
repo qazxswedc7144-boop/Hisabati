@@ -197,14 +197,14 @@ export const QuickAddTransactionModal: React.FC = () => {
   return (
     <div
       id="quick-add-transaction-modal-overlay"
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 overflow-y-auto"
       onClick={(e) => {
         if (e.target === e.currentTarget) close();
       }}
     >
       <div
         id="quick-add-transaction-modal"
-        className="w-full sm:max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh] sm:my-auto animate-in slide-in-from-bottom duration-200"
+        className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl p-4 space-y-2.5 shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh] my-auto"
       >
         {/* Modal Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50">
