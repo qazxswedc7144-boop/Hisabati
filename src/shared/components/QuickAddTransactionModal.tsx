@@ -462,51 +462,51 @@ export const QuickAddTransactionModal: React.FC = () => {
             </div>
           </div>
 
-          {/* Bottom Action Row: [لي] [علي] [حفظ] */}
-          <div className="flex items-center gap-1.5 pt-2">
+          {/* Bottom Action Row: [مطلوب منه] [مستحق له] [حفظ] */}
+          <div className="flex items-center gap-1 pt-2">
             <button
               type="button"
               id="btn-type-debit"
               onClick={() => setType('debit')}
-              className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg border font-bold text-[11px] transition-all min-h-[36px] ${
+              className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-lg border font-bold text-[10px] sm:text-[11px] transition-all min-h-[36px] ${
                 type === 'debit'
                   ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 shadow-xs'
                   : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 hover:border-slate-300'
               }`}
             >
               <ArrowUpRight
-                className={`w-3.5 h-3.5 ${
+                className={`w-3.5 h-3.5 shrink-0 ${
                   type === 'debit' ? 'text-emerald-600' : ''
                 }`}
               />
-              <span className="whitespace-nowrap">لي (مطلوب منه)</span>
+              <span className="whitespace-nowrap">مطلوب منه</span>
             </button>
 
             <button
               type="button"
               id="btn-type-credit"
               onClick={() => setType('credit')}
-              className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg border font-bold text-[11px] transition-all min-h-[36px] ${
+              className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-lg border font-bold text-[10px] sm:text-[11px] transition-all min-h-[36px] ${
                 type === 'credit'
                   ? 'border-rose-500 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 shadow-xs'
                   : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 hover:border-slate-300'
               }`}
             >
               <ArrowDownLeft
-                className={`w-3.5 h-3.5 ${
+                className={`w-3.5 h-3.5 shrink-0 ${
                   type === 'credit' ? 'text-rose-600' : ''
                 }`}
               />
-              <span className="whitespace-nowrap">علي (مستحق له)</span>
+              <span className="whitespace-nowrap">مستحق له</span>
             </button>
 
             <button
               id="btn-submit-transaction"
               type="submit"
               disabled={isSubmitting || accounts.length === 0}
-              className="py-1.5 px-4 rounded-lg bg-teal-600 hover:bg-teal-700 active:bg-teal-800 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all min-h-[36px] shrink-0"
+              className="py-1.5 px-3.5 rounded-lg bg-teal-600 hover:bg-teal-700 active:bg-teal-800 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-sm transition-all min-h-[36px] shrink-0"
             >
-              <Check className="w-3.5 h-3.5" />
+              <Check className="w-3.5 h-3.5 shrink-0" />
               <span>{isSubmitting ? '...' : 'حفظ'}</span>
             </button>
           </div>
