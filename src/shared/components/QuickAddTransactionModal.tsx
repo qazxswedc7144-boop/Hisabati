@@ -380,45 +380,45 @@ export const QuickAddTransactionModal: React.FC = () => {
           </div>
 
           {/* 2. Transaction Type (لي / علي) */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 shrink-0">
               نوع المعاملة
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-1.5 w-auto max-w-[280px]">
               <button
                 type="button"
                 id="btn-type-debit"
                 onClick={() => setType('debit')}
-                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border-2 font-bold text-xs transition-all min-h-[40px] ${
+                className={`flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-lg border font-bold text-[11px] transition-all min-h-[32px] ${
                   type === 'debit'
                     ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 shadow-xs'
                     : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 hover:border-slate-300'
                 }`}
               >
                 <ArrowUpRight
-                  className={`w-4 h-4 ${
+                  className={`w-3.5 h-3.5 ${
                     type === 'debit' ? 'text-emerald-600' : ''
                   }`}
                 />
-                <span>لي (مطلوب منه)</span>
+                <span className="whitespace-nowrap">لي (مطلوب منه)</span>
               </button>
 
               <button
                 type="button"
                 id="btn-type-credit"
                 onClick={() => setType('credit')}
-                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border-2 font-bold text-xs transition-all min-h-[40px] ${
+                className={`flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-lg border font-bold text-[11px] transition-all min-h-[32px] ${
                   type === 'credit'
                     ? 'border-rose-500 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 shadow-xs'
                     : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 hover:border-slate-300'
                 }`}
               >
                 <ArrowDownLeft
-                  className={`w-4 h-4 ${
+                  className={`w-3.5 h-3.5 ${
                     type === 'credit' ? 'text-rose-600' : ''
                   }`}
                 />
-                <span>علي (مستحق له)</span>
+                <span className="whitespace-nowrap">علي (مستحق له)</span>
               </button>
             </div>
           </div>
