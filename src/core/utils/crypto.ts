@@ -188,3 +188,82 @@ export async function verifyBackupIntegrityHash(payload: any, version?: number):
   return false;
 }
 
+/**
+ * SEC-02: AES-GCM 256 Backup Encryption / Decryption Utilities using Web Crypto API.
+ */
+const ENCRYPTION_KEY_STORAGE = 'hisabati_backup_master_key_v1';
+
+async function getOrCreateMasterEncryptionKey(): Promise<CryptoKey> {
+  let rawKeyHex: string | null = null;
+  if (typeof localStorage !== 'undefined') {
+    rawKeyHex = localStorage.getItem(ENCRYPTION_KEY_STORAGE);
+  }
+
+  let keyBytes: Uint8Array;
+  if (rawKeyHex) {
+    const matches = rawKeyHex.match(/.{1,2}/g);
+    keyBytes = new Uint8Array(matches ? matches.map((b) => parseInt(b, 16)) : []);
+  } else {
+    keyBytes = crypto.getRandomValues(new Uint8Array(32)); // 256-bit key
+    if (typeof localStorage !== 'undefined') {
+      const hex = Array.from(keyBytes)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+      localStorage.setItem(ENCRYPTION_KEY_STORAGE, hex);
+    }
+  }
+
+  return await crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+export async function encryptBackupPayload(payload: any): Promise<{ cipherText: string; iv: string }> {
+  const key = await getOrCreateMasterEncryptionKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12)); // 12-byte IV for AES-GCM
+  const encoder = new TextEncoder();
+  const plainTextBuffer = encoder.encode(JSON.stringify(payload));
+
+  const cipherBuffer = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    plainTextBuffer
+  );
+
+  const cipherArray = Array.from(new Uint8Array(cipherBuffer));
+  const cipherText = btoa(String.fromCharCode(...cipherArray));
+  const ivHex = Array.from(iv)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  return { cipherText, iv: ivHex };
+}
+
+export async function decryptBackupPayload(cipherText: string, ivHex: string): Promise<any> {
+  const key = await getOrCreateMasterEncryptionKey();
+  const matches = ivHex.match(/.{1,2}/g);
+  const iv = new Uint8Array(matches ? matches.map((b) => parseInt(b, 16)) : []);
+
+  const binaryString = atob(cipherText);
+  const len = binaryString.length;
+  const cipherBytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    cipherBytes[i] = binaryString.charCodeAt(i);
+  }
+
+  const plainBuffer = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    cipherBytes
+  );
+
+  const decoder = new TextDecoder();
+  const jsonString = decoder.decode(plainBuffer);
+  return JSON.parse(jsonString);
+}
+
+

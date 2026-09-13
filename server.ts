@@ -10,6 +10,34 @@ async function startServer() {
   const server = http.createServer(app);
   app.use(express.json({ limit: '10mb' }));
 
+  // In-Memory Rate Limiter for API endpoints (SEC-03 & 04)
+  const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+  const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+  const RATE_LIMIT_MAX_REQUESTS = 40; // 40 requests per minute per IP
+
+  const apiRateLimiter = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown-ip';
+    const now = Date.now();
+    let record = rateLimitMap.get(ip);
+
+    if (!record || now > record.resetTime) {
+      record = { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS };
+      rateLimitMap.set(ip, record);
+      return next();
+    }
+
+    record.count++;
+    if (record.count > RATE_LIMIT_MAX_REQUESTS) {
+      return res.status(429).json({
+        error: 'تم تجاوز الحد الأقصى لعدد الطلبات المسموح به (Rate Limit Exceeded). يرجى المحاولة لاحقاً.',
+      });
+    }
+
+    next();
+  };
+
+  app.use('/api/', apiRateLimiter);
+
   // Health check endpoint
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });

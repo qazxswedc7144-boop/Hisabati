@@ -64,17 +64,8 @@ export const DashboardPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Quick Actions (Primary: تسجيل عملية, Secondary: مسح, Tertiary: حساب جديد) في سطر أفقي واحد دائم في الجانب الأيسر */}
+        {/* Quick Actions (Secondary: مسح, Tertiary: حساب جديد) في سطر أفقي واحد دائم في الجانب الأيسر */}
         <div className="flex flex-row items-center justify-end gap-1 sm:gap-2 flex-nowrap shrink-0">
-          <button
-            id="btn-dash-add-trx"
-            onClick={() => openQuickAdd()}
-            className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3.5 sm:py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs sm:text-sm font-bold shadow-xs shadow-teal-700/20 active:scale-[0.98] transition min-h-[36px] sm:min-h-[44px] shrink-0 whitespace-nowrap"
-          >
-            <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5] shrink-0" />
-            <span className="whitespace-nowrap">تسجيل عملية</span>
-          </button>
-
           <button
             id="btn-dash-scan-ocr"
             onClick={() => openScannerModal()}

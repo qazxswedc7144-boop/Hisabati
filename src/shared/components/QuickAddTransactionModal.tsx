@@ -1,9 +1,50 @@
-import React, { useState, useEffect } from 'react';
-import { X, Check, ArrowUpRight, ArrowDownLeft, Calendar, FileText, UserPlus, Hash } from 'lucide-react';
-import { useUIStore, useAccountStore, useTransactionStore, useSettingsStore } from '@/shared/stores';
-import { TransactionType } from '@/shared/types';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import {
+  X,
+  Check,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Calendar,
+  FileText,
+  UserPlus,
+  Hash,
+  Search,
+  User,
+} from 'lucide-react';
+import {
+  useUIStore,
+  useAccountStore,
+  useTransactionStore,
+  useSettingsStore,
+} from '@/shared/stores';
+import { TransactionType, Account } from '@/shared/types';
 import { formatCurrency } from '@/core/utils/formatters';
 import { validateTransactionForm } from '@/core/utils/validators';
+
+const normalizeSearchText = (value: string): string =>
+  value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .trim();
+
+const isPositive = (value: number) => value > 0;
+const isNegative = (value: number) => value < 0;
+const balanceLabel = (value: number) =>
+  isPositive(value) ? 'لك' : isNegative(value) ? 'عليك' : 'متعادل';
+const balanceTone = (value: number) =>
+  isPositive(value)
+    ? 'text-emerald-700 dark:text-emerald-300'
+    : isNegative(value)
+      ? 'text-rose-700 dark:text-rose-300'
+      : 'text-slate-700 dark:text-slate-300';
+
+type AccountSearchable = Account & {
+  phone?: string;
+};
 
 export const QuickAddTransactionModal: React.FC = () => {
   const isOpen = useUIStore((state) => state.isQuickAddTransactionOpen);
@@ -12,24 +53,47 @@ export const QuickAddTransactionModal: React.FC = () => {
   const openAddAccount = useUIStore((state) => state.openAddAccount);
   const showToast = useUIStore((state) => state.showToast);
 
-  const accounts = useAccountStore((state) => state.accounts);
+  const accounts = useAccountStore((state) => state.accounts) as AccountSearchable[];
   const settings = useSettingsStore((state) => state.settings);
   const currency = settings.currency;
   const addTransaction = useTransactionStore((state) => state.addTransaction);
 
   const [accountId, setAccountId] = useState<string>('');
-  const [type, setType] = useState<TransactionType>('debit'); 
+  const [accountSearch, setAccountSearch] = useState<string>('');
+  const [isAccountSearchOpen, setIsAccountSearchOpen] = useState<boolean>(false);
+
+  const [type, setType] = useState<TransactionType>('debit');
   const [amount, setAmount] = useState<string>('');
-  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
   const [note, setNote] = useState<string>('');
   const [receiptNumber, setReceiptNumber] = useState<string>('');
   const [showMoreFields, setShowMoreFields] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Initialize form state when modal opens
   useEffect(() => {
     if (isOpen) {
-      setAccountId(preselectedAccountId || (accounts.length > 0 ? accounts[0].id : ''));
+      if (preselectedAccountId) {
+        const found = accounts.find((a) => a.id === preselectedAccountId);
+        if (found) {
+          setAccountId(found.id);
+          setAccountSearch(found.name);
+        } else {
+          setAccountId('');
+          setAccountSearch('');
+        }
+      } else {
+        // Requirement 1: Empty by default
+        setAccountId('');
+        setAccountSearch('');
+      }
+
       setType(settings.defaultTransactionType || 'debit');
       setAmount('');
       setDate(new Date().toISOString().split('T')[0]);
@@ -37,8 +101,43 @@ export const QuickAddTransactionModal: React.FC = () => {
       setReceiptNumber('');
       setShowMoreFields(false);
       setErrors({});
+      setIsAccountSearchOpen(false);
     }
   }, [isOpen, preselectedAccountId, accounts, settings.defaultTransactionType]);
+
+  // Click outside to close account search dropdown
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setIsAccountSearchOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, []);
+
+  const normalizedQuery = normalizeSearchText(accountSearch);
+  const hasSearchText = normalizedQuery.length > 0;
+
+  const filteredAccounts = useMemo(() => {
+    if (!hasSearchText) return accounts.slice(0, 15);
+
+    return accounts
+      .filter((account) => {
+        const name = normalizeSearchText(account.name || '');
+        const phone = normalizeSearchText(account.phone || '');
+        return name.includes(normalizedQuery) || phone.includes(normalizedQuery);
+      })
+      .slice(0, 20);
+  }, [accounts, hasSearchText, normalizedQuery]);
+
+  const selectedAccount = useMemo(() => {
+    if (!accountId) return null;
+    return accounts.find((a) => a.id === accountId) || null;
+  }, [accounts, accountId]);
 
   if (!isOpen) return null;
 
@@ -73,10 +172,20 @@ export const QuickAddTransactionModal: React.FC = () => {
         receiptNumber: receiptNumber.trim() || undefined,
       });
 
-      const selectedAcc = accounts.find((a) => a.id === accountId);
       const typeLabel = type === 'debit' ? 'لك' : 'عليك';
-      showToast(`تم تسجيل العملية بنجاح (${typeLabel}: ${formatCurrency(numAmount, currency)})`, 'success');
-      close();
+      showToast(
+        `تم تسجيل العملية بنجاح (${typeLabel}: ${formatCurrency(
+          numAmount,
+          currency
+        )})`,
+        'success'
+      );
+
+      // Requirement 4: Persistent Modal - Do NOT close! Reset amount, note, receiptNumber and keep modal open
+      setAmount('');
+      setNote('');
+      setReceiptNumber('');
+      setErrors({});
     } catch (err) {
       console.error('Failed to save transaction:', err);
       showToast('تعذر حفظ العملية، يرجى المحاولة مرة أخرى', 'error');
@@ -125,10 +234,11 @@ export const QuickAddTransactionModal: React.FC = () => {
 
         {/* Modal Body */}
         <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto">
-          {/* 1. Account Selector */}
-          <div>
+          {/* 1. Searchable Autocomplete Account Selector & Live Balance Preview */}
+          <div ref={containerRef} className="relative">
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-teal-600" />
                 الحساب / الشخص
               </label>
               <button
@@ -144,40 +254,121 @@ export const QuickAddTransactionModal: React.FC = () => {
               </button>
             </div>
 
-            {accounts.length === 0 ? (
-              <div className="p-3 text-center bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800/40 text-amber-800 dark:text-amber-300 text-xs">
-                لا يوجد أي حسابات مسجلة بعد.
+            <div className="relative">
+              <Search className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={accountSearch}
+                onFocus={() => setIsAccountSearchOpen(true)}
+                onChange={(e) => {
+                  const query = e.target.value;
+                  setAccountSearch(query);
+                  setIsAccountSearchOpen(true);
+                  if (accountId) {
+                    setAccountId(''); // Clear selected account if user changes typing
+                  }
+                  if (errors.accountId) {
+                    setErrors((prev) => ({ ...prev, accountId: '' }));
+                  }
+                }}
+                placeholder="ابحث باسم الحساب أو رقم الهاتف..."
+                className="w-full h-12 ps-10 pe-10 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-bold outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition"
+              />
+
+              {accountSearch && (
                 <button
                   type="button"
                   onClick={() => {
-                    close();
-                    openAddAccount();
+                    setAccountSearch('');
+                    setAccountId('');
+                    setIsAccountSearchOpen(false);
+                    inputRef.current?.focus();
                   }}
-                  className="mx-1 font-bold underline text-amber-900 dark:text-amber-200"
+                  className="absolute end-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+                  aria-label="مسح البحث"
                 >
-                  أضف أول حساب الآن
+                  <X className="h-4 w-4" />
                 </button>
+              )}
+            </div>
+
+            {/* Dropdown Autocomplete Results */}
+            {isAccountSearchOpen && (
+              <div className="absolute inset-x-0 top-full mt-1.5 z-50 max-h-60 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl dark:border-slate-700 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
+                {filteredAccounts.length === 0 ? (
+                  <div className="p-4 text-center text-xs font-semibold text-slate-400">
+                    لا توجد حسابات مطابقة للبحث
+                  </div>
+                ) : (
+                  filteredAccounts.map((acc) => (
+                    <button
+                      key={acc.id}
+                      type="button"
+                      onClick={() => {
+                        setAccountId(acc.id);
+                        setAccountSearch(acc.name);
+                        setIsAccountSearchOpen(false);
+                        if (errors.accountId) {
+                          setErrors((prev) => ({ ...prev, accountId: '' }));
+                        }
+                      }}
+                      className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-right transition hover:bg-teal-50 dark:hover:bg-teal-950/40 active:scale-[0.99]"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-black text-slate-800 dark:text-slate-100">
+                          {acc.name}
+                        </div>
+                        {acc.phone && (
+                          <div className="mt-0.5 text-[10px] font-semibold text-slate-400">
+                            {acc.phone}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="shrink-0 text-left">
+                        <div
+                          className={`text-[11px] font-black tabular-nums ${balanceTone(
+                            acc.currentBalance
+                          )}`}
+                        >
+                          {formatCurrency(
+                            Math.abs(acc.currentBalance),
+                            currency
+                          )}
+                        </div>
+                        <div className="text-[9px] font-semibold text-slate-400">
+                          {balanceLabel(acc.currentBalance)}
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                )}
               </div>
-            ) : (
-              <select
-                id="select-transaction-account"
-                value={accountId}
-                onChange={(e) => {
-                  setAccountId(e.target.value);
-                  if (errors.accountId) setErrors((prev) => ({ ...prev, accountId: '' }));
-                }}
-                className="w-full px-3.5 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-medium focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition min-h-[46px]"
-              >
-                <option value="" disabled>
-                  -- اختر الشخص أو الحساب --
-                </option>
-                {accounts.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.name} {acc.phone ? `(${acc.phone})` : ''}
-                  </option>
-                ))}
-              </select>
             )}
+
+            {/* Requirement 2: Live Balance Preview under selected account */}
+            {selectedAccount && (
+              <div className="mt-2 flex items-center gap-2 px-1 text-xs">
+                <span className="text-slate-500 dark:text-slate-400 font-semibold">
+                  الرصيد الحالي:
+                </span>
+                <span
+                  className={`font-black tabular-nums ${balanceTone(
+                    selectedAccount.currentBalance
+                  )}`}
+                >
+                  {formatCurrency(
+                    Math.abs(selectedAccount.currentBalance),
+                    currency
+                  )}
+                  <span className="ms-1 font-bold">
+                    ({balanceLabel(selectedAccount.currentBalance)})
+                  </span>
+                </span>
+              </div>
+            )}
+
             {errors.accountId && (
               <p className="text-xs text-rose-500 mt-1">{errors.accountId}</p>
             )}
@@ -199,7 +390,11 @@ export const QuickAddTransactionModal: React.FC = () => {
                     : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 hover:border-slate-300'
                 }`}
               >
-                <ArrowUpRight className={`w-5 h-5 ${type === 'debit' ? 'text-emerald-600' : ''}`} />
+                <ArrowUpRight
+                  className={`w-5 h-5 ${
+                    type === 'debit' ? 'text-emerald-600' : ''
+                  }`}
+                />
                 <span>لي (أعطيته / مطلوب منه)</span>
               </button>
 
@@ -213,13 +408,17 @@ export const QuickAddTransactionModal: React.FC = () => {
                     : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 hover:border-slate-300'
                 }`}
               >
-                <ArrowDownLeft className={`w-5 h-5 ${type === 'credit' ? 'text-rose-600' : ''}`} />
+                <ArrowDownLeft
+                  className={`w-5 h-5 ${
+                    type === 'credit' ? 'text-rose-600' : ''
+                  }`}
+                />
                 <span>علي (أخذت منه / مستحق له)</span>
               </button>
             </div>
           </div>
 
-          {/* 3. Amount Field & Fast Shortcuts */}
+          {/* 3. Amount Field & Additive Quick Chips + Clear C Button */}
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
               المبلغ ({currency})
@@ -234,7 +433,8 @@ export const QuickAddTransactionModal: React.FC = () => {
                 placeholder="0"
                 onChange={(e) => {
                   setAmount(e.target.value);
-                  if (errors.amount) setErrors((prev) => ({ ...prev, amount: '' }));
+                  if (errors.amount)
+                    setErrors((prev) => ({ ...prev, amount: '' }));
                 }}
                 className="w-full px-4 py-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-2xl font-extrabold text-start focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition tracking-wide tabular-nums min-h-[52px]"
                 autoFocus
@@ -244,10 +444,10 @@ export const QuickAddTransactionModal: React.FC = () => {
               <p className="text-xs text-rose-500 mt-1">{errors.amount}</p>
             )}
 
-            {/* Quick Amount Pills */}
+            {/* Quick Amount Chips (+1000, +5000, +10000, C) */}
             <div className="flex flex-wrap items-center gap-1.5 mt-2">
               <span className="text-[11px] text-slate-400 ms-1">إضافة سريعة:</span>
-              {[1000, 5000, 10000, 50000].map((val) => (
+              {[1000, 5000, 10000].map((val) => (
                 <button
                   key={val}
                   type="button"
@@ -257,6 +457,15 @@ export const QuickAddTransactionModal: React.FC = () => {
                   +{val.toLocaleString('ar-YE')}
                 </button>
               ))}
+
+              <button
+                type="button"
+                onClick={() => setAmount('')}
+                className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 text-xs font-bold transition active:scale-95 ms-auto"
+                title="مسح الحقل"
+              >
+                C (مسح)
+              </button>
             </div>
           </div>
 
@@ -283,7 +492,9 @@ export const QuickAddTransactionModal: React.FC = () => {
               onClick={() => setShowMoreFields(!showMoreFields)}
               className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium underline flex items-center gap-1"
             >
-              {showMoreFields ? 'إخفاء الحقول الإضافية' : '+ إضافة ملاحظة أو رقم سند (اختياري)'}
+              {showMoreFields
+                ? 'إخفاء الحقول الإضافية'
+                : '+ إضافة ملاحظة أو رقم سند (اختياري)'}
             </button>
           </div>
 

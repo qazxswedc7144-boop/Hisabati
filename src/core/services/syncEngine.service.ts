@@ -225,6 +225,49 @@ export class SyncEngine {
     }
   }
 
+  private acquireDistributedLock(): boolean {
+    if (typeof localStorage === 'undefined') return true;
+    const lockKey = 'hisabati_sync_distributed_lock';
+    const leaseTimeMs = 30000; // 30 second lease
+    const now = Date.now();
+    const deviceId = getDeviceId();
+
+    try {
+      const existingRaw = localStorage.getItem(lockKey);
+      if (existingRaw) {
+        const lock = JSON.parse(existingRaw);
+        if (lock.expiresAt > now && lock.deviceId !== deviceId) {
+          return false;
+        }
+      }
+
+      const newLock = {
+        deviceId,
+        expiresAt: now + leaseTimeMs,
+      };
+      localStorage.setItem(lockKey, JSON.stringify(newLock));
+      return true;
+    } catch {
+      return true;
+    }
+  }
+
+  private releaseDistributedLock(): void {
+    if (typeof localStorage === 'undefined') return;
+    const lockKey = 'hisabati_sync_distributed_lock';
+    try {
+      const existingRaw = localStorage.getItem(lockKey);
+      if (existingRaw) {
+        const lock = JSON.parse(existingRaw);
+        if (lock.deviceId === getDeviceId()) {
+          localStorage.removeItem(lockKey);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   /**
    * Main Synchronization Procedure:
    * 1. Pull remote state from Google Drive
@@ -245,12 +288,18 @@ export class SyncEngine {
       return { success: false, conflicts: this.getPersistedConflicts(), message: 'عملية مزامنة أخرى جارية حالياً', pulledCount: 0, pushedCount: 0 };
     }
 
+    if (!this.acquireDistributedLock()) {
+      return { success: false, conflicts: this.getPersistedConflicts(), message: 'قفل المزامنة الموزع نشط على جهاز أو تبويب آخر. يرجى الانتظار قليلاً.', pulledCount: 0, pushedCount: 0 };
+    }
+
     if (!googleDriveService.isConnected()) {
+      this.releaseDistributedLock();
       return { success: false, conflicts: this.getPersistedConflicts(), message: 'يرجى ربط حساب Google Drive أولاً', pulledCount: 0, pushedCount: 0 };
     }
 
     const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
     if (!isOnline) {
+      this.releaseDistributedLock();
       this.notifyStatus('offline');
       return { success: false, conflicts: this.getPersistedConflicts(), message: 'الجهاز غير متصل بالإنترنت', pulledCount: 0, pushedCount: 0 };
     }
@@ -545,6 +594,7 @@ export class SyncEngine {
       throw err;
     } finally {
       this.isSyncing = false;
+      this.releaseDistributedLock();
     }
   }
 

@@ -11,6 +11,8 @@ import {
   verifyBackupIntegrityHash,
   verifyCurrentBackupHash,
   verifyLegacyBackupHash,
+  encryptBackupPayload,
+  decryptBackupPayload,
 } from '../utils/crypto';
 import { getDeviceId, getDeviceName } from '../utils/deviceId';
 import { integrityService } from './integrity.service';
@@ -386,7 +388,7 @@ export class BackupService {
   }
 
   /**
-   * Uploads a fresh verified backup directly to Google Drive.
+   * Uploads a fresh verified backup directly to Google Drive with AES-GCM 256 encryption.
    */
   public async uploadBackupToGoogleDrive(): Promise<{ success: boolean; backupId: string; fileId: string }> {
     if (!googleDriveService.isConnected()) {
@@ -401,9 +403,21 @@ export class BackupService {
 
     const payload = await this.generateBackupPayload();
     const nowIso = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `hisabati-backup-${nowIso}.json`;
+    const filename = `hisabati-backup-${nowIso}.enc.json`;
 
-    const result = await googleDriveService.uploadJsonFile(filename, payload, payload.metadata);
+    // SEC-02: Encrypt backup payload with AES-GCM 256
+    const { cipherText, iv } = await encryptBackupPayload(payload);
+    const encryptedContainer = {
+      isEncrypted: true,
+      algorithm: 'AES-GCM-256',
+      iv,
+      data: cipherText,
+    };
+
+    const result = await googleDriveService.uploadJsonFile(filename, encryptedContainer, {
+      ...payload.metadata,
+      isEncrypted: true,
+    });
 
     return {
       success: true,
@@ -413,7 +427,7 @@ export class BackupService {
   }
 
   /**
-   * Downloads and restores a backup from Google Drive file ID.
+   * Downloads and restores an encrypted or legacy backup from Google Drive file ID.
    */
   public async restoreBackupFromGoogleDrive(
     fileId: string,
@@ -423,7 +437,14 @@ export class BackupService {
       throw new Error('لم يتم توصيل حساب Google Drive بعد');
     }
 
-    const payload = await googleDriveService.downloadJsonFile<BackupPayload>(fileId);
+    const rawData = await googleDriveService.downloadJsonFile<any>(fileId);
+    let payload: BackupPayload;
+    if (rawData && rawData.isEncrypted && rawData.data && rawData.iv) {
+      payload = await decryptBackupPayload(rawData.data, rawData.iv);
+    } else {
+      payload = rawData as BackupPayload; // Legacy fallback
+    }
+
     return await this.restoreFromPayload(payload, mode);
   }
 }

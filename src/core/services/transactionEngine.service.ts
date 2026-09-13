@@ -404,17 +404,23 @@ export class FinancialTransactionEngine {
   }
 
   /**
-   * Recalculates all balances for every account in the database from scratch.
-   * Does NOT alter or delete any transaction records.
+   * Recalculates all balances for every account in the database from scratch in optimized batches.
+   * Does NOT alter or delete any transaction records. (PERF-01)
    */
   async recalculateAllBalances(currency?: CurrencyCode): Promise<{ accountsUpdated: number }> {
     const activeCurrency = currency || (await settingsRepository.get<CurrencyCode>('currency', 'YER')) || 'YER';
     const allAccounts = await db.accounts.toArray();
     let count = 0;
 
-    for (const acc of allAccounts) {
-      await this.recalculateAccountBalance(acc.id, activeCurrency);
-      count++;
+    const batchSize = 50;
+    for (let i = 0; i < allAccounts.length; i += batchSize) {
+      const batch = allAccounts.slice(i, i + batchSize);
+      await Promise.all(
+        batch.map(async (acc) => {
+          await this.recalculateAccountBalance(acc.id, activeCurrency);
+        })
+      );
+      count += batch.length;
     }
 
     return { accountsUpdated: count };

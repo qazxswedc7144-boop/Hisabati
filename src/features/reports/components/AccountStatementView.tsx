@@ -747,7 +747,7 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
         </div>
       ) : (
         <>
-          {/* Statement Header and Action Dropdown */}
+          {/* Statement Header */}
           <section className="rounded-3xl border border-slate-200/80 bg-white p-3 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-4">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
@@ -760,23 +760,6 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
                 <p className="mt-0.5 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
                   من {statement.dateRange.startDate} إلى {statement.dateRange.endDate}
                 </p>
-              </div>
-
-              <div ref={actionsRef} className="relative shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsActionsOpen((value) => !value)}
-                  className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                  aria-label="خيارات كشف الحساب"
-                >
-                  <MoreVertical className="h-5 w-5" />
-                </button>
-
-                {isActionsOpen && (
-                  <div className="absolute end-0 top-12 z-50 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl dark:border-slate-700 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
-                    {actionMenuItems}
-                  </div>
-                )}
               </div>
             </div>
           </section>
@@ -864,7 +847,7 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
         >
           <div className="relative mx-auto flex max-w-5xl items-center justify-between gap-2.5 rounded-2xl border border-slate-200/80 bg-white/95 p-3 shadow-2xl backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/95">
             {/* Pop-up menu anchored to the bottom sticky bar */}
-            {isActionsOpen && (
+            {statement && isActionsOpen && (
               <div className="absolute bottom-16 end-0 z-50 w-60 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl dark:border-slate-700 dark:bg-slate-900 animate-in fade-in slide-in-from-bottom-2 duration-150">
                 {actionMenuItems}
               </div>
