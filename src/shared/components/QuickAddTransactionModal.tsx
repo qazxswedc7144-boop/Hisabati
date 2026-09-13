@@ -204,19 +204,19 @@ export const QuickAddTransactionModal: React.FC = () => {
     >
       <div
         id="quick-add-transaction-modal"
-        className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl p-4 space-y-2.5 shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh] my-auto"
+        className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl p-3 space-y-2 shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh] my-auto"
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center font-bold text-sm">
+            <div className="w-7 h-7 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center font-bold text-xs">
               +
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
                 تسجيل عملية سريعة
               </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              <p className="text-[10px] text-slate-500 dark:text-slate-400">
                 دفتر الحسابات والذمم
               </p>
             </div>
@@ -233,10 +233,10 @@ export const QuickAddTransactionModal: React.FC = () => {
         </div>
 
         {/* Modal Body */}
-        <form onSubmit={handleSubmit} className="p-4 space-y-2.5 overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-3 space-y-2 overflow-y-auto">
           {/* 1. Searchable Autocomplete Account Selector & Live Balance Preview */}
           <div ref={containerRef} className="relative">
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between mb-0.5">
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <User className="w-3.5 h-3.5 text-teal-600" />
                 الحساب / الشخص
@@ -260,11 +260,15 @@ export const QuickAddTransactionModal: React.FC = () => {
                 ref={inputRef}
                 type="text"
                 value={accountSearch}
-                onFocus={() => setIsAccountSearchOpen(true)}
+                onFocus={() => {
+                  if (accountSearch.trim().length > 0) {
+                    setIsAccountSearchOpen(true);
+                  }
+                }}
                 onChange={(e) => {
                   const query = e.target.value;
                   setAccountSearch(query);
-                  setIsAccountSearchOpen(true);
+                  setIsAccountSearchOpen(query.trim().length > 0);
                   if (accountId) {
                     setAccountId('');
                   }
@@ -294,7 +298,7 @@ export const QuickAddTransactionModal: React.FC = () => {
             </div>
 
             {/* Dropdown Autocomplete Results */}
-            {isAccountSearchOpen && (
+            {isAccountSearchOpen && accountSearch.trim().length > 0 && (
               <div className="absolute inset-x-0 top-full mt-1 z-50 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
                 {filteredAccounts.length === 0 ? (
                   <div className="p-3 text-center text-xs font-semibold text-slate-400">
