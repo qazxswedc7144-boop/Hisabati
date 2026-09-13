@@ -10,6 +10,7 @@ import {
   Hash,
   Search,
   User,
+  Coins,
 } from 'lucide-react';
 import {
   useUIStore,
@@ -204,10 +205,10 @@ export const QuickAddTransactionModal: React.FC = () => {
     >
       <div
         id="quick-add-transaction-modal"
-        className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl p-3 space-y-2 shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh] my-auto"
+        className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl p-3 space-y-1.5 shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh] my-auto"
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50">
+        <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center font-bold text-xs">
               +
@@ -233,7 +234,7 @@ export const QuickAddTransactionModal: React.FC = () => {
         </div>
 
         {/* Modal Body */}
-        <form onSubmit={handleSubmit} className="p-3 space-y-2 overflow-y-auto">
+        <form onSubmit={handleSubmit} className="px-3 pt-1 pb-3 space-y-2 overflow-y-auto">
           {/* 1. Searchable Autocomplete Account Selector & Live Balance Preview */}
           <div ref={containerRef} className="relative">
             <div className="flex items-center justify-between mb-0.5">
@@ -255,7 +256,7 @@ export const QuickAddTransactionModal: React.FC = () => {
             </div>
 
             <div className="relative">
-              <Search className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <User className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-teal-600 dark:text-teal-400" />
               <input
                 ref={inputRef}
                 type="text"
@@ -428,6 +429,7 @@ export const QuickAddTransactionModal: React.FC = () => {
               المبلغ ({currency})
             </label>
             <div className="relative">
+              <Coins className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-600 dark:text-emerald-400" />
               <input
                 id="input-transaction-amount"
                 type="number"
@@ -440,7 +442,7 @@ export const QuickAddTransactionModal: React.FC = () => {
                   if (errors.amount)
                     setErrors((prev) => ({ ...prev, amount: '' }));
                 }}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xl font-extrabold text-start focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition tracking-wide tabular-nums min-h-[42px]"
+                className="w-full ps-9 pe-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xl font-extrabold text-start focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition tracking-wide tabular-nums min-h-[42px]"
                 autoFocus
               />
             </div>
