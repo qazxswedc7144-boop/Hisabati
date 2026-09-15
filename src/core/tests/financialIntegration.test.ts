@@ -34,6 +34,9 @@ export class FinancialIntegrationTestSuite {
     totalCount: number;
     results: FinancialIntegrationTestResult[];
   }> {
+    await db.delete();
+    await db.open();
+
     const results: FinancialIntegrationTestResult[] = [];
     const engine = new FinancialTransactionEngine();
 

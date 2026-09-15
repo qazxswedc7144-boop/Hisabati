@@ -18,8 +18,9 @@ import {
   Clock,
   Layers,
   Receipt,
+  Bell,
 } from 'lucide-react';
-import { useAccountStore, useTransactionStore, useSettingsStore, useUIStore } from '@/shared/stores';
+import { useAccountStore, useTransactionStore, useSettingsStore, useUIStore, useMessagingStore } from '@/shared/stores';
 import { BalanceBadge, EmptyState, EditTransactionModal } from '@/shared/components';
 import { AccountStatementModal } from '@/features/reports/components';
 import { ReceiptDocumentModal } from '@/features/ocr';
@@ -47,6 +48,7 @@ export const AccountDetailsPage: React.FC = () => {
   const currency = useSettingsStore((state) => state.settings.currency);
   const openQuickAdd = useUIStore((state) => state.openQuickAddTransaction);
   const showToast = useUIStore((state) => state.showToast);
+  const openScheduleModal = useMessagingStore((state) => state.openScheduleModal);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
@@ -173,6 +175,19 @@ export const AccountDetailsPage: React.FC = () => {
             <FileText className="w-4 h-4 text-teal-600 dark:text-teal-400" />
             <span>كشف الحساب</span>
           </button>
+
+          {/* Schedule Debt Collection Alert Button */}
+          {account.currentBalance > 0 && (
+            <button
+              id="btn-account-schedule-alert"
+              onClick={() => openScheduleModal(account)}
+              className="px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition min-h-[40px] flex items-center justify-center text-xs font-bold gap-1.5"
+              title="جدولة تنبيه تحصيل دين لهذا الحساب"
+            >
+              <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span>جدولة تحصيل</span>
+            </button>
+          )}
 
           {/* Archive / Unarchive Button */}
           <button

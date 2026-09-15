@@ -6,6 +6,7 @@ import {
 } from '@/shared/types';
 import { defaultSmsProvider } from './providers/sms.provider';
 import { defaultWhatsAppProvider } from './providers/whatsapp.provider';
+import { notificationService } from './notification.service';
 
 export class MessageQueueService {
   private isProcessing = false;
@@ -92,6 +93,19 @@ export class MessageQueueService {
           } else if (item.channel === 'in_app' || item.channel === 'web_notification') {
             outcomeStatus = 'sent';
             sent++;
+            try {
+              await notificationService.createNotification({
+                title: item.payload.subject || 'تنبيه موعد استحقاق مالي',
+                body: item.payload.body,
+                type: 'reminder',
+                priority: item.payload.priority,
+                relatedEntityType: item.payload.relatedEntityType,
+                relatedEntityId: item.payload.relatedEntityId,
+                actionUrl: item.payload.actionUrl || (item.payload.relatedEntityType === 'account' && item.payload.relatedEntityId ? `/accounts/${item.payload.relatedEntityId}` : undefined),
+              });
+            } catch (notifErr) {
+              console.warn('Failed creating in-app notification during queue processing:', notifErr);
+            }
           }
 
           // Update underlying message

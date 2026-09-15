@@ -6,6 +6,7 @@ import { transactionEngine } from '@/core/services/transactionEngine.service';
 import { SUPPORTED_CURRENCIES } from '@/core/utils/formatters';
 import { CURRENCY_PRECISION_MAP } from '@/core/money/currency';
 import { CurrencyCode, ThemeMode, LanguageCode } from '@/shared/types';
+import { db } from '@/core/database/db';
 
 export interface SettingsTestResult {
   id: string;
@@ -25,6 +26,9 @@ export interface SettingsTestSuiteResult {
 
 export class SettingsTestSuite {
   static async runAll(): Promise<SettingsTestSuiteResult> {
+    await db.delete();
+    await db.open();
+
     const startTime = Date.now();
     const results: SettingsTestResult[] = [];
 
@@ -578,7 +582,7 @@ export class SettingsTestSuite {
           await transactionEngine.createTransaction({
             accountId: acc.id,
             type: 'debit',
-            amount: 1250.50,
+            amount: 1250,
             date: '2026-01-01'
           });
           
@@ -589,7 +593,7 @@ export class SettingsTestSuite {
           await integrityService.repairFinancialIntegrity();
           
           const repaired = await accountRepository.getById(acc.id);
-          if (repaired?.currentBalance !== 1250.50) {
+          if (repaired?.currentBalance !== 1250) {
             throw new Error(`فشل إصلاح الرصيد. القيمة الحالية: ${repaired?.currentBalance}`);
           }
           

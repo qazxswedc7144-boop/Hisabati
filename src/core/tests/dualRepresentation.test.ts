@@ -22,6 +22,9 @@ export class DualRepresentationTestSuite {
     totalCount: number;
     results: DualRepTestResult[];
   }> {
+    await db.delete();
+    await db.open();
+
     const results: DualRepTestResult[] = [];
     const engine = new FinancialTransactionEngine();
 
@@ -185,6 +188,41 @@ export class DualRepresentationTestSuite {
       }
       if (FINANCIAL_FORMAT_VERSION !== 1) {
         throw new Error(`خطأ حرج: تم تعديل FINANCIAL_FORMAT_VERSION إلى ${FINANCIAL_FORMAT_VERSION}. يجب أن يبقى 1.`);
+      }
+    });
+
+    // Test 8: Idempotency & Unique OperationId enforcement
+    await run('DUAL-08', 'منع التكرار ومعرف العملية الفريد (Idempotency)', async () => {
+      const acc = await accountRepository.create({
+        name: 'عميل التزامن',
+        phone: '779998888',
+        category: 'customer',
+      });
+
+      const opId = 'op_idempotency_' + Date.now();
+      const res1 = await engine.createTransaction({
+        accountId: acc.id,
+        type: 'debit',
+        amount: 500,
+        operationId: opId,
+        date: '2026-03-04',
+      });
+
+      const res2 = await engine.createTransaction({
+        accountId: acc.id,
+        type: 'debit',
+        amount: 500,
+        operationId: opId,
+        date: '2026-03-04',
+      });
+
+      if (res1.id !== res2.id) {
+        throw new Error('الطلبات المتكررة بنفس operationId يجب أن تُرجع نفس المعاملة (Idempotent)');
+      }
+
+      const count = await db.transactions.where('operationId').equals(opId).count();
+      if (count !== 1) {
+        throw new Error(`يجب أن يوجد سجل واحد فقط في قاعدة البيانات، والفعلي: ${count}`);
       }
     });
 

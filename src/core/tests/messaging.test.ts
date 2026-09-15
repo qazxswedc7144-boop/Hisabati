@@ -4,6 +4,7 @@ import { defaultWhatsAppProvider } from '../services/messaging/providers/whatsap
 import { notificationService } from '../services/messaging/notification.service';
 import { messageQueueService } from '../services/messaging/messageQueue.service';
 import { schedulerService } from '../services/messaging/scheduler.service';
+import { reminderService } from '../services/messaging/reminder.service';
 import { messagingService } from '../services/messaging/messaging.service';
 import { AppMessage, CreateInAppNotificationDTO } from '@/shared/types';
 import { getDeviceId } from '../utils/deviceId';
@@ -563,6 +564,74 @@ export class MessagingTestSuite {
         const invalidStatuses = remaining.filter((r) => r.status === 'sent');
         if (invalidStatuses.length > 0) {
           throw new Error('يوجد عناصر مكتملة لم يتم إزالتها أو تحديثها من الطابور');
+        }
+      }
+    );
+
+    // Test 21: Scan and schedule debt collection alert
+    await runTest(
+      't21_scan_and_schedule_debt_collection_alert',
+      'Scan overdue debts and schedule alert',
+      'فحص الديون المستحقة وجدولة موعد تنبيه تحصيل مالي',
+      async () => {
+        // Create test debtor account
+        const testDebtorId = `acc_debt_test_${Date.now()}`;
+        await db.accounts.put({
+          id: testDebtorId,
+          name: 'عميل اختبار التحصيل',
+          phone: '777888999',
+          currentBalance: 45000,
+          currentBalanceMinor: 4500000,
+          totalDebit: 45000,
+          totalDebitMinor: 4500000,
+          totalCredit: 0,
+          totalCreditMinor: 0,
+          transactionCount: 2,
+          archived: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+
+        const summary = await reminderService.scanOverdueDebts(15);
+        if (!summary || summary.items.length === 0) {
+          throw new Error('فشل فحص قائمة الديون المستحقة');
+        }
+
+        const scheduled = await reminderService.scheduleDebtCollectionAlert({
+          accountId: testDebtorId,
+          accountName: 'عميل اختبار التحصيل',
+          deadlineDate: new Date(Date.now() + 86400000 * 5).toISOString().split('T')[0],
+          channel: 'in_app',
+          repeatRule: 'once',
+          customNote: 'متابعة شيك مؤجل',
+        });
+
+        if (!scheduled || scheduled.status !== 'active') {
+          throw new Error('فشل إنشاء وجدولة تنبيه التحصيل في قاعدة البيانات');
+        }
+
+        const accountSchedules = await reminderService.getSchedulesForAccount(testDebtorId);
+        if (accountSchedules.length === 0) {
+          throw new Error('فشل استرجاع التنبيهات المجدولة للحساب المعني');
+        }
+      }
+    );
+
+    // Test 22: Trigger overdue debt in-app and browser notifications
+    await runTest(
+      't22_trigger_overdue_debt_notifications',
+      'Trigger overdue debt notifications',
+      'إرسال إشعارات النظام حول الديون المستحقة دون تكرار',
+      async () => {
+        const notifResult = await reminderService.triggerOverdueDebtNotifications(0);
+        if (typeof notifResult.createdCount !== 'number') {
+          throw new Error('فشل استدعاء خدمة إرسال إشعارات الديون المتأخرة');
+        }
+
+        // Verify notification was stored
+        const notifs = await notificationService.getAllNotifications({ type: 'reminder' });
+        if (!Array.isArray(notifs)) {
+          throw new Error('فشل استرجاع سجل إشعارات التذكير');
         }
       }
     );

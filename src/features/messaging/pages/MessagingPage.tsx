@@ -17,6 +17,7 @@ import {
   Trash2,
   Layers,
   Radio,
+  Bell,
 } from 'lucide-react';
 import { useMessagingStore, useUIStore } from '@/shared/stores';
 import {
@@ -28,6 +29,7 @@ import {
 } from '@/shared/types';
 import { messagingService, defaultWhatsAppProvider } from '@/core/services/messaging';
 import { MessagingTestSuite, MessagingTestSuiteResult } from '@/core/tests/messaging.test';
+import { DebtCollectionManager } from '../components/DebtCollectionManager';
 
 export const MessagingPage: React.FC = () => {
   const {
@@ -39,6 +41,7 @@ export const MessagingPage: React.FC = () => {
     fetchScheduledMessages,
     fetchTemplates,
     openSendMessageModal,
+    openScheduleModal,
     cancelSchedule,
     pauseSchedule,
     resumeSchedule,
@@ -47,7 +50,7 @@ export const MessagingPage: React.FC = () => {
 
   const { showToast } = useUIStore();
 
-  const [activeTab, setActiveTab] = useState<'history' | 'scheduled' | 'templates' | 'providers'>('history');
+  const [activeTab, setActiveTab] = useState<'overdue' | 'scheduled' | 'history' | 'templates' | 'providers'>('overdue');
   const [channelFilter, setChannelFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -191,12 +194,21 @@ export const MessagingPage: React.FC = () => {
 
         <div className="flex items-center gap-2.5 shrink-0">
           <button
+            id="btn-page-schedule-collection"
+            onClick={() => openScheduleModal()}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-teal-200 dark:border-teal-800 bg-teal-50/60 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 text-xs font-bold hover:bg-teal-100 dark:hover:bg-teal-900/50 transition min-h-[42px]"
+          >
+            <Clock className="w-4 h-4" />
+            <span>جدولة تنبيه تحصيل</span>
+          </button>
+
+          <button
             onClick={() => handleRunMessagingTests()}
             disabled={isRunningTests}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-teal-200 dark:border-teal-800 bg-teal-50/60 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 text-xs font-bold hover:bg-teal-100 dark:hover:bg-teal-900/50 transition min-h-[42px] disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 transition min-h-[42px] disabled:opacity-50"
           >
             <Layers className={`w-4 h-4 ${isRunningTests ? 'animate-spin' : ''}`} />
-            <span>{isRunningTests ? 'جارٍ الفحص...' : 'فحص الأتمتة (Phase 5)'}</span>
+            <span>{isRunningTests ? 'جارٍ الفحص...' : 'فحص الأتمتة'}</span>
           </button>
 
           <button
@@ -236,8 +248,9 @@ export const MessagingPage: React.FC = () => {
       {/* Main Tabs Navigation */}
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 text-xs sm:text-sm font-bold overflow-x-auto no-scrollbar">
         {[
-          { id: 'history', label: `سجل الرسائل (${messages.length})`, icon: MessageSquare },
+          { id: 'overdue', label: 'متابعة الديون والتحصيل', icon: Bell },
           { id: 'scheduled', label: `الرسائل المجدولة (${scheduledMessages.length})`, icon: Clock },
+          { id: 'history', label: `سجل الرسائل (${messages.length})`, icon: MessageSquare },
           { id: 'templates', label: `القوالب المعتمدة (${templates.length})`, icon: FileText },
           { id: 'providers', label: 'بوابات الإرسال (Providers)', icon: Radio },
         ].map((tab) => (
@@ -255,6 +268,9 @@ export const MessagingPage: React.FC = () => {
           </button>
         ))}
       </div>
+
+      {/* TAB 0: OVERDUE DEBTS & COLLECTION MANAGER */}
+      {activeTab === 'overdue' && <DebtCollectionManager />}
 
       {/* TAB 1: HISTORY */}
       {activeTab === 'history' && (

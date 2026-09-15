@@ -164,3 +164,40 @@ export interface DebtReminderCandidate {
   lastTransactionDate?: string;
   transactionCount: number;
 }
+
+export interface ScheduleDebtCollectionAlertDTO {
+  accountId: string;
+  accountName: string;
+  phone?: string;
+  amountMinor?: number;
+  amount?: number;
+  deadlineDate: string; // YYYY-MM-DD or ISO string
+  reminderTime?: string; // HH:mm (e.g. 09:00)
+  remindDaysBefore?: number; // 0 = on deadline day, 1, 3, 7
+  channel?: MessageChannel; // 'in_app', 'whatsapp', 'sms'
+  repeatRule?: RepeatRule; // 'once', 'daily', 'weekly', 'monthly'
+  customNote?: string;
+}
+
+export interface OverdueDebtItem {
+  accountId: string;
+  accountName: string;
+  phone?: string;
+  balance: number;
+  balanceMinor: number;
+  daysSinceLastTransaction: number;
+  lastTransactionDate?: string;
+  hasScheduledAlert: boolean;
+  nextScheduledRunAt?: string;
+  status: 'due_now' | 'upcoming' | 'stagnant' | 'normal';
+}
+
+export interface OverdueDebtSummary {
+  totalDebtMinor: number;
+  totalDebt: number;
+  candidateCount: number;
+  dueNowCount: number;
+  upcomingCount: number;
+  stagnantCount: number;
+  items: OverdueDebtItem[];
+}

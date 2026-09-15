@@ -13,6 +13,8 @@ import { MoneyTestSuite } from './money.test';
 import { DualRepresentationTestSuite } from './dualRepresentation.test';
 import { FinancialIntegrationTestSuite } from './financialIntegration.test';
 import { SettingsTestSuite } from './settings.test';
+import { KeyLifecycleTestSuite } from './keyLifecycle.test';
+import { Phase24SyncHardeningTestSuite } from './phase24SyncHardening.test';
 
 async function main() {
   console.log('====================================================');
@@ -285,6 +287,44 @@ async function main() {
     }
   } catch (err: any) {
     console.error('Phase F Settings Test Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // 13. Phase 2.1: Key Lifecycle & Security Hardening Tests
+  console.log('\n--- [Phase 2.1] Key Lifecycle & Security Hardening Tests ---');
+  try {
+    const pKey = await KeyLifecycleTestSuite.runAllTests();
+    console.log(`Key Lifecycle Result: Passed ${pKey.passedCount}/${pKey.totalCount}`);
+    totalPassed += pKey.passedCount;
+    totalFailed += pKey.failedCount;
+    totalCount += pKey.totalCount;
+    if (pKey.failedCount > 0) {
+      for (const r of pKey.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ [${r.id}] ${r.nameAr}: ${r.message}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Key Lifecycle Test Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // 14. Phase 2.4: Sync Ordering & Long-Offline Safety Tests
+  console.log('\n--- [Phase 2.4] Sync Ordering, Clock Drift & Long-Offline Safety Tests ---');
+  try {
+    const p24 = await Phase24SyncHardeningTestSuite.runAllTests();
+    console.log(`Phase 2.4 Sync Hardening Result: Passed ${p24.passedCount}/${p24.totalCount}`);
+    totalPassed += p24.passedCount;
+    totalFailed += p24.failedCount;
+    totalCount += p24.totalCount;
+    if (p24.failedCount > 0) {
+      for (const r of p24.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ [${r.id}] ${r.nameAr}: ${r.message}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Phase 2.4 Test Suite crashed:', err);
     totalFailed++;
     totalCount++;
   }

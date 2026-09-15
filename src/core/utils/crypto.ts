@@ -189,35 +189,158 @@ export async function verifyBackupIntegrityHash(payload: any, version?: number):
 }
 
 /**
- * SEC-02: AES-GCM 256 Backup Encryption / Decryption Utilities using Web Crypto API.
+ * SEC-02: AES-GCM 256 Backup Encryption / Decryption Utilities & Secure Key Lifecycle using Web Crypto API.
  */
-const ENCRYPTION_KEY_STORAGE = 'hisabati_backup_master_key_v1';
+const LEGACY_KEY_STORAGE = 'hisabati_backup_master_key_v1';
+const PROTECTED_KEY_STORAGE = 'hisabati_backup_protected_key_v2';
+const DEVICE_SALT_STORAGE = 'hisabati_device_salt_v1';
 
-async function getOrCreateMasterEncryptionKey(): Promise<CryptoKey> {
-  let rawKeyHex: string | null = null;
+// Polyfill localStorage for Node.js test environment if not present
+if (typeof localStorage === 'undefined' && typeof global !== 'undefined') {
+  const store = new Map<string, string>();
+  (global as any).localStorage = {
+    getItem: (key: string) => store.get(key) || null,
+    setItem: (key: string, value: string) => store.set(key, String(value)),
+    removeItem: (key: string) => store.delete(key),
+    clear: () => store.clear(),
+    key: (index: number) => Array.from(store.keys())[index] || null,
+    get length() { return store.size; }
+  };
+}
+
+async function getLocalWrappingKey(): Promise<CryptoKey> {
+  let saltHex: string | null = null;
   if (typeof localStorage !== 'undefined') {
-    rawKeyHex = localStorage.getItem(ENCRYPTION_KEY_STORAGE);
+    saltHex = localStorage.getItem(DEVICE_SALT_STORAGE);
+  }
+  let salt: Uint8Array;
+  if (saltHex) {
+    const matches = saltHex.match(/.{1,2}/g);
+    salt = new Uint8Array(matches ? matches.map((b) => parseInt(b, 16)) : []);
+  } else {
+    salt = crypto.getRandomValues(new Uint8Array(16));
+    if (typeof localStorage !== 'undefined') {
+      const hex = Array.from(salt).map((b) => b.toString(16).padStart(2, '0')).join('');
+      localStorage.setItem(DEVICE_SALT_STORAGE, hex);
+    }
   }
 
-  let keyBytes: Uint8Array;
-  if (rawKeyHex) {
-    const matches = rawKeyHex.match(/.{1,2}/g);
-    keyBytes = new Uint8Array(matches ? matches.map((b) => parseInt(b, 16)) : []);
-  } else {
-    keyBytes = crypto.getRandomValues(new Uint8Array(32)); // 256-bit key
-    if (typeof localStorage !== 'undefined') {
-      const hex = Array.from(keyBytes)
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
-      localStorage.setItem(ENCRYPTION_KEY_STORAGE, hex);
+  const enc = new TextEncoder();
+  const baseKeyMaterial = await crypto.subtle.importKey(
+    'raw',
+    enc.encode('hisabati_device_local_wrapping_secret_2026'),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveKey', 'deriveBits']
+  );
+
+  return await crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt,
+      iterations: 100000,
+      hash: 'SHA-256',
+    },
+    baseKeyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+export async function exportMasterEncryptionKey(): Promise<string> {
+  const key = await getOrCreateMasterEncryptionKey();
+  const raw = await crypto.subtle.exportKey('raw', key);
+  const bytes = new Uint8Array(raw);
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function importMasterEncryptionKey(keyHex: string): Promise<void> {
+  const matches = keyHex.match(/.{1,2}/g);
+  if (!matches || matches.length !== 32) {
+    throw new Error('مفتاح التشفير غير صالح (يجب أن يكون 32 بايت بصيغة Hex)');
+  }
+  const keyBytes = new Uint8Array(matches.map((b) => parseInt(b, 16)));
+  
+  const wrappingKey = await getLocalWrappingKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipherBuffer = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    wrappingKey,
+    keyBytes
+  );
+
+  const cipherArray = Array.from(new Uint8Array(cipherBuffer));
+  const cipherText = btoa(String.fromCharCode(...cipherArray));
+  const ivHex = Array.from(iv).map((b) => b.toString(16).padStart(2, '0')).join('');
+
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(
+      PROTECTED_KEY_STORAGE,
+      JSON.stringify({ cipherText, iv: ivHex })
+    );
+    localStorage.removeItem(LEGACY_KEY_STORAGE);
+  }
+}
+
+export async function deleteMasterEncryptionKey(): Promise<void> {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(PROTECTED_KEY_STORAGE);
+    localStorage.removeItem(LEGACY_KEY_STORAGE);
+    localStorage.removeItem(DEVICE_SALT_STORAGE);
+  }
+}
+
+async function getOrCreateMasterEncryptionKey(): Promise<CryptoKey> {
+  let keyBytes: Uint8Array | null = null;
+
+  if (typeof localStorage !== 'undefined') {
+    // 1. Check legacy unencrypted key first (for automatic migration)
+    const legacyHex = localStorage.getItem(LEGACY_KEY_STORAGE);
+    if (legacyHex) {
+      const matches = legacyHex.match(/.{1,2}/g);
+      keyBytes = new Uint8Array(matches ? matches.map((b) => parseInt(b, 16)) : []);
+      await importMasterEncryptionKey(legacyHex);
+    } else {
+      // 2. Check protected storage
+      const protectedStr = localStorage.getItem(PROTECTED_KEY_STORAGE);
+      if (protectedStr) {
+        try {
+          const { cipherText, iv: ivHex } = JSON.parse(protectedStr);
+          const wrappingKey = await getLocalWrappingKey();
+          const matches = ivHex.match(/.{1,2}/g);
+          const iv = new Uint8Array(matches ? matches.map((b) => parseInt(b, 16)) : []);
+
+          const binaryString = atob(cipherText);
+          const cipherBytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            cipherBytes[i] = binaryString.charCodeAt(i);
+          }
+
+          const plainBuffer = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv },
+            wrappingKey,
+            cipherBytes
+          );
+          keyBytes = new Uint8Array(plainBuffer);
+        } catch (err) {
+          console.error('Failed to decrypt protected master key, regenerating:', err);
+        }
+      }
     }
+  }
+
+  if (!keyBytes || keyBytes.length !== 32) {
+    keyBytes = crypto.getRandomValues(new Uint8Array(32));
+    const tempHex = Array.from(keyBytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+    await importMasterEncryptionKey(tempHex);
   }
 
   return await crypto.subtle.importKey(
     'raw',
     keyBytes,
     { name: 'AES-GCM', length: 256 },
-    false,
+    true,
     ['encrypt', 'decrypt']
   );
 }

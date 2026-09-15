@@ -14,9 +14,14 @@ import {
   messagingService,
   notificationService,
   schedulerService,
+  reminderService,
   templateRenderer,
 } from '@/core/services/messaging';
 import { CreateScheduledDTO } from '@/core/services/messaging/scheduler.service';
+import {
+  ScheduleDebtCollectionAlertDTO,
+  OverdueDebtSummary,
+} from '@/shared/types';
 
 interface MessagingState {
   messages: AppMessage[];
@@ -27,6 +32,8 @@ interface MessagingState {
   isLoading: boolean;
   isNotificationCenterOpen: boolean;
   isSendMessageModalOpen: boolean;
+  isScheduleModalOpen: boolean;
+  scheduleModalAccount: Account | null;
   activeRecipientAccount: Account | null;
   activeTemplate: MessageTemplate | null;
 
@@ -42,8 +49,14 @@ interface MessagingState {
   openNotificationCenter: (open?: boolean) => void;
   openSendMessageModal: (account?: Account | null, template?: MessageTemplate | null) => void;
   closeSendMessageModal: () => void;
+  openScheduleModal: (account?: Account | null) => void;
+  closeScheduleModal: () => void;
   sendMessage: (dto: SendMessageDTO) => Promise<{ message: AppMessage; whatsAppUrl?: string }>;
   scheduleMessage: (dto: CreateScheduledDTO) => Promise<ScheduledMessage>;
+  scheduleDebtCollectionAlert: (dto: ScheduleDebtCollectionAlertDTO) => Promise<ScheduledMessage>;
+  scanOverdueDebts: (daysThreshold?: number) => Promise<OverdueDebtSummary>;
+  triggerOverdueDebtAlerts: (daysThreshold?: number) => Promise<number>;
+  fetchSchedulesForAccount: (accountId: string) => Promise<ScheduledMessage[]>;
   cancelSchedule: (id: string) => Promise<void>;
   pauseSchedule: (id: string) => Promise<void>;
   resumeSchedule: (id: string) => Promise<void>;
@@ -59,6 +72,8 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
   isLoading: false,
   isNotificationCenterOpen: false,
   isSendMessageModalOpen: false,
+  isScheduleModalOpen: false,
+  scheduleModalAccount: null,
   activeRecipientAccount: null,
   activeTemplate: null,
 
@@ -161,6 +176,21 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
     });
   },
 
+  openScheduleModal: (account = null) => {
+    set({
+      isScheduleModalOpen: true,
+      scheduleModalAccount: account,
+    });
+    get().fetchScheduledMessages();
+  },
+
+  closeScheduleModal: () => {
+    set({
+      isScheduleModalOpen: false,
+      scheduleModalAccount: null,
+    });
+  },
+
   sendMessage: async (dto: SendMessageDTO) => {
     const res = await messagingService.sendMessage(dto);
     await get().fetchMessages();
@@ -171,6 +201,28 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
     const res = await schedulerService.scheduleMessage(dto);
     await get().fetchScheduledMessages();
     return res;
+  },
+
+  scheduleDebtCollectionAlert: async (dto: ScheduleDebtCollectionAlertDTO) => {
+    const res = await reminderService.scheduleDebtCollectionAlert(dto);
+    await get().fetchScheduledMessages();
+    return res;
+  },
+
+  scanOverdueDebts: async (daysThreshold = 30) => {
+    return await reminderService.scanOverdueDebts(daysThreshold);
+  },
+
+  triggerOverdueDebtAlerts: async (daysThreshold = 14) => {
+    const res = await reminderService.triggerOverdueDebtNotifications(daysThreshold);
+    if (res.createdCount > 0) {
+      await get().fetchNotifications();
+    }
+    return res.createdCount;
+  },
+
+  fetchSchedulesForAccount: async (accountId: string) => {
+    return await reminderService.getSchedulesForAccount(accountId);
   },
 
   cancelSchedule: async (id: string) => {
