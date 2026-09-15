@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import { Header } from '@/shared/components/Header';
 import { BottomNav } from '@/shared/components/BottomNav';
 import { Sidebar } from '@/shared/components/Sidebar';
+import { MobileNavDrawer } from '@/shared/components/MobileNavDrawer';
 import { QuickAddTransactionModal } from '@/shared/components/QuickAddTransactionModal';
 import { AddAccountModal } from '@/shared/components/AddAccountModal';
 import { Toast } from '@/shared/components/Toast';
@@ -42,6 +43,7 @@ export const MainLayout: React.FC = () => {
         </main>
 
         {/* Floating Global Components */}
+        <MobileNavDrawer />
         <BottomNav />
         <QuickAddTransactionModal />
         <AddAccountModal />

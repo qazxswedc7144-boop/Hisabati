@@ -1,25 +1,15 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Home, Users, BarChart3, Settings, Plus, Wallet2, MessageSquare, Database, Sparkles, ShieldCheck, Activity } from 'lucide-react';
+import { Users, Plus, Wallet2, Database } from 'lucide-react';
 import { useUIStore, useMessagingStore } from '@/shared/stores';
 import { useI18n } from '@/shared/hooks/useI18n';
+import { APPLICATION_NAV_ITEMS } from '@/shared/config/navigation';
 
 export const Sidebar: React.FC = () => {
   const openQuickAdd = useUIStore((state) => state.openQuickAddTransaction);
   const openAddAccount = useUIStore((state) => state.openAddAccount);
   const unreadNotificationsCount = useMessagingStore((state) => state.unreadNotificationsCount);
   const { t } = useI18n();
-
-  const navItems = [
-    { to: '/', label: t('nav.dashboard'), icon: Home, exact: true },
-    { to: '/accounts', label: t('nav.accounts'), icon: Users },
-    { to: '/reports', label: t('nav.reports'), icon: BarChart3 },
-    { to: '/bi', label: 'الصحة المالية (BI)', icon: Activity },
-    { to: '/messaging', label: t('nav.messaging'), icon: MessageSquare, badge: unreadNotificationsCount },
-    { to: '/ai', label: 'المساعد الذكي (AI)', icon: Sparkles },
-    { to: '/team', label: 'الفريق والتدقيق (RBAC)', icon: ShieldCheck },
-    { to: '/settings', label: t('nav.settings'), icon: Settings },
-  ];
 
   return (
     <aside
@@ -68,38 +58,43 @@ export const Sidebar: React.FC = () => {
 
       {/* Nav links */}
       <nav className="flex-1 space-y-1 py-2">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.exact}
-            className={({ isActive }) =>
-              `flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-sm transition-all min-h-[44px] ${
-                isActive
-                  ? 'bg-teal-50 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300 shadow-xs border border-teal-200/60 dark:border-teal-800/60'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
-              }`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <div className="flex items-center gap-3">
-                  <item.icon
-                    className={`w-5 h-5 ${
-                      isActive ? 'text-teal-600 dark:text-teal-400 stroke-[2.5]' : 'text-slate-400'
-                    }`}
-                  />
-                  <span>{item.label}</span>
-                </div>
-                {item.badge !== undefined && item.badge > 0 && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-600 text-white">
-                    {item.badge}
-                  </span>
-                )}
-              </>
-            )}
-          </NavLink>
-        ))}
+        {APPLICATION_NAV_ITEMS.map((item) => {
+          const label = item.labelKey ? t(item.labelKey, item.fallbackLabel) : item.fallbackLabel;
+          const badge = item.hasBadge ? unreadNotificationsCount : undefined;
+
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.exact}
+              className={({ isActive }) =>
+                `flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-sm transition-all min-h-[44px] ${
+                  isActive
+                    ? 'bg-teal-50 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300 shadow-xs border border-teal-200/60 dark:border-teal-800/60'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <div className="flex items-center gap-3">
+                    <item.icon
+                      className={`w-5 h-5 ${
+                        isActive ? 'text-teal-600 dark:text-teal-400 stroke-[2.5]' : 'text-slate-400'
+                      }`}
+                    />
+                    <span>{label}</span>
+                  </div>
+                  {badge !== undefined && badge > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-600 text-white">
+                      {badge}
+                    </span>
+                  )}
+                </>
+              )}
+            </NavLink>
+          );
+        })}
       </nav>
 
       {/* Footer Info Card */}

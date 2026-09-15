@@ -140,6 +140,23 @@ export class AccountService {
     // Safe offline-first sync mutation enqueueing (tombstone)
     await this.enqueueSyncMutation('account', id, 'DELETE', { id }, id);
 
+    // Phase 2.5: Record Permanent Delete Marker (Permanent Tombstone)
+    try {
+      const existingTombstones = await db.settings.get('hisabati_permanent_tombstones');
+      const list = existingTombstones && Array.isArray(existingTombstones.value) ? existingTombstones.value : [];
+      if (!list.some((t: any) => t.id === id)) {
+        list.push({ id, entityType: 'account', deletedAt: new Date().toISOString() });
+        await db.settings.put({
+          id: 'hisabati_permanent_tombstones',
+          key: 'hisabati_permanent_tombstones',
+          value: list,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    } catch (e) {
+      console.warn('Permanent tombstone write warning:', e);
+    }
+
     return true;
   }
 

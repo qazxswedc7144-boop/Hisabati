@@ -15,6 +15,7 @@ import { useMessagingStore } from '@/shared/stores';
 import { InAppNotification, NotificationType } from '@/shared/types';
 import { useNavigate } from 'react-router-dom';
 import { toWesternNumerals } from '@/core/utils/formatters';
+import { useLockBody } from '@/shared/hooks';
 
 export const NotificationCenterDrawer: React.FC = () => {
   const {
@@ -33,6 +34,8 @@ export const NotificationCenterDrawer: React.FC = () => {
   const [filterType, setFilterType] = useState<string>('all');
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useLockBody(isOpen);
 
   // Sync local open state with store
   useEffect(() => {
@@ -148,7 +151,7 @@ export const NotificationCenterDrawer: React.FC = () => {
           role="dialog"
           aria-modal="true"
           aria-label="مركز الإشعارات والتنبيهات"
-          className="fixed inset-x-4 top-20 mx-auto max-w-sm sm:absolute sm:inset-auto sm:end-0 sm:top-full sm:mt-2 sm:w-96 sm:max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col z-50 animate-in fade-in zoom-in-95 duration-150 overflow-hidden max-h-[85vh]"
+          className="fixed inset-x-4 top-20 mx-auto max-w-sm sm:absolute sm:inset-auto sm:end-0 sm:top-full sm:mt-2 sm:w-96 sm:max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col z-50 animate-in fade-in zoom-in-95 duration-150 overflow-hidden max-h-[85dvh]"
           dir="rtl"
         >
           {/* Header */}

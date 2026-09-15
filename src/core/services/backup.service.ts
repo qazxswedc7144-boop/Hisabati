@@ -31,6 +31,20 @@ import {
 const APP_VERSION = '2.0.0';
 const SAFETY_BACKUP_STORAGE_KEY = 'hisabati_safety_pre_restore_backup';
 
+/**
+ * SEC-07: Backup Payload Limits & Resource Exhaustion Defense
+ * These bounds are mathematically aligned with the mobile/browser IndexedDB capacity
+ * and memory constraints of Hisabati:
+ * - MAX_BACKUP_ACCOUNTS: 10,000 accounts maximum (typical SME has 50 - 500 accounts)
+ * - MAX_BACKUP_TRANSACTIONS: 100,000 transactions maximum (years of high-volume ledger)
+ * - MAX_BACKUP_SETTINGS: 500 settings entries maximum
+ * Exceeding these bounds indicates corrupted, malicious, or synthetic DoS payloads
+ * and will be rejected immediately before costly migration or DB write transactions.
+ */
+export const MAX_BACKUP_ACCOUNTS = 10_000;
+export const MAX_BACKUP_TRANSACTIONS = 100_000;
+export const MAX_BACKUP_SETTINGS = 500;
+
 export class BackupService {
   // Test hook to simulate safety backup failures in security unit tests
   public _simulateSafetyBackupFailure: boolean = false;
@@ -317,6 +331,40 @@ export class BackupService {
       throw new Error('بيانات النسخة الاحتياطية الوصفية غير موجودة (Metadata Missing)');
     }
 
+    // SEC-07: Early Structure & Entity Volume Defense (Pre-Migration / Pre-Allocation Gate)
+    // Validate arrays strictly and enforce hard boundaries before expensive hashing, migration, or DB mutation
+    if (rawPayload.accounts !== undefined && !Array.isArray(rawPayload.accounts)) {
+      throw new Error('قائمة الحسابات في ملف النسخة الاحتياطية غير صالحة (Accounts must be an array)');
+    }
+    if (rawPayload.transactions !== undefined && !Array.isArray(rawPayload.transactions)) {
+      throw new Error('قائمة المعاملات في ملف النسخة الاحتياطية غير صالحة (Transactions must be an array)');
+    }
+    if (rawPayload.settings !== undefined && !Array.isArray(rawPayload.settings)) {
+      throw new Error('قائمة الإعدادات في ملف النسخة الاحتياطية غير صالحة (Settings must be an array)');
+    }
+
+    const rawAccountsCount = Array.isArray(rawPayload.accounts) ? rawPayload.accounts.length : 0;
+    const rawTrxCount = Array.isArray(rawPayload.transactions) ? rawPayload.transactions.length : 0;
+    const rawSettingsCount = Array.isArray(rawPayload.settings) ? rawPayload.settings.length : 0;
+
+    if (rawAccountsCount > MAX_BACKUP_ACCOUNTS) {
+      throw new Error(
+        `عدد الحسابات في النسخة الاحتياطية (${rawAccountsCount}) يتجاوز الحد الأقصى المسموح به (${MAX_BACKUP_ACCOUNTS}). تم إيقاف الاستعادة لحماية الذاكرة.`
+      );
+    }
+
+    if (rawTrxCount > MAX_BACKUP_TRANSACTIONS) {
+      throw new Error(
+        `عدد المعاملات في النسخة الاحتياطية (${rawTrxCount}) يتجاوز الحد الأقصى المسموح به (${MAX_BACKUP_TRANSACTIONS}). تم إيقاف الاستعادة لحماية الذاكرة.`
+      );
+    }
+
+    if (rawSettingsCount > MAX_BACKUP_SETTINGS) {
+      throw new Error(
+        `عدد عناصر الإعدادات في النسخة الاحتياطية (${rawSettingsCount}) يتجاوز الحد الأقصى المسموح به (${MAX_BACKUP_SETTINGS}). تم إيقاف الاستعادة لحماية الذاكرة.`
+      );
+    }
+
     // 2. FUTURE VERSION GATE
     const rawVersion = getBackupSchemaVersion(rawPayload.metadata);
     if (rawVersion > BACKUP_SCHEMA_VERSION) {
@@ -352,6 +400,15 @@ export class BackupService {
     // If safety backup fails, restore is aborted immediately!
     await this.createPreRestoreSafetyBackup();
 
+    // Capture existing local permanent tombstones before restore
+    let existingPermTombstones: any[] = [];
+    try {
+      const entry = await db.settings.get('hisabati_permanent_tombstones');
+      if (entry && Array.isArray(entry.value)) {
+        existingPermTombstones = entry.value;
+      }
+    } catch {}
+
     // 7. ATOMIC RESTORE (DEXIE TRANSACTION)
     // All-or-nothing rollback on any write failure
     await db.transaction('rw', [db.accounts, db.transactions, db.settings], async () => {
@@ -360,16 +417,42 @@ export class BackupService {
         await db.accounts.clear();
       }
 
+      if (Array.isArray(payload.settings) && payload.settings.length > 0) {
+        await db.settings.bulkPut(payload.settings);
+      }
+
+      // Merge existing local permanent tombstones with restored settings
+      let restoredTombstones: any[] = [];
+      const restoredTombEntry = await db.settings.get('hisabati_permanent_tombstones');
+      if (restoredTombEntry && Array.isArray(restoredTombEntry.value)) {
+        restoredTombstones = restoredTombEntry.value;
+      }
+      const mergedTombstonesMap = new Map<string, any>();
+      existingPermTombstones.forEach((t) => mergedTombstonesMap.set(t.id, t));
+      restoredTombstones.forEach((t) => mergedTombstonesMap.set(t.id, t));
+      const finalTombstones = Array.from(mergedTombstonesMap.values());
+
+      await db.settings.put({
+        id: 'hisabati_permanent_tombstones',
+        key: 'hisabati_permanent_tombstones',
+        value: finalTombstones,
+        updatedAt: new Date().toISOString(),
+      });
+
+      const tombstoneIds = new Set(finalTombstones.map((t) => t.id));
+
       if (payload.accounts && payload.accounts.length > 0) {
-        await db.accounts.bulkPut(payload.accounts);
+        const validAccounts = payload.accounts.filter((a: any) => !tombstoneIds.has(a.id));
+        if (validAccounts.length > 0) {
+          await db.accounts.bulkPut(validAccounts);
+        }
       }
 
       if (payload.transactions && payload.transactions.length > 0) {
-        await db.transactions.bulkPut(payload.transactions);
-      }
-
-      if (Array.isArray(payload.settings) && payload.settings.length > 0) {
-        await db.settings.bulkPut(payload.settings);
+        const validTransactions = payload.transactions.filter((t: any) => !tombstoneIds.has(t.id));
+        if (validTransactions.length > 0) {
+          await db.transactions.bulkPut(validTransactions);
+        }
       }
     });
 

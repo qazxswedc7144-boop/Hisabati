@@ -3,6 +3,7 @@ import { X, UserPlus, Shield, Mail, Phone, User } from 'lucide-react';
 import { UserRole } from '@/shared/types';
 import { rbacGuard } from '@/core/services/rbac/RBACGuard.service';
 import { useRBACStore, useUIStore } from '@/shared/stores';
+import { useLockBody } from '@/shared/hooks';
 
 interface AddMemberModalProps {
   isOpen: boolean;
@@ -12,6 +13,8 @@ interface AddMemberModalProps {
 export const AddMemberModal: React.FC<AddMemberModalProps> = ({ isOpen, onClose }) => {
   const addMember = useRBACStore((state) => state.addMember);
   const showToast = useUIStore((state) => state.showToast);
+
+  useLockBody(isOpen);
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -69,7 +72,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({ isOpen, onClose 
       id="modal-add-team-member"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150"
     >
-      <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] my-auto">
+      <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90dvh] my-auto">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-3">

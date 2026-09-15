@@ -15,6 +15,7 @@ import {
 import { useSyncStore, useUIStore } from '@/shared/stores';
 import { SyncConflictItem } from '@/shared/types';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
+import { useLockBody } from '@/shared/hooks';
 
 interface ConflictResolutionModalProps {
   isOpen: boolean;
@@ -27,6 +28,8 @@ export const ConflictResolutionModal: React.FC<ConflictResolutionModalProps> = (
 }) => {
   const { conflicts, resolveConflict } = useSyncStore();
   const { showToast } = useUIStore();
+
+  useLockBody(isOpen);
 
   const [activeConflict, setActiveConflict] = useState<SyncConflictItem | null>(null);
   const [pendingChoice, setPendingChoice] = useState<'local' | 'remote' | null>(null);
@@ -72,7 +75,7 @@ export const ConflictResolutionModal: React.FC<ConflictResolutionModalProps> = (
     >
       <div
         id="conflict-resolution-modal"
-        className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5 max-h-[90vh] overflow-y-auto my-auto"
+        className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5 max-h-[90dvh] overflow-y-auto my-auto"
         onClick={(e) => e.stopPropagation()}
         dir="rtl"
       >

@@ -24,6 +24,7 @@ import {
   Account,
 } from '@/shared/types';
 import { formatCurrency, formatNumber } from '@/core/utils/formatters';
+import { useLockBody } from '@/shared/hooks';
 
 export const ScheduleCollectionModal: React.FC = () => {
   const {
@@ -40,6 +41,8 @@ export const ScheduleCollectionModal: React.FC = () => {
   const { accounts } = useAccountStore();
   const { showToast } = useUIStore();
   const currency = useSettingsStore((state) => state.settings.currency);
+
+  useLockBody(isScheduleModalOpen);
 
   // Form State
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
@@ -197,7 +200,7 @@ export const ScheduleCollectionModal: React.FC = () => {
         </div>
 
         {/* Modal Form Content */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4 max-h-[75dvh] overflow-y-auto">
           {/* Account Selection */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">

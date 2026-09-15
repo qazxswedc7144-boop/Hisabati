@@ -28,6 +28,7 @@ import { formatCurrency } from '@/core/utils/formatters';
 import { toMinorUnits } from '@/core/utils/financial';
 import { invoiceAuditEngine } from '@/core/services/ocr/InvoiceAuditEngine.service';
 import { InvoiceAuditReportCard } from './InvoiceAuditReportCard';
+import { useLockBody } from '@/shared/hooks';
 
 export const SmartReceiptReviewModal: React.FC = () => {
   const {
@@ -45,6 +46,8 @@ export const SmartReceiptReviewModal: React.FC = () => {
 
   const accounts = useAccountStore((state) => state.accounts);
   const { showToast } = useUIStore();
+
+  useLockBody(isReviewModalOpen);
 
   const [validationResult, setValidationResult] = useState<ReceiptReviewValidationResult | null>(null);
   const [activeImageView, setActiveImageView] = useState<boolean>(false);
@@ -205,7 +208,7 @@ export const SmartReceiptReviewModal: React.FC = () => {
     >
       <div
         id="smart-receipt-review-container"
-        className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] my-auto"
+        className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92dvh] my-auto"
       >
         {/* Modal Top Header */}
         <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/60 flex items-center justify-between gap-3 shrink-0">

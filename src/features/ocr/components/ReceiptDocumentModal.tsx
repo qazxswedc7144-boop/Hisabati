@@ -16,6 +16,7 @@ import {
 import { Transaction } from '@/shared/types';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
 import { useSettingsStore } from '@/shared/stores';
+import { useLockBody } from '@/shared/hooks';
 
 interface ReceiptDocumentModalProps {
   isOpen: boolean;
@@ -29,6 +30,8 @@ export const ReceiptDocumentModal: React.FC<ReceiptDocumentModalProps> = ({
   transaction,
 }) => {
   const currency = useSettingsStore((state) => state.settings.currency);
+
+  useLockBody(isOpen);
 
   if (!isOpen || !transaction) return null;
 
@@ -47,7 +50,7 @@ export const ReceiptDocumentModal: React.FC<ReceiptDocumentModalProps> = ({
       id="modal-receipt-document-viewer"
       className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
     >
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden my-auto">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl max-h-[92dvh] flex flex-col shadow-2xl overflow-hidden my-auto">
         {/* Modal Header */}
         <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-50/50 dark:bg-slate-800/30">
           <div className="flex items-center gap-3">

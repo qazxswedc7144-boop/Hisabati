@@ -11,8 +11,9 @@ import {
   ShieldCheck,
   MoreVertical,
   SlidersHorizontal,
+  Menu,
 } from 'lucide-react';
-import { useSettingsStore, useOCRStore } from '@/shared/stores';
+import { useSettingsStore, useOCRStore, useUIStore } from '@/shared/stores';
 import { PWAInstallPrompt } from './PWAInstallPrompt';
 import { SyncStatusIndicator } from './SyncStatusIndicator';
 import { NotificationCenterDrawer } from '@/features/messaging/components/NotificationCenterDrawer';
@@ -38,6 +39,8 @@ export const Header: React.FC<HeaderProps> = ({
   const theme = useSettingsStore((state) => state.settings.theme);
   const setTheme = useSettingsStore((state) => state.setTheme);
   const openScannerModal = useOCRStore((state) => state.openScannerModal);
+  const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
+  const toggleSidebar = useUIStore((state) => state.toggleSidebar);
   const { t } = useI18n();
 
   // Handle click outside tools menu
@@ -63,11 +66,24 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header
       id="main-app-header"
-      className="sticky top-0 z-30 w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 px-3.5 sm:px-6 py-2.5 sm:py-3 transition-colors"
+      className="sticky top-0 z-30 w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 px-3 sm:px-6 py-2.5 sm:py-3 transition-colors"
     >
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-2.5 sm:gap-4">
-        {/* Left (Start): Logo + Title + v1.0 */}
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-1.5 sm:gap-4">
+        {/* Left (Start): Mobile Menu Toggle + Logo + Title + v1.0 */}
+        <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
+          {/* Mobile Menu Toggle Button (< md) */}
+          <button
+            id="btn-header-mobile-menu"
+            type="button"
+            onClick={toggleSidebar}
+            aria-label="قائمة التنقل الرئيسية"
+            aria-expanded={isSidebarOpen}
+            aria-controls="mobile-nav-drawer-portal"
+            className="md:hidden p-2 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-700 rounded-xl transition min-w-[44px] min-h-[44px] flex items-center justify-center border border-slate-200/80 dark:border-slate-800 shrink-0"
+          >
+            <Menu className="w-5 h-5 text-slate-700 dark:text-slate-200 stroke-[2.2]" />
+          </button>
+
           <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-teal-600 text-white flex items-center justify-center shadow-xs shadow-teal-600/20 shrink-0">
             <Wallet2 className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
@@ -92,7 +108,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Right (End): Actions (Utility Icons) */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {/* Notification Center Dropdown */}
           <NotificationCenterDrawer />
 

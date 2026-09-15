@@ -1,5 +1,6 @@
 import { AIProvider, AIRequest, AIResponse } from '@/shared/types/ai.types';
 import { localFallbackProvider } from './LocalFallbackProvider';
+import { getApiHeaders } from '@/core/utils/apiAuth';
 
 export class GeminiProvider implements AIProvider {
   public readonly id = 'gemini';
@@ -27,7 +28,7 @@ export class GeminiProvider implements AIProvider {
     try {
       const res = await fetch('/api/ai/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getApiHeaders(),
         body: JSON.stringify({
           prompt: request.prompt,
           mode: request.mode,

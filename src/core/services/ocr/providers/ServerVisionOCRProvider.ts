@@ -11,6 +11,8 @@ import { toMinorUnits } from '@/core/utils/financial';
  * Server-side AI Vision OCR Provider using Gemini Multimodal via protected Express API.
  * Keeps API secrets strictly on the server-side.
  */
+import { getApiHeaders } from '@/core/utils/apiAuth';
+
 export class ServerVisionOCRProvider implements OCRProvider {
   public readonly name = 'server_vision_gemini';
 
@@ -37,7 +39,7 @@ export class ServerVisionOCRProvider implements OCRProvider {
     // 2. Transmit to server endpoint
     const response = await fetch('/api/ocr/analyze', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getApiHeaders(),
       body: JSON.stringify({
         image: preprocessed.dataUrl,
         mimeType: preprocessed.mimeType,

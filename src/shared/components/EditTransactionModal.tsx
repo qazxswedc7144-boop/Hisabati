@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, ArrowUpRight, ArrowDownLeft, Calendar, FileText, Hash, Check } from 'lucide-react';
 import { Transaction, TransactionType } from '@/shared/types';
 import { useAccountStore, useTransactionStore, useSettingsStore, useUIStore } from '@/shared/stores';
+import { useLockBody } from '@/shared/hooks';
 
 interface EditTransactionModalProps {
   transaction: Transaction | null;
@@ -18,6 +19,8 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   const updateTransaction = useTransactionStore((state) => state.updateTransaction);
   const currency = useSettingsStore((state) => state.settings.currency);
   const showToast = useUIStore((state) => state.showToast);
+
+  useLockBody(isOpen);
 
   const [accountId, setAccountId] = useState('');
   const [type, setType] = useState<TransactionType>('debit');
@@ -75,7 +78,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-150">
-      <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] overflow-y-auto">
+      <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92dvh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
           <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">

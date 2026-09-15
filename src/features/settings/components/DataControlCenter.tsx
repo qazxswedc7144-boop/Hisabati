@@ -178,19 +178,42 @@ export const DataControlCenter: React.FC = () => {
     }
   };
 
+  const MAX_BACKUP_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50MB hard limit for safety
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Security & DoS Protection: validate file size before reading
+    if (file.size > MAX_BACKUP_FILE_SIZE_BYTES) {
+      showToast('حجم ملف النسخة الاحتياطية كبير جداً (يتجاوز 50 ميجابايت). تم إلغاء العملية لحماية الذاكرة.', 'error');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
         const content = event.target?.result as string;
-        const parsed = JSON.parse(content);
-        if (!parsed || typeof parsed !== 'object') {
-          showToast('ملف النسخة الاحتياطية غير صالح', 'error');
+        if (!content || typeof content !== 'string') {
+          showToast('ملف النسخة الاحتياطية فارغ أو تعذرت قراءته', 'error');
           return;
         }
+
+        const parsed = JSON.parse(content);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          showToast('ملف النسخة الاحتياطية غير صالح (يجب أن يكون كائن JSON صالح)', 'error');
+          return;
+        }
+
+        // Structural check: Ensure minimal backup shape exists
+        if (!parsed.metadata && !parsed.accounts && !parsed.transactions) {
+          showToast('هيكل ملف النسخة الاحتياطية غير متطابق مع نسق حساباتي', 'error');
+          return;
+        }
+
         setPendingLocalRestorePayload(parsed);
         setShowLocalRestoreModal(true);
       } catch (err: any) {
@@ -199,6 +222,12 @@ export const DataControlCenter: React.FC = () => {
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
+      }
+    };
+    reader.onerror = () => {
+      showToast('حدث خطأ أثناء قراءة الملف من الجهاز', 'error');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
     };
     reader.readAsText(file);

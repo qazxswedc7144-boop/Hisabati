@@ -9,6 +9,7 @@ import {
 } from '@/shared/types';
 import { receiptTransactionBridge } from './ReceiptTransactionBridge.service';
 import { roundMoney } from '../../utils/financial';
+import { getApiHeaders } from '@/core/utils/apiAuth';
 
 export interface AuditInvoiceOptions {
   draft: StructuredReceiptDraft;
@@ -453,7 +454,7 @@ export class InvoiceAuditEngineService {
       try {
         const aiResponse = await fetch('/api/ai/audit-invoice', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getApiHeaders(),
           body: JSON.stringify({
             draft,
             accountContext: accountComparison,

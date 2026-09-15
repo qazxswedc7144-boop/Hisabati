@@ -22,6 +22,7 @@ import {
 import { TransactionType, Account } from '@/shared/types';
 import { formatCurrency } from '@/core/utils/formatters';
 import { validateTransactionForm } from '@/core/utils/validators';
+import { useLockBody } from '@/shared/hooks';
 
 const normalizeSearchText = (value: string): string =>
   value
@@ -59,6 +60,8 @@ export const QuickAddTransactionModal: React.FC = () => {
   const settings = useSettingsStore((state) => state.settings);
   const currency = settings.currency;
   const addTransaction = useTransactionStore((state) => state.addTransaction);
+
+  useLockBody(isOpen);
 
   const [accountId, setAccountId] = useState<string>('');
   const [accountSearch, setAccountSearch] = useState<string>('');
@@ -223,7 +226,7 @@ export const QuickAddTransactionModal: React.FC = () => {
     >
       <div
         id="quick-add-transaction-modal"
-        className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl p-3 space-y-1.5 shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh] my-auto"
+        className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl p-3 space-y-1.5 shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90dvh] my-auto"
       >
         {/* Modal Header */}
         <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50">

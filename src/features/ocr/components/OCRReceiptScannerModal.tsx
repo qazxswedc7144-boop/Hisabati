@@ -14,6 +14,7 @@ import {
 import { useOCRStore } from '@/shared/stores/ocrStore';
 import { ocrService } from '@/core/services/ocr';
 import { useUIStore } from '@/shared/stores/uiStore';
+import { useLockBody } from '@/shared/hooks';
 
 export const OCRReceiptScannerModal: React.FC = () => {
   const {
@@ -26,6 +27,8 @@ export const OCRReceiptScannerModal: React.FC = () => {
     setScanError,
   } = useOCRStore();
   const { showToast } = useUIStore();
+
+  useLockBody(isScannerModalOpen);
 
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
@@ -154,7 +157,7 @@ Total Amount: 2530 SAR`,
     >
       <div
         id="ocr-scanner-modal-container"
-        className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh] my-auto"
+        className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90dvh] my-auto"
       >
         {/* Modal Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/50">

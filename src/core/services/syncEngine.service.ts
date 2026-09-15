@@ -331,23 +331,36 @@ export class SyncEngine {
         remoteData = await googleDriveService.downloadJsonFile(syncFile.id);
       }
 
-      // 2. Load Local Tombstones (deletions tracked in syncQueue)
-      const cutoffDate = new Date(Date.now() - TOMBSTONE_RETENTION_DAYS * 86400000).toISOString();
+      // 2. Load Local Tombstones & Permanent Delete Markers
       const localDeletes = await db.syncQueue
         .where('operation')
         .equals('DELETE')
         .toArray();
 
-      const localTombstoneIds = new Set(
-        localDeletes
-          .filter((d) => d.createdAt >= cutoffDate)
-          .map((d) => d.entityId)
-      );
+      const permTombEntry = await db.settings.get('hisabati_permanent_tombstones');
+      const permanentTombstones: Array<{ id: string; entityType: string; deletedAt: string }> =
+        permTombEntry && Array.isArray(permTombEntry.value) ? permTombEntry.value : [];
+
+      const localTombstoneIds = new Set<string>();
+      // Add permanent delete markers (never expire)
+      for (const pt of permanentTombstones) {
+        localTombstoneIds.add(pt.id);
+      }
+      // Add local queue deletes and ensure they are in permanent tombstones
+      for (const d of localDeletes) {
+        localTombstoneIds.add(d.entityId);
+        if (!permanentTombstones.some((pt) => pt.id === d.entityId)) {
+          permanentTombstones.push({ id: d.entityId, entityType: d.entityType, deletedAt: d.createdAt });
+        }
+      }
 
       // 3. Process Remote Tombstones (deletions from another device)
       if (remoteData?.tombstones && Array.isArray(remoteData.tombstones)) {
         for (const remTomb of remoteData.tombstones) {
           localTombstoneIds.add(remTomb.id);
+          if (!permanentTombstones.some((pt) => pt.id === remTomb.id)) {
+            permanentTombstones.push({ id: remTomb.id, entityType: remTomb.entityType, deletedAt: remTomb.deletedAt });
+          }
           if (remTomb.entityType === 'transaction') {
             const exists = await db.transactions.get(remTomb.id);
             if (exists) {
@@ -363,6 +376,14 @@ export class SyncEngine {
           }
         }
       }
+
+      // Persist accumulated permanent tombstones
+      await db.settings.put({
+        id: 'hisabati_permanent_tombstones',
+        key: 'hisabati_permanent_tombstones',
+        value: permanentTombstones,
+        updatedAt: new Date().toISOString(),
+      });
 
       // 4. If remote data exists, merge safe additions and detect conflicts
       if (remoteData && Array.isArray(remoteData.accounts) && Array.isArray(remoteData.transactions)) {
@@ -457,8 +478,15 @@ export class SyncEngine {
         await db.syncQueue.update(item.id, { status: 'processing' });
       }
 
-      // 6. Build Combined Tombstones Array
+      // 6. Build Combined Tombstones Array (Permanent delete markers are retained indefinitely without 60-day expiry pruning)
       const combinedTombstonesMap = new Map<string, SyncTombstone>();
+      for (const pt of permanentTombstones) {
+        combinedTombstonesMap.set(pt.id, {
+          id: pt.id,
+          entityType: pt.entityType as any,
+          deletedAt: pt.deletedAt,
+        });
+      }
       if (remoteData?.tombstones) {
         for (const t of remoteData.tombstones) {
           combinedTombstonesMap.set(t.id, t);
@@ -471,9 +499,7 @@ export class SyncEngine {
           deletedAt: del.createdAt,
         });
       }
-      const combinedTombstones = Array.from(combinedTombstonesMap.values()).filter(
-        (t) => t.deletedAt >= cutoffDate
-      );
+      const combinedTombstones = Array.from(combinedTombstonesMap.values());
 
       // 7. Push Updated State to Google Drive
       const updatedAccounts = (await db.accounts.toArray()).filter(

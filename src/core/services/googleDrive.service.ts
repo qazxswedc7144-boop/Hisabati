@@ -19,44 +19,52 @@ export interface GoogleDriveUser {
 }
 
 export class GoogleDriveService {
-  private cachedToken: string | null = null;
+  // SEC-06 & Security Hardening: Token stored strictly IN-MEMORY, NEVER in localStorage
+  private memoryToken: string | null = null;
+  private tokenExpiresAt: number = 0;
+  private memoryUser: GoogleDriveUser | null = null;
 
   constructor() {
+    // Purge any legacy token from localStorage to clean up previously persisted credentials
     if (typeof localStorage !== 'undefined') {
-      this.cachedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      localStorage.removeItem(TOKEN_EXPIRY_STORAGE_KEY);
     }
   }
 
   public getAccessToken(): string | null {
-    if (typeof localStorage === 'undefined') return this.cachedToken;
-    if (!this.cachedToken) {
-      this.cachedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
-    }
-    const expiry = localStorage.getItem(TOKEN_EXPIRY_STORAGE_KEY);
-    if (expiry && Date.now() > parseInt(expiry, 10)) {
+    if (!this.memoryToken) return null;
+    if (Date.now() > this.tokenExpiresAt) {
       this.disconnect();
       return null;
     }
-    return this.cachedToken;
+    return this.memoryToken;
   }
 
   public setAccessToken(token: string, expiresInSeconds = 3600, user?: GoogleDriveUser): void {
-    this.cachedToken = token;
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(TOKEN_STORAGE_KEY, token);
-      localStorage.setItem(TOKEN_EXPIRY_STORAGE_KEY, (Date.now() + expiresInSeconds * 1000).toString());
-      if (user) {
+    this.memoryToken = token;
+    this.tokenExpiresAt = Date.now() + expiresInSeconds * 1000;
+    if (user) {
+      this.memoryUser = user;
+      if (typeof localStorage !== 'undefined') {
         localStorage.setItem(USER_INFO_STORAGE_KEY, JSON.stringify(user));
       }
+    }
+    // Explicitly ensure token is NEVER saved in localStorage
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      localStorage.removeItem(TOKEN_EXPIRY_STORAGE_KEY);
     }
   }
 
   public getUserInfo(): GoogleDriveUser | null {
+    if (this.memoryUser) return this.memoryUser;
     if (typeof localStorage === 'undefined') return null;
     const raw = localStorage.getItem(USER_INFO_STORAGE_KEY);
     if (!raw) return null;
     try {
-      return JSON.parse(raw) as GoogleDriveUser;
+      this.memoryUser = JSON.parse(raw) as GoogleDriveUser;
+      return this.memoryUser;
     } catch {
       return null;
     }
@@ -67,7 +75,9 @@ export class GoogleDriveService {
   }
 
   public disconnect(): void {
-    this.cachedToken = null;
+    this.memoryToken = null;
+    this.tokenExpiresAt = 0;
+    this.memoryUser = null;
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem(TOKEN_STORAGE_KEY);
       localStorage.removeItem(TOKEN_EXPIRY_STORAGE_KEY);

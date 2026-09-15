@@ -15,6 +15,9 @@ import { FinancialIntegrationTestSuite } from './financialIntegration.test';
 import { SettingsTestSuite } from './settings.test';
 import { KeyLifecycleTestSuite } from './keyLifecycle.test';
 import { Phase24SyncHardeningTestSuite } from './phase24SyncHardening.test';
+import { Phase25TombstoneHardeningTestSuite } from './phase25TombstoneHardening.test';
+import { Phase3SecurityHardeningTestSuite } from './phase3SecurityHardening.test';
+import { NavigationConsistencyTestSuite } from './navigationConsistency.test';
 
 async function main() {
   console.log('====================================================');
@@ -325,6 +328,65 @@ async function main() {
     }
   } catch (err: any) {
     console.error('Phase 2.4 Test Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // 15. Phase 2.5: Permanent Tombstone Hardening Tests
+  console.log('\n--- [Phase 2.5] Permanent Tombstone Hardening Tests ---');
+  try {
+    const p25 = await Phase25TombstoneHardeningTestSuite.runAllTests();
+    console.log(`Phase 2.5 Tombstone Hardening Result: Passed ${p25.passedCount}/${p25.totalCount}`);
+    totalPassed += p25.passedCount;
+    totalFailed += p25.failedCount;
+    totalCount += p25.totalCount;
+    if (p25.failedCount > 0) {
+      for (const r of p25.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ [${r.id}] ${r.nameAr}: ${r.message}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Phase 2.5 Test Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // 16. Phase 3: Server Security & Hardening Tests
+  console.log('\n--- [Phase 3] Server Security & Hardening Tests ---');
+  try {
+    const p3 = await Phase3SecurityHardeningTestSuite.runAllTests();
+    console.log(`Phase 3 Server Security Result: Passed ${p3.passedCount}/${p3.totalCount}`);
+    totalPassed += p3.passedCount;
+    totalFailed += p3.failedCount;
+    totalCount += p3.totalCount;
+    if (p3.failedCount > 0) {
+      for (const r of p3.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ [${r.id}] ${r.nameAr}: ${r.message}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Phase 3 Test Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // 17. Responsive Navigation Consistency & Mobile Access Tests
+  console.log('\n--- [Navigation] Responsive Consistency & Mobile Access Tests ---');
+  try {
+    const pNav = await NavigationConsistencyTestSuite.runAllTests();
+    console.log(`Navigation Result: Passed ${pNav.passedCount}/${pNav.totalCount}`);
+    totalPassed += pNav.passedCount;
+    totalFailed += pNav.failedCount;
+    totalCount += pNav.totalCount;
+    for (const r of pNav.results) {
+      if (r.passed) {
+        console.log(`  ✓ [${r.id}] ${r.nameAr}`);
+      } else {
+        console.error(`  ❌ [${r.id}] ${r.nameAr}: ${r.message}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Navigation Test Suite crashed:', err);
     totalFailed++;
     totalCount++;
   }

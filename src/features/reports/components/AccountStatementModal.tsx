@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, FileText } from 'lucide-react';
 import { AccountStatementView } from './AccountStatementView';
+import { useLockBody } from '@/shared/hooks';
 
 interface AccountStatementModalProps {
   isOpen: boolean;
@@ -15,11 +16,13 @@ export const AccountStatementModal: React.FC<AccountStatementModalProps> = ({
   accountId,
   accountName,
 }) => {
+  useLockBody(isOpen);
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
-      <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden my-auto">
+      <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-4xl max-h-[90dvh] flex flex-col shadow-2xl overflow-hidden my-auto">
         {/* Modal Header */}
         <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">

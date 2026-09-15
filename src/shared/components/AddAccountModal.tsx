@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { X, UserPlus, Phone, FileText, Tag, UserCheck, ChevronDown } from 'lucide-react';
 import { useUIStore, useAccountStore, useSettingsStore } from '@/shared/stores';
 import { validateAccountForm } from '@/core/utils/validators';
+import { useLockBody } from '@/shared/hooks';
 
 const POPULAR_COUNTRY_CODES = [
   { code: '+967', label: '+967 (اليمن)' },
@@ -20,6 +21,8 @@ export const AddAccountModal: React.FC = () => {
   const addAccount = useAccountStore((state) => state.addAccount);
   const accounts = useAccountStore((state) => state.accounts);
   const currency = useSettingsStore((state) => state.settings.currency);
+
+  useLockBody(isOpen);
 
   const [name, setName] = useState('');
   const [countryCode, setCountryCode] = useState('+967');
@@ -121,7 +124,7 @@ export const AddAccountModal: React.FC = () => {
       {/* 1. النافذة الرئيسية مستقرة وثابتة في المنتصف مع أقصى ارتفاع وتمرير داخلي لمنع الاهتزاز */}
       <div
         id="add-account-modal"
-        className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-150 my-auto"
+        className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[85dvh] animate-in fade-in zoom-in-95 duration-150 my-auto"
       >
         {/* Header: رأس النافذة */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 shrink-0">
