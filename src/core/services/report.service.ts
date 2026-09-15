@@ -349,16 +349,10 @@ export class ReportService {
       endDate: options.endDate,
     });
 
-    const [accounts, allTransactions] = await Promise.all([
+    const [accounts, periodTransactions] = await Promise.all([
       accountRepository.getAll(true),
-      transactionRepository.getAll(),
+      transactionRepository.getByDateRange(dateRange.startDate, dateRange.endDate),
     ]);
-
-    const periodTransactions = allTransactions.filter(
-      (transaction) =>
-        transaction.date >= dateRange.startDate &&
-        transaction.date <= dateRange.endDate
-    );
 
     const { decimals } = await resolveReportDecimals({ transactions: periodTransactions });
 

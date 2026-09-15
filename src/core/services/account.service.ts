@@ -132,20 +132,29 @@ export class AccountService {
       );
     }
 
-    await db.transaction('rw', db.accounts, db.transactions, async () => {
+    const childTrx = await db.transactions.where('accountId').equals(id).toArray();
+
+    await db.transaction('rw', db.accounts, db.transactions, db.settings, async () => {
       await db.transactions.where('accountId').equals(id).delete();
       await db.accounts.delete(id);
-    });
 
-    // Safe offline-first sync mutation enqueueing (tombstone)
-    await this.enqueueSyncMutation('account', id, 'DELETE', { id }, id);
-
-    // Phase 2.5: Record Permanent Delete Marker (Permanent Tombstone)
-    try {
+      // Phase 2.5: Record Permanent Delete Marker (Permanent Tombstone)
       const existingTombstones = await db.settings.get('hisabati_permanent_tombstones');
       const list = existingTombstones && Array.isArray(existingTombstones.value) ? existingTombstones.value : [];
+      let updated = false;
+
       if (!list.some((t: any) => t.id === id)) {
         list.push({ id, entityType: 'account', deletedAt: new Date().toISOString() });
+        updated = true;
+      }
+      for (const trx of childTrx) {
+        if (!list.some((t: any) => t.id === trx.id)) {
+          list.push({ id: trx.id, entityType: 'transaction', deletedAt: new Date().toISOString() });
+          updated = true;
+        }
+      }
+
+      if (updated) {
         await db.settings.put({
           id: 'hisabati_permanent_tombstones',
           key: 'hisabati_permanent_tombstones',
@@ -153,8 +162,12 @@ export class AccountService {
           updatedAt: new Date().toISOString(),
         });
       }
-    } catch (e) {
-      console.warn('Permanent tombstone write warning:', e);
+    });
+
+    // Safe offline-first sync mutation enqueueing (tombstone)
+    await this.enqueueSyncMutation('account', id, 'DELETE', { id }, id);
+    for (const trx of childTrx) {
+      await this.enqueueSyncMutation('transaction', trx.id, 'DELETE', { id: trx.id }, trx.id);
     }
 
     return true;
@@ -197,7 +210,7 @@ export class AccountService {
    * Uses dynamic import to avoid circular dependency risks at module load time.
    */
   private async enqueueSyncMutation(
-    entityType: 'account',
+    entityType: 'account' | 'transaction',
     entityId: string,
     operation: 'CREATE' | 'UPDATE' | 'DELETE',
     payload?: any,

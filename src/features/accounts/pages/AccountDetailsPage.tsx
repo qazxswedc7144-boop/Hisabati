@@ -42,7 +42,10 @@ export const AccountDetailsPage: React.FC = () => {
   const deleteAccount = useAccountStore((state) => state.deleteAccount);
 
   const transactions = useTransactionStore((state) => state.accountTransactions);
+  const hasMore = useTransactionStore((state) => state.hasMoreAccountTransactions);
+  const isLoadingTrx = useTransactionStore((state) => state.isLoading);
   const fetchAccountTransactions = useTransactionStore((state) => state.fetchAccountTransactions);
+  const loadMoreTransactions = useTransactionStore((state) => state.loadMoreAccountTransactions);
   const deleteTransaction = useTransactionStore((state) => state.deleteTransaction);
 
   const currency = useSettingsStore((state) => state.settings.currency);
@@ -335,125 +338,141 @@ export const AccountDetailsPage: React.FC = () => {
             onAction={() => openQuickAdd(account.id)}
           />
         ) : (
-          <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800 shadow-xs">
-            {transactions.map((trx) => (
-              <div
-                key={trx.id}
-                className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition"
-              >
-                {/* Left/Start side: Icon + Type badge + Details */}
-                <div className="flex items-start sm:items-center gap-3.5 min-w-0">
-                  <div
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 sm:mt-0 ${
-                      trx.type === 'debit'
-                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400'
-                        : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
-                    }`}
-                  >
-                    {trx.type === 'debit' ? (
-                      <ArrowUpRight className="w-5 h-5" />
-                    ) : (
-                      <ArrowDownLeft className="w-5 h-5" />
-                    )}
-                  </div>
-
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span
-                        className={`text-xs font-bold px-2 py-0.5 rounded-md ${
-                          trx.type === 'debit'
-                            ? 'bg-emerald-100/80 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                            : 'bg-rose-100/80 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                        }`}
-                      >
-                        {trx.type === 'debit' ? 'لي (أعطيته)' : 'عليك (أخذت منه)'}
-                      </span>
-                      {trx.receiptNumber && (
-                        <span className="text-[11px] text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                          سند: {trx.receiptNumber}
-                        </span>
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800 shadow-xs">
+              {transactions.map((trx) => (
+                <div
+                  key={trx.id}
+                  className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition"
+                >
+                  {/* ... contents ... */}
+                  <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                    <div
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 sm:mt-0 ${
+                        trx.type === 'debit'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400'
+                          : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
+                      }`}
+                    >
+                      {trx.type === 'debit' ? (
+                        <ArrowUpRight className="w-5 h-5" />
+                      ) : (
+                        <ArrowDownLeft className="w-5 h-5" />
                       )}
                     </div>
 
-                    <p className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 mt-1 truncate">
-                      {trx.note || 'عملية نقدية'}
-                    </p>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className={`text-xs font-bold px-2 py-0.5 rounded-md ${
+                            trx.type === 'debit'
+                              ? 'bg-emerald-100/80 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                              : 'bg-rose-100/80 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                          }`}
+                        >
+                          {trx.type === 'debit' ? 'لي (أعطيته)' : 'عليك (أخذت منه)'}
+                        </span>
+                        {trx.receiptNumber && (
+                          <span className="text-[11px] text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                            سند: {trx.receiptNumber}
+                          </span>
+                        )}
+                      </div>
 
-                    <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                      <Calendar className="w-3 h-3" />
-                      <span>{formatDate(trx.date, 'full')}</span>
-                    </p>
+                      <p className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 mt-1 truncate">
+                        {trx.note || 'عملية نقدية'}
+                      </p>
+
+                      <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                        <Calendar className="w-3 h-3" />
+                        <span>{formatDate(trx.date, 'full')}</span>
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                {/* Right/End side: Amount + Running Balance + Actions */}
-                <div className="flex items-center justify-between sm:justify-end gap-3.5 shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100 dark:border-slate-800/60">
-                  <div className="text-start sm:text-end">
-                    <div
-                      className={`text-sm sm:text-base font-extrabold tabular-nums ${
-                        trx.type === 'debit'
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-rose-600 dark:text-rose-400'
-                      }`}
-                    >
-                      {trx.type === 'debit' ? '+' : '-'} {formatCurrency(trx.amount, currency)}
+                  <div className="flex items-center justify-between sm:justify-end gap-3.5 shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100 dark:border-slate-800/60">
+                    <div className="text-start sm:text-end">
+                      <div
+                        className={`text-sm sm:text-base font-extrabold tabular-nums ${
+                          trx.type === 'debit'
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-rose-600 dark:text-rose-400'
+                        }`}
+                      >
+                        {trx.type === 'debit' ? '+' : '-'} {formatCurrency(trx.amount, currency)}
+                      </div>
+
+                      {trx.runningBalance !== undefined && (
+                        <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 tabular-nums flex items-center gap-1 sm:justify-end">
+                          <Layers className="w-3 h-3 text-slate-400" />
+                          <span>
+                            الرصيد بعدها:{' '}
+                            <span
+                              className={
+                                trx.runningBalance > 0
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : trx.runningBalance < 0
+                                  ? 'text-rose-600 dark:text-rose-400'
+                                  : 'text-slate-600 dark:text-slate-400'
+                              }
+                            >
+                              {formatCurrency(Math.abs(trx.runningBalance), currency)}{' '}
+                              {trx.runningBalance > 0 ? '(له)' : trx.runningBalance < 0 ? '(عليك)' : ''}
+                            </span>
+                          </span>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Progressive Running Balance after this transaction */}
-                    {trx.runningBalance !== undefined && (
-                      <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 tabular-nums flex items-center gap-1 sm:justify-end">
-                        <Layers className="w-3 h-3 text-slate-400" />
-                        <span>
-                          الرصيد بعدها:{' '}
-                          <span
-                            className={
-                              trx.runningBalance > 0
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : trx.runningBalance < 0
-                                ? 'text-rose-600 dark:text-rose-400'
-                                : 'text-slate-600 dark:text-slate-400'
-                            }
-                          >
-                            {formatCurrency(Math.abs(trx.runningBalance), currency)}{' '}
-                            {trx.runningBalance > 0 ? '(له)' : trx.runningBalance < 0 ? '(عليك)' : ''}
-                          </span>
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                    <div className="flex items-center gap-1">
+                      {Boolean(trx.receiptId || trx.documentRef || trx.documentMetadata) && (
+                        <button
+                          type="button"
+                          onClick={() => setViewingDocTrx(trx)}
+                          className="p-1.5 rounded-lg text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 transition min-w-[32px] min-h-[32px] flex items-center justify-center border border-teal-200/60 dark:border-teal-800/60"
+                          title="عرض المستند الأصلي والفاتورة"
+                        >
+                          <Receipt className="w-4 h-4" />
+                        </button>
+                      )}
 
-                  {/* Actions: Edit & Delete & Document */}
-                  <div className="flex items-center gap-1">
-                    {Boolean(trx.receiptId || trx.documentRef || trx.documentMetadata) && (
                       <button
-                        type="button"
-                        onClick={() => setViewingDocTrx(trx)}
-                        className="p-1.5 rounded-lg text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 transition min-w-[32px] min-h-[32px] flex items-center justify-center border border-teal-200/60 dark:border-teal-800/60"
-                        title="عرض المستند الأصلي والفاتورة"
+                        onClick={() => setEditingTrx(trx)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/40 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
+                        title="تعديل العملية"
                       >
-                        <Receipt className="w-4 h-4" />
+                        <Edit className="w-4 h-4" />
                       </button>
-                    )}
 
-                    <button
-                      onClick={() => setEditingTrx(trx)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/40 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
-                      title="تعديل العملية"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      onClick={() => setTrxToDelete(trx.id)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
-                      title="حذف العملية"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                      <button
+                        onClick={() => setTrxToDelete(trx.id)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
+                        title="حذف العملية"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
+              ))}
+            </div>
+
+            {hasMore && (
+              <div className="flex justify-center pt-2 pb-6">
+                <button
+                  onClick={() => loadMoreTransactions(account.id)}
+                  disabled={isLoadingTrx}
+                  className="px-6 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isLoadingTrx ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Clock className="w-4 h-4" />
+                  )}
+                  <span>تحميل المزيد من العمليات</span>
+                </button>
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>

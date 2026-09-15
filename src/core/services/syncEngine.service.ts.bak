@@ -6,8 +6,6 @@
  */
 
 import { db } from '../database/db';
-const SETTINGS_WHITELIST = ["currency", "appLanguage", "themeMode", "dateFormat", "invoiceDefaultNotes", "businessName", "businessPhone", "businessAddress", "businessTaxId"];
-
 import {
   SyncQueueItem,
   SyncConflictItem,
@@ -281,7 +279,6 @@ export class SyncEngine {
    * 5. Atomically push local queue mutations up to Google Drive state
    * 6. Mark queue items completed, recalculate balances, and audit integrity (SYNC-08, SYNC-10)
    */
-  
   public async performFullSync(): Promise<{
     success: boolean;
     conflicts: SyncConflictItem[];
@@ -293,52 +290,18 @@ export class SyncEngine {
       return { success: false, conflicts: this.getPersistedConflicts(), message: 'عملية مزامنة أخرى جارية حالياً', pulledCount: 0, pushedCount: 0 };
     }
 
-    const lockedMsg = 'قفل المزامنة الموزع نشط على جهاز أو تبويب آخر. يرجى الانتظار قليلاً.';
-
-    if (typeof navigator !== 'undefined' && navigator.locks) {
-      let lockAcquired = false;
-      let result: any = null;
-      await navigator.locks.request('hisabati_sync_distributed_lock', { ifAvailable: true }, async (lock) => {
-        if (!lock) return;
-        lockAcquired = true;
-        result = await this._performFullSyncInternal();
-      });
-      if (!lockAcquired) {
-        return { success: false, conflicts: this.getPersistedConflicts(), message: lockedMsg, pulledCount: 0, pushedCount: 0 };
-      }
-      return result;
-    }
-
-    // Fallback for older browsers without Web Locks API
     if (!this.acquireDistributedLock()) {
-      return { success: false, conflicts: this.getPersistedConflicts(), message: lockedMsg, pulledCount: 0, pushedCount: 0 };
+      return { success: false, conflicts: this.getPersistedConflicts(), message: 'قفل المزامنة الموزع نشط على جهاز أو تبويب آخر. يرجى الانتظار قليلاً.', pulledCount: 0, pushedCount: 0 };
     }
-    try {
-      return await this._performFullSyncInternal();
-    } finally {
-      this.releaseDistributedLock();
-    }
-  }
-
-private async _performFullSyncInternal(): Promise<{
-    success: boolean;
-    conflicts: SyncConflictItem[];
-    message: string;
-    pulledCount: number;
-    pushedCount: number;
-  }> {
-    if (this.isSyncing) {
-      return { success: false, conflicts: this.getPersistedConflicts(), message: 'عملية مزامنة أخرى جارية حالياً', pulledCount: 0, pushedCount: 0 };
-    }
-
-
 
     if (!googleDriveService.isConnected()) {
+      this.releaseDistributedLock();
       return { success: false, conflicts: this.getPersistedConflicts(), message: 'يرجى ربط حساب Google Drive أولاً', pulledCount: 0, pushedCount: 0 };
     }
 
     const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
     if (!isOnline) {
+      this.releaseDistributedLock();
       this.notifyStatus('offline');
       return { success: false, conflicts: this.getPersistedConflicts(), message: 'الجهاز غير متصل بالإنترنت', pulledCount: 0, pushedCount: 0 };
     }
@@ -432,30 +395,10 @@ private async _performFullSyncInternal(): Promise<{
         if (!Array.isArray(remoteData.tombstones)) remoteData.tombstones = [];
         if (!Array.isArray(remoteData.settings)) remoteData.settings = [];
         
-
-
-
-
-
-
         // Basic schema checks to prevent poisoning
-        remoteData.accounts = remoteData.accounts.filter((a: any) => {
-          const isValid = a && typeof a === 'object' && a.id && a.name;
-          if (!isValid) this.logAudit('MALFORMED_DATA_REJECTED', `حساب غير صالح في البيانات السحابية. ID: ${a?.id || 'مجهول'}`, false);
-          return isValid;
-        });
-        remoteData.transactions = remoteData.transactions.filter((t: any) => {
-          const isValid = t && typeof t === 'object' && t.id && t.accountId && typeof t.amount === 'number' && !isNaN(t.amount);
-          if (!isValid) this.logAudit('MALFORMED_DATA_REJECTED', `معاملة غير صالحة في البيانات السحابية. ID: ${t?.id || 'مجهول'}`, false);
-          return isValid;
-        });
-        remoteData.settings = remoteData.settings.filter((s: any) => {
-          const isValid = s && typeof s === 'object' && s.id && s.key && SETTINGS_WHITELIST.includes(s.key);
-          if (!isValid) {
-            if (s?.key) this.logAudit('MALFORMED_DATA_REJECTED', `إعداد غير صالح أو غير مصرح به في البيانات السحابية. Key: ${s.key}`, false);
-          }
-          return isValid;
-        });
+        remoteData.accounts = remoteData.accounts.filter((a: any) => a && typeof a === 'object' && a.id && a.name);
+        remoteData.transactions = remoteData.transactions.filter((t: any) => t && typeof t === 'object' && t.id && t.accountId && typeof t.amount === 'number' && !isNaN(t.amount));
+        remoteData.settings = remoteData.settings.filter((s: any) => s && typeof s === 'object' && s.id && s.key);
       }
 
       // 4. If remote data exists, merge safe additions and detect conflicts
@@ -464,8 +407,6 @@ private async _performFullSyncInternal(): Promise<{
         if (remoteData.settings && remoteData.settings.length > 0) {
           const localSettingsMap = new Map((await db.settings.toArray()).map(s => [s.key, s]));
           for (const remSet of remoteData.settings) {
-             if (!SETTINGS_WHITELIST.includes(remSet.key)) continue;
-             if (typeof remSet.value !== "string" && typeof remSet.value !== "number" && typeof remSet.value !== "boolean") { this.logAudit("MALFORMED_DATA_REJECTED", `قيمة إعداد غير صالحة. Key: ${remSet.key}`, false); continue; }
              const local = localSettingsMap.get(remSet.key);
              if (!local || new Date(remSet.updatedAt || 0) > new Date(local.updatedAt || 0)) {
                await db.settings.put(remSet);
@@ -503,16 +444,8 @@ private async _performFullSyncInternal(): Promise<{
           }
 
           // Ensure amountMinor is canonical (SYNC-05)
-          if (!remTrx.currency || typeof remTrx.currency !== 'string') {
-             await this.logAudit('MALFORMED_DATA_REJECTED', `تم تجاهل عملية مالية قادمة من السحابة بسبب غياب العملة الصحيحة. ID: ${remTrx.id}`, false);
-             continue; // REJECT
-          }
           if (remTrx.amountMinor === undefined && remTrx.amount !== undefined) {
-            remTrx.amountMinor = decimalToMinor(remTrx.amount, remTrx.currency);
-          }
-          if (remTrx.amountMinor === undefined || isNaN(remTrx.amountMinor)) {
-             await this.logAudit('MALFORMED_DATA_REJECTED', `تم تجاهل عملية مالية قادمة من السحابة بسبب قيمة amountMinor غير صالحة. ID: ${remTrx.id}`, false);
-             continue; // REJECT
+            remTrx.amountMinor = decimalToMinor(remTrx.amount, remTrx.currency || 'YER');
           }
 
           const existingById = localTrxMap.get(remTrx.id);
@@ -525,19 +458,13 @@ private async _performFullSyncInternal(): Promise<{
             pulledCount++;
           } else {
             // Critical Financial Conflict Evaluation (SYNC-06, SYNC-07)
-            const localAmount = Number(localMatch.amount);
-            const remoteAmount = Number(remTrx.amount);
-            const localMinor = Number(localMatch.amountMinor ?? localAmount);
-            const remoteMinor = Number(remTrx.amountMinor ?? remoteAmount);
-
             const hasFinancialConflict =
-              localMinor !== remoteMinor ||
-              localAmount !== remoteAmount ||
+              (localMatch.amountMinor !== undefined && remTrx.amountMinor !== undefined && localMatch.amountMinor !== remTrx.amountMinor) ||
+              localMatch.amount !== remTrx.amount ||
               localMatch.type !== remTrx.type ||
               localMatch.accountId !== remTrx.accountId;
 
-            // [SYNC-06 FIX]: Be more aggressive in protecting local data from blind overwrites.
-            if (hasFinancialConflict) {
+            if (hasFinancialConflict && localMatch.updatedAt !== remTrx.updatedAt) {
               // Meaningful financial conflict detected: NEVER resolve by blind Last-Write-Wins!
               // Preserve both versions cleanly
               newlyDetectedConflicts.push({
@@ -546,19 +473,18 @@ private async _performFullSyncInternal(): Promise<{
                 entityId: remTrx.id,
                 localVersion: {
                   title: `المعاملة محلياً (${localMatch.amount} ${localMatch.type === 'debit' ? 'لك' : 'عليك'})`,
-                  updatedAt: localMatch.updatedAt || '',
+                  updatedAt: localMatch.updatedAt,
                   data: localMatch,
                 },
                 remoteVersion: {
                   title: `المعاملة في السحابة (${remTrx.amount} ${remTrx.type === 'debit' ? 'لك' : 'عليك'})`,
-                  updatedAt: remTrx.updatedAt || '',
+                  updatedAt: remTrx.updatedAt,
                   data: remTrx,
                 },
                 detectedAt: new Date().toISOString(),
                 resolved: false,
               });
-              // We DO NOT update the local record here. Local "wins" in the DB for now until user resolves.
-            } else if (remTrx.updatedAt > (localMatch.updatedAt || '')) {
+            } else if (remTrx.updatedAt > localMatch.updatedAt) {
               // Safe non-financial metadata update (e.g. note or receiptNumber)
               await db.transactions.put(remTrx);
               pulledCount++;
@@ -626,11 +552,11 @@ private async _performFullSyncInternal(): Promise<{
       );
 
       // Whitelist of settings safe to sync (no local secrets, tokens, or encryption keys) (SYNC-04)
-
-
-
-
-
+      const SETTINGS_WHITELIST = [
+        'currency', 'appLanguage', 'themeMode', 
+        'dateFormat', 'invoiceDefaultNotes', 'businessName',
+        'businessPhone', 'businessAddress', 'businessTaxId'
+      ];
       const localSettings = await db.settings.toArray();
       const syncableSettings = localSettings.filter(s => SETTINGS_WHITELIST.includes(s.key));
 
@@ -642,7 +568,7 @@ private async _performFullSyncInternal(): Promise<{
         accounts: updatedAccounts,
         transactions: updatedTransactions.map((t) => ({
           ...t,
-          amountMinor: t.amountMinor !== undefined ? t.amountMinor : decimalToMinor(t.amount, t.currency),
+          amountMinor: t.amountMinor !== undefined ? t.amountMinor : decimalToMinor(t.amount, t.currency || 'YER'),
         })),
         tombstones: combinedTombstones,
         settings: syncableSettings,
@@ -750,6 +676,7 @@ private async _performFullSyncInternal(): Promise<{
       throw err;
     } finally {
       this.isSyncing = false;
+      this.releaseDistributedLock();
     }
   }
 

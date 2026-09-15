@@ -9,11 +9,14 @@ interface TransactionState {
   transactions: Transaction[];
   recentTransactions: Transaction[];
   accountTransactions: Transaction[];
+  hasMoreAccountTransactions: boolean;
+  accountOffset: number;
   summary: TransactionSummary;
   isLoading: boolean;
 
   fetchRecentTransactions: (limit?: number) => Promise<void>;
-  fetchAccountTransactions: (accountId: string) => Promise<void>;
+  fetchAccountTransactions: (accountId: string, reset?: boolean) => Promise<void>;
+  loadMoreAccountTransactions: (accountId: string) => Promise<void>;
   fetchSummary: () => Promise<TransactionSummary>;
   addTransaction: (dto: CreateTransactionDTO) => Promise<Transaction>;
   updateTransaction: (id: string, dto: UpdateTransactionDTO) => Promise<Transaction | undefined>;
@@ -24,6 +27,8 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   transactions: [],
   recentTransactions: [],
   accountTransactions: [],
+  hasMoreAccountTransactions: true,
+  accountOffset: 0,
   summary: {
     totalDebit: 0,
     totalCredit: 0,
@@ -44,15 +49,28 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     }
   },
 
-  fetchAccountTransactions: async (accountId: string) => {
+  fetchAccountTransactions: async (accountId: string, reset = true) => {
     set({ isLoading: true });
     try {
-      const list = await transactionRepository.getByAccountId(accountId);
-      set({ accountTransactions: list, isLoading: false });
+      const limit = 20;
+      const offset = reset ? 0 : get().accountOffset;
+      const list = await transactionRepository.getByAccountIdPaginated(accountId, offset, limit);
+      
+      set((state) => ({ 
+        accountTransactions: reset ? list : [...state.accountTransactions, ...list],
+        accountOffset: offset + list.length,
+        hasMoreAccountTransactions: list.length === limit,
+        isLoading: false 
+      }));
     } catch (e) {
       console.error('Failed to fetch account transactions:', e);
       set({ isLoading: false });
     }
+  },
+
+  loadMoreAccountTransactions: async (accountId: string) => {
+    if (get().isLoading || !get().hasMoreAccountTransactions) return;
+    await get().fetchAccountTransactions(accountId, false);
   },
 
   fetchSummary: async () => {

@@ -26,14 +26,16 @@ export class FinancialIntegrityService {
    */
   async verifyFinancialIntegrity(): Promise<IntegrityReport> {
     const allAccounts = await db.accounts.toArray();
-    const allTransactions = await db.transactions.toArray();
-
-    const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
     const inconsistencies: IntegrityInconsistency[] = [];
     const operationIdSet = new Set<string>();
+    let transactionsChecked = 0;
 
-    // 1. Check all transactions
-    for (const trx of allTransactions) {
+    const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
+
+    // [PERF-FIX]: Use .each() cursor to avoid loading all transactions into memory at once
+    await db.transactions.each((trx) => {
+      transactionsChecked++;
+
       // Check orphan transaction
       if (!accountMap.has(trx.accountId)) {
         inconsistencies.push({
@@ -102,11 +104,12 @@ export class FinancialIntegrityService {
           operationIdSet.add(trx.operationId);
         }
       }
-    }
+    });
 
     // 2. Check derived balance consistency for each account
     for (const account of allAccounts) {
-      const accountTransactions = allTransactions.filter((t) => t.accountId === account.id);
+      // Still need transactions per account for recalculation, but it's localized per account
+      const accountTransactions = await db.transactions.where('accountId').equals(account.id).toArray();
       const accCurrency = (account.currency || 'YER') as CurrencyCode;
       const computed = computeAccountMetricsFromTransactions(accountTransactions, accCurrency);
 
@@ -139,7 +142,7 @@ export class FinancialIntegrityService {
       valid: inconsistencies.length === 0,
       checkedAt: new Date().toISOString(),
       accountsChecked: allAccounts.length,
-      transactionsChecked: allTransactions.length,
+      transactionsChecked: transactionsChecked,
       inconsistencies,
     };
   }

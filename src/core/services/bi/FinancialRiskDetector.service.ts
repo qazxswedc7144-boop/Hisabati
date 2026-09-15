@@ -6,6 +6,7 @@ import {
   fromMinorUnits,
   computeAccountMetricsFromTransactions,
 } from '@/core/utils/financial';
+import { getCurrencyDecimals } from '@/core/money/currency';
 import { financialHealthEngine } from './FinancialHealthEngine.service';
 
 /**
@@ -31,11 +32,25 @@ export class FinancialRiskDetector {
     customTransactions?: Transaction[],
     customAccounts?: Account[]
   ): Promise<FinancialRiskAlert[]> {
-    const transactions = customTransactions ?? (await db.transactions.toArray());
     const accounts = customAccounts ?? (await db.accounts.toArray());
-    const alerts: FinancialRiskAlert[] = [];
+    
+    let transactions: Transaction[];
+    if (customTransactions) {
+      transactions = customTransactions;
+    } else {
+      // For risk detection (stagnancy/anomalies), we usually look at the last 120 days
+      const daysAgo = new Date();
+      daysAgo.setDate(daysAgo.getDate() - 120);
+      const startDate = daysAgo.toISOString().split('T')[0];
+      
+      transactions = await db.transactions
+        .where('date')
+        .aboveOrEqual(startDate)
+        .toArray();
+    }
 
-    if (accounts.length === 0 || transactions.length === 0) {
+    const alerts: FinancialRiskAlert[] = [];
+    if (accounts.length === 0) {
       return alerts;
     }
 
@@ -45,7 +60,7 @@ export class FinancialRiskDetector {
     );
     const totalReceivablesMinor = healthSummary.totalReceivablesMinor;
 
-    // Group transactions by account
+    // Group transactions by account (using our sampled list)
     const txByAccount = new Map<string, Transaction[]>();
     for (const tx of transactions) {
       const list = txByAccount.get(tx.accountId) ?? [];
@@ -58,9 +73,12 @@ export class FinancialRiskDetector {
     // 1. Concentration Risk (مخاطر تركز الديون)
     if (totalReceivablesMinor > 0) {
       for (const acc of accounts) {
-        const accTxs = txByAccount.get(acc.id) ?? [];
-        const metrics = computeAccountMetricsFromTransactions(accTxs);
-        const balanceMinor = toMinorUnits(metrics.currentBalance);
+        // [BI-FIX]: Derive truth from transactions if provided
+        let balanceMinor = acc.currentBalanceMinor || 0;
+        if (customTransactions) {
+          const accTxs = txByAccount.get(acc.id) || [];
+          balanceMinor = computeAccountMetricsFromTransactions(accTxs).currentBalanceMinor;
+        }
 
         if (balanceMinor > 0) {
           const ratio = (balanceMinor / totalReceivablesMinor) * 100;
@@ -86,20 +104,20 @@ export class FinancialRiskDetector {
 
     // 2. Stagnant Debts (ديون راكدة متأخرة السداد)
     for (const acc of accounts) {
-      const accTxs = txByAccount.get(acc.id) ?? [];
-      const metrics = computeAccountMetricsFromTransactions(accTxs);
-      const balanceMinor = toMinorUnits(metrics.currentBalance);
+      // [BI-FIX]: Derive truth from transactions if provided
+      let balanceMinor = acc.currentBalanceMinor || 0;
+      let lastActivityDate = acc.lastTransactionDate;
+      
+      if (customTransactions) {
+        const accTxs = txByAccount.get(acc.id) || [];
+        const metrics = computeAccountMetricsFromTransactions(accTxs);
+        balanceMinor = metrics.currentBalanceMinor;
+        lastActivityDate = metrics.lastTransactionDate;
+      }
 
       if (balanceMinor > 0) {
-        // Find last payment (credit transaction)
-        const creditTxs = accTxs
-          .filter((t) => t.type === 'credit')
-          .sort((a, b) => b.date.localeCompare(a.date));
-
-        const lastPaymentDate = creditTxs.length > 0 ? creditTxs[0].date : accTxs[0]?.date;
-
-        if (lastPaymentDate) {
-          const lastTime = new Date(lastPaymentDate).getTime();
+        if (lastActivityDate) {
+          const lastTime = new Date(lastActivityDate).getTime();
           const daysSincePayment = Math.floor((now - lastTime) / (1000 * 60 * 60 * 24));
 
           if (daysSincePayment >= 60) {
@@ -109,7 +127,7 @@ export class FinancialRiskDetector {
               category: 'STAGNANCY',
               severity: isHigh ? 'HIGH' : 'MEDIUM',
               titleAr: `حساب راكد دون سداد منذ ${daysSincePayment} يوم`,
-              descriptionAr: `لم يسجل العميل (${acc.name}) أي عملية سداد منذ تاريخ ${lastPaymentDate}، والمبلغ المستحق ${fromMinorUnits(balanceMinor).toLocaleString('ar-EG')} ر.ي.`,
+              descriptionAr: `لم يسجل العميل (${acc.name}) أي عملية سداد منذ تاريخ ${lastActivityDate}، والمبلغ المستحق ${fromMinorUnits(balanceMinor).toLocaleString('ar-EG')} ر.ي.`,
               recommendationAr: `إرسال كشف حساب فوري عبر واتساب أو الاتصال المباشر لطلب تسوية فورية وتجنب انتقال الدين للشطب.`,
               affectedAccountId: acc.id,
               affectedAccountName: acc.name,

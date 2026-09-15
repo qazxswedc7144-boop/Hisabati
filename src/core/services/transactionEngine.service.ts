@@ -492,20 +492,34 @@ export class FinancialTransactionEngine {
 
   /**
    * Returns global transactions summary across all accounts.
+   * Optimized: Uses pre-calculated account balances instead of scanning all transactions.
    */
   async getGlobalSummary(currency?: CurrencyCode): Promise<TransactionSummary & { totalDebitMinor: number; totalCreditMinor: number; netBalanceMinor: number }> {
+    const allAccounts = await db.accounts.toArray();
+    
+    let totalDebitMinor = 0;
+    let totalCreditMinor = 0;
+    let totalTransactions = 0;
+
+    for (const acc of allAccounts) {
+      totalDebitMinor += acc.totalDebitMinor || 0;
+      totalCreditMinor += acc.totalCreditMinor || 0;
+      totalTransactions += acc.transactionCount || 0;
+    }
+
+    const netBalanceMinor = totalDebitMinor - totalCreditMinor;
     const activeCurrency = currency || (await settingsRepository.get<CurrencyCode>('currency', 'YER')) || 'YER';
-    const transactions = await db.transactions.toArray();
-    const metrics = computeAccountMetricsFromTransactions(transactions, activeCurrency);
+
+    const { minorToDecimal } = await import('../money/converter');
 
     return {
-      totalDebit: metrics.totalDebit,
-      totalCredit: metrics.totalCredit,
-      netBalance: metrics.currentBalance,
-      totalTransactions: metrics.transactionCount,
-      totalDebitMinor: metrics.totalDebitMinor,
-      totalCreditMinor: metrics.totalCreditMinor,
-      netBalanceMinor: metrics.currentBalanceMinor,
+      totalDebit: minorToDecimal(totalDebitMinor, activeCurrency),
+      totalDebitMinor,
+      totalCredit: minorToDecimal(totalCreditMinor, activeCurrency),
+      totalCreditMinor,
+      netBalance: minorToDecimal(netBalanceMinor, activeCurrency),
+      netBalanceMinor,
+      totalTransactions,
     };
   }
 

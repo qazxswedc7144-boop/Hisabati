@@ -338,19 +338,19 @@ export class FinancialIntelligenceEngine {
 
   /**
    * Builds the comprehensive financial intelligence report by querying sub-engines.
+   * Optimized: Sub-engines now handle their own localized fetching strategies.
    */
   public async generateFullReport(
     interval: CashFlowInterval = 'monthly',
     customTransactions?: Transaction[],
     customAccounts?: Account[]
   ): Promise<FinancialIntelligenceReport> {
-    const transactions = customTransactions ?? (await db.transactions.toArray());
-    const accounts = customAccounts ?? (await db.accounts.toArray());
-
+    // If custom data is provided, we use it (e.g. for testing). 
+    // Otherwise, sub-engines will fetch their own optimized slices.
     const [healthSummary, cashFlow, risks] = await Promise.all([
-      financialHealthEngine.computeHealthSummary(transactions, accounts),
-      cashFlowAnalyzer.analyze(interval, transactions),
-      financialRiskDetector.detectRisks(transactions, accounts),
+      financialHealthEngine.computeHealthSummary(customTransactions, customAccounts),
+      cashFlowAnalyzer.analyze(interval, customTransactions),
+      financialRiskDetector.detectRisks(customTransactions, customAccounts),
     ]);
 
     const insights = this.generateInsights(healthSummary, cashFlow, risks);

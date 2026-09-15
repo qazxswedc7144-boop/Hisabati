@@ -671,14 +671,14 @@ export const DataControlCenter: React.FC = () => {
             </div>
 
             <div className="text-[11px] opacity-80">
-              تم فحص {formatNumber(integrityReport.totalAccountsChecked)} حساب و {formatNumber(integrityReport.totalTransactionsChecked)} عملية مالية مسجلة.
+              تم فحص {formatNumber(integrityReport.accountsChecked)} حساب و {formatNumber(integrityReport.transactionsChecked)} عملية مالية مسجلة.
             </div>
 
             {integrityReport.inconsistencies.length > 0 && (
               <ul className="list-disc list-inside space-y-1 pt-1 text-[11px]">
                 {integrityReport.inconsistencies.map((item, idx) => (
-                  <li key={idx}>
-                    حساب {item.accountName}: الفرق المسجل ({formatNumber(item.difference)})
+                  <li key={idx} className="leading-relaxed">
+                    {item.details}
                   </li>
                 ))}
               </ul>

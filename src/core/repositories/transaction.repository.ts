@@ -4,7 +4,8 @@ import { transactionEngine } from '../services/transactionEngine.service';
 
 export class TransactionRepository {
   async getAll(): Promise<Transaction[]> {
-    const list = await db.transactions.orderBy('date').reverse().toArray();
+    // [PERF-FIX]: Safety limit of 2000 for legacy full-fetch callers.
+    const list = await db.transactions.orderBy('date').reverse().limit(2000).toArray();
     return this.populateAccountNames(list);
   }
 
@@ -18,6 +19,35 @@ export class TransactionRepository {
   async getByAccountId(accountId: string): Promise<Transaction[]> {
     const statement = await transactionEngine.getAccountStatement(accountId);
     return this.populateAccountNames(statement.transactions);
+  }
+
+  async getByAccountIdPaginated(accountId: string, offset = 0, limit = 20): Promise<Transaction[]> {
+    const list = await db.transactions
+      .where('accountId')
+      .equals(accountId)
+      .reverse()
+      .offset(offset)
+      .limit(limit)
+      .toArray();
+    return this.populateAccountNames(list);
+  }
+
+  async getByDateRange(startDate: string, endDate: string): Promise<Transaction[]> {
+    const list = await db.transactions
+      .where('date')
+      .between(startDate, endDate, true, true)
+      .toArray();
+    return this.populateAccountNames(list);
+  }
+
+  async getPaginated(offset = 0, limit = 20): Promise<Transaction[]> {
+    const list = await db.transactions
+      .orderBy('date')
+      .reverse()
+      .offset(offset)
+      .limit(limit)
+      .toArray();
+    return this.populateAccountNames(list);
   }
 
   async getRecent(limit = 10): Promise<Transaction[]> {

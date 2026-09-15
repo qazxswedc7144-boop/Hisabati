@@ -31,7 +31,31 @@ export class CashFlowAnalyzer {
     customTransactions?: Transaction[],
     limitPeriods: number = 12
   ): Promise<CashFlowAnalysis> {
-    const transactions = customTransactions ?? (await db.transactions.toArray());
+    let transactions: Transaction[];
+    
+    if (customTransactions) {
+      transactions = customTransactions;
+    } else {
+      // Calculate date range based on limitPeriods and interval
+      const now = new Date();
+      const startDate = new Date();
+      
+      if (interval === 'daily') {
+        startDate.setDate(now.getDate() - limitPeriods);
+      } else if (interval === 'weekly') {
+        startDate.setDate(now.getDate() - limitPeriods * 7);
+      } else {
+        // monthly
+        startDate.setMonth(now.getMonth() - limitPeriods);
+      }
+      
+      const startDateStr = startDate.toISOString().split('T')[0];
+      
+      transactions = await db.transactions
+        .where('date')
+        .aboveOrEqual(startDateStr)
+        .toArray();
+    }
 
     // Sort transactions chronologically (oldest to newest)
     const sorted = [...transactions].sort((a, b) => {
