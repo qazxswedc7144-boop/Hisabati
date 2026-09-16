@@ -320,7 +320,7 @@ export const CloudBackupSection: React.FC = () => {
                 لا توجد نسخ احتياطية مرفوعة حتى الآن. اضغط "نسخ احتياطي الآن" لإنشاء أول نسخة.
               </div>
             ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
+              <div className="space-y-2">
                 {cloudBackups.map((backup) => (
                   <div
                     key={backup.id}

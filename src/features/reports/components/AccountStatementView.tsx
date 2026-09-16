@@ -963,7 +963,7 @@ const AccountSearch: React.FC<AccountSearchProps> = ({
 
       {/* Dropdown appears ONLY when hasText and isOpen */}
       {isOpen && hasText && (
-        <div className="absolute inset-x-0 top-[4.25rem] z-50 max-h-72 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl dark:border-slate-700 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute inset-x-0 top-[4.25rem] z-50 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl dark:border-slate-700 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
           {filteredAccounts.length === 0 ? (
             <div className="p-5 text-center text-xs font-semibold text-slate-400">
               لا توجد حسابات مطابقة للبحث

@@ -231,7 +231,7 @@ export const MessagingPage: React.FC = () => {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-60 overflow-y-auto text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 h-auto overflow-visible text-xs">
             {testSuiteResult.results.map((r) => (
               <div key={r.id} className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-start justify-between gap-2">
                 <div className="flex items-center gap-1.5 min-w-0">

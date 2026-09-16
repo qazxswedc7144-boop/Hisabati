@@ -137,7 +137,7 @@ export const SecurityIntegritySection: React.FC = () => {
             </button>
 
             {showInconsistencies && (
-              <div className="bg-white/50 dark:bg-slate-900/50 rounded-xl p-3 border border-rose-200/50 dark:border-rose-900/50 max-h-40 overflow-y-auto space-y-2">
+              <div className="bg-white/50 dark:bg-slate-900/50 rounded-xl p-3 border border-rose-200/50 dark:border-rose-900/50 space-y-2">
                 {report.inconsistencies.map((inc, idx) => (
                   <div key={idx} className="text-[10px] font-mono text-rose-600 dark:text-rose-400 border-b border-rose-100 dark:border-rose-900/30 pb-1.5 last:border-0 last:pb-0">
                     <span className="font-bold">[{inc.type}]</span> {inc.details}

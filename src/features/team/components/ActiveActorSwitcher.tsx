@@ -58,7 +58,7 @@ export const ActiveActorSwitcher: React.FC = () => {
               </p>
             </div>
 
-            <div className="py-1.5 space-y-1 max-h-64 overflow-y-auto">
+            <div className="py-1.5 space-y-1">
               {members.map((member) => {
                 const isSelected = member.userId === currentActor.id;
                 return (

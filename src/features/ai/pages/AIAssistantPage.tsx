@@ -192,7 +192,7 @@ export const AIAssistantPage: React.FC = () => {
       </div>
 
       {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto space-y-4 px-1">
+      <div className="flex-1 space-y-4 px-1">
         {messages.map((msg) => {
           const isUser = msg.sender === 'user';
           return (
