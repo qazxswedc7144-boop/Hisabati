@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Plus, ArrowUpDown, Filter, ChevronDown, Check, Phone, Clock, ChevronLeft, PlusCircle } from 'lucide-react';
+import { Search, Plus, ArrowUpDown, Filter, ChevronDown, Check, Phone, Clock, ChevronLeft, PlusCircle, Calendar, Coins, SortAsc } from 'lucide-react';
 import { useAccountStore, useSettingsStore, useUIStore } from '@/shared/stores';
 import { BalanceBadge, EmptyState } from '@/shared/components';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
@@ -25,6 +25,7 @@ export const AccountsPage: React.FC = () => {
   const openAddAccount = useUIStore((state) => state.openAddAccount);
 
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isSortOpen, setIsSortOpen] = useState(false);
 
   const filteredAccounts = getFilteredAccounts();
 
@@ -55,6 +56,15 @@ export const AccountsPage: React.FC = () => {
   ];
 
   const activeFilterLabel = filterTabs.find(tab => tab.id === filterType)?.label || 'الكل';
+
+  const sortOptions: { id: AccountSortField; label: string; icon: any }[] = [
+    { id: 'recent', label: 'الأحدث حركة', icon: Clock },
+    { id: 'balance', label: 'الأعلى رصيداً', icon: Coins },
+    { id: 'name', label: 'أبجدياً', icon: SortAsc },
+    { id: 'createdAt', label: 'تاريخ الإنشاء', icon: Calendar },
+  ];
+
+  const activeSortLabel = sortOptions.find(opt => opt.id === sortField)?.label || 'الأحدث حركة';
 
   return (
     <div id="accounts-page" className="space-y-4 sm:space-y-5 animate-in fade-in duration-200">
@@ -154,20 +164,58 @@ export const AccountsPage: React.FC = () => {
             )}
           </div>
 
-          {/* Sort Select */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <ArrowUpDown className="w-4 h-4 text-slate-400 shrink-0" />
-            <select
-              id="select-sort-accounts"
-              value={sortField}
-              onChange={(e) => setSortField(e.target.value as AccountSortField)}
-              className="px-3 py-2 rounded-xl border border-slate-300/80 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-teal-500 transition min-h-[42px]"
+          {/* Sort Dropdown */}
+          <div className="relative">
+            <button
+              id="btn-sort-dropdown"
+              onClick={() => setIsSortOpen(!isSortOpen)}
+              className="px-3.5 py-2 rounded-xl border border-slate-300/80 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-teal-500 transition min-h-[42px] flex items-center gap-2 cursor-pointer shadow-xs"
             >
-              <option value="recent">الترتيب: الأحدث حركة</option>
-              <option value="balance">الترتيب: الأعلى رصيداً</option>
-              <option value="name">الترتيب: أبجدياً</option>
-              <option value="createdAt">الترتيب: تاريخ الإنشاء</option>
-            </select>
+              <ArrowUpDown className="w-4 h-4 text-slate-400 shrink-0" />
+              <span>{activeSortLabel}</span>
+              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform ${isSortOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isSortOpen && (
+              <>
+                {/* Backdrop */}
+                <div 
+                  className="fixed inset-0 z-30" 
+                  onClick={() => setIsSortOpen(false)} 
+                />
+                {/* Popover Menu */}
+                <div className="absolute end-0 mt-1.5 w-52 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl z-40 py-1.5 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-3 py-2 text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">
+                    خيارات الترتيب
+                  </div>
+                  {sortOptions.map((opt) => {
+                    const isActive = sortField === opt.id;
+                    const Icon = opt.icon;
+                    return (
+                      <button
+                        key={opt.id}
+                        id={`sort-option-${opt.id}`}
+                        onClick={() => {
+                          setSortField(opt.id);
+                          setIsSortOpen(false);
+                        }}
+                        className={`w-full text-start px-3.5 py-2.5 text-xs font-medium flex items-center justify-between transition-colors ${
+                          isActive 
+                            ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 font-bold' 
+                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Icon className={`w-4 h-4 ${isActive ? 'text-teal-600' : 'text-slate-400'}`} />
+                          <span>{opt.label}</span>
+                        </div>
+                        {isActive && <Check className="w-4 h-4 text-teal-600 dark:text-teal-400" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
