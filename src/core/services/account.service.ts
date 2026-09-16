@@ -3,6 +3,9 @@ import { Account, CreateAccountDTO, UpdateAccountDTO, AccountFilterType, Currenc
 import { validateAccountForm } from '../utils/validators';
 import { transactionEngine } from './transactionEngine.service';
 import { roundMoney } from '../utils/financial';
+import { rbacGuard } from './rbac/RBACGuard.service';
+import { resolveRequiredCurrency } from '../money/currency';
+import { settingsRepository } from '../repositories/settings.repository';
 
 export class AccountService {
   async getAll(includeArchived = false): Promise<Account[]> {
@@ -17,6 +20,12 @@ export class AccountService {
   }
 
   async createAccount(dto: CreateAccountDTO): Promise<Account> {
+    // 0. RBAC Guard
+    await rbacGuard.assertPermission('accounts:create', {
+      targetType: 'account',
+      details: `إنشاء حساب جديد باسم ${dto.name}`,
+    });
+
     const validation = validateAccountForm({
       name: dto.name,
       phone: dto.phone,
@@ -30,9 +39,13 @@ export class AccountService {
     const now = new Date().toISOString();
     const id = 'acc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
 
-    // Fetch system default currency if not provided
-    const settings = await db.settings.get('currency');
-    const resolvedCurrency = dto.currency || (settings?.value as CurrencyCode) || 'YER';
+    // Fetch system default currency and resolve strictly
+    const systemCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER');
+    
+    const resolvedCurrency = resolveRequiredCurrency({
+      transactionCurrency: dto.currency,
+      systemCurrency,
+    });
 
     const newAccount: Account = {
       id,
@@ -76,6 +89,12 @@ export class AccountService {
   }
 
   async updateAccount(id: string, dto: UpdateAccountDTO): Promise<Account | undefined> {
+    // 0. RBAC Guard
+    await rbacGuard.assertPermission('accounts:update', {
+      targetType: 'account',
+      targetId: id,
+    });
+
     const existing = await this.getById(id);
     if (!existing) {
       throw new Error('الحساب غير موجود');
@@ -102,6 +121,13 @@ export class AccountService {
   }
 
   async archiveAccount(id: string): Promise<Account | undefined> {
+    // 0. RBAC Guard
+    await rbacGuard.assertPermission('accounts:update', {
+      targetType: 'account',
+      targetId: id,
+      details: 'أرشفة الحساب',
+    });
+
     await db.accounts.update(id, {
       archived: true,
       updatedAt: new Date().toISOString(),
@@ -111,6 +137,13 @@ export class AccountService {
   }
 
   async unarchiveAccount(id: string): Promise<Account | undefined> {
+    // 0. RBAC Guard
+    await rbacGuard.assertPermission('accounts:update', {
+      targetType: 'account',
+      targetId: id,
+      details: 'إلغاء أرشفة الحساب',
+    });
+
     await db.accounts.update(id, {
       archived: false,
       updatedAt: new Date().toISOString(),
@@ -120,6 +153,12 @@ export class AccountService {
   }
 
   async deleteAccount(id: string, force = false): Promise<boolean> {
+    // 0. RBAC Guard
+    await rbacGuard.assertPermission('accounts:delete', {
+      targetType: 'account',
+      targetId: id,
+    });
+
     const existing = await this.getById(id);
     if (!existing) return false;
 

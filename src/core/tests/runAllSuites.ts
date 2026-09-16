@@ -18,11 +18,26 @@ import { Phase24SyncHardeningTestSuite } from './phase24SyncHardening.test';
 import { Phase25TombstoneHardeningTestSuite } from './phase25TombstoneHardening.test';
 import { Phase3SecurityHardeningTestSuite } from './phase3SecurityHardening.test';
 import { NavigationConsistencyTestSuite } from './navigationConsistency.test';
+import { SecurityP0TestSuite } from './securityP0.test';
 
 async function main() {
   console.log('====================================================');
   console.log('🚀 Running Complete Hisabati Multi-Phase Test Suites');
   console.log('====================================================\n');
+
+  // P0 Fix: Initialize default system currency to prevent regressions in legacy tests
+  // that rely on silent fallbacks (which we have now removed for security).
+  try {
+    const { db } = await import('../database/db');
+    await db.settings.put({
+      id: 'currency',
+      key: 'currency',
+      value: 'YER',
+      updatedAt: new Date().toISOString()
+    });
+  } catch (e) {
+    console.warn('Failed to initialize test currency', e);
+  }
 
   let totalPassed = 0;
   let totalFailed = 0;
@@ -387,6 +402,25 @@ async function main() {
     }
   } catch (err: any) {
     console.error('Navigation Test Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // 18. Phase P0: Production Security & Financial Hardening Tests
+  console.log('\n--- [Phase P0] Production Security & Financial Hardening Tests ---');
+  try {
+    const p0 = await SecurityP0TestSuite.runAll();
+    console.log(`Phase P0 Result: Passed ${p0.passed}/${p0.total} (${Math.round(p0.durationMs)}ms)`);
+    totalPassed += p0.passed;
+    totalFailed += p0.failed;
+    totalCount += p0.total;
+    if (p0.failed > 0) {
+      for (const r of p0.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ [${r.id}] ${r.title}: ${r.error}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Phase P0 Test Suite crashed:', err);
     totalFailed++;
     totalCount++;
   }

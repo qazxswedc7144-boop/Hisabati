@@ -37,6 +37,14 @@ export class FinancialIntegrationTestSuite {
     await db.delete();
     await db.open();
 
+    // P0 Fix: Re-initialize default system currency after wiping DB for tests
+    await db.settings.put({
+      id: 'currency',
+      key: 'currency',
+      value: 'YER',
+      updatedAt: new Date().toISOString()
+    });
+
     const results: FinancialIntegrationTestResult[] = [];
     const engine = new FinancialTransactionEngine();
 

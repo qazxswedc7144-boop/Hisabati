@@ -40,6 +40,13 @@ export class SettingsRepository {
   }
 
   async updateSettings(partial: Partial<AppSettings>): Promise<AppSettings> {
+    // 0. RBAC Guard: assert system:settings
+    const { rbacGuard } = await import('../services/rbac/RBACGuard.service');
+    await rbacGuard.assertPermission('system:settings', {
+      targetType: 'system',
+      details: 'تعديل إعدادات النظام',
+    });
+
     const now = new Date().toISOString();
     
     for (const [key, value] of Object.entries(partial)) {

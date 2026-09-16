@@ -783,12 +783,12 @@ export class CloudSyncTestSuite {
             localVersion: {
               title: 'المعاملة محلياً',
               updatedAt: '2026-09-08T12:00:00.000Z',
-              data: { ...trx, amount: 1000, amountMinor: decimalToMinor(1000) },
+              data: { ...trx, amount: 1000, amountMinor: decimalToMinor(1000, 'YER') },
             },
             remoteVersion: {
               title: 'المعاملة في السحابة',
               updatedAt: '2026-09-08T13:00:00.000Z',
-              data: { ...trx, amount: 1500, amountMinor: decimalToMinor(1500) },
+              data: { ...trx, amount: 1500, amountMinor: decimalToMinor(1500, 'YER') },
             },
             detectedAt: new Date().toISOString(),
             resolved: false,
@@ -817,12 +817,12 @@ export class CloudSyncTestSuite {
             localVersion: {
               title: 'المعاملة محلياً',
               updatedAt: '2026-09-08T14:00:00.000Z',
-              data: { ...trx, amount: 1200, amountMinor: decimalToMinor(1200) },
+              data: { ...trx, amount: 1200, amountMinor: decimalToMinor(1200, 'YER') },
             },
             remoteVersion: {
               title: 'المعاملة في السحابة',
               updatedAt: '2026-09-08T15:00:00.000Z',
-              data: { ...trx, amount: 900, amountMinor: decimalToMinor(900) },
+              data: { ...trx, amount: 900, amountMinor: decimalToMinor(900, 'YER') },
             },
             detectedAt: new Date().toISOString(),
             resolved: false,

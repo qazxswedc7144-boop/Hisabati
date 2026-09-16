@@ -134,6 +134,14 @@ export class AIService {
       throw new Error('الأمر المالي غير موجود أو انتهت صلاحيته');
     }
 
+    // 0. Strict RBAC Guard: assert ai:query (or specific mutation permission based on command intent)
+    const { rbacGuard } = await import('../rbac/RBACGuard.service');
+    await rbacGuard.assertPermission('ai:query', {
+      targetType: 'ai',
+      targetId: commandId,
+      details: `تنفيذ أمر ذكي: ${command.intent}`,
+    });
+
     // Strict re-validation before execution
     const valResult = await aiValidationService.validate(command);
     if (!valResult.isValid) {

@@ -161,16 +161,10 @@ const ROLE_LABELS_AR: Record<UserRole, string> = {
   viewer: 'مشاهد (Viewer)',
 };
 
+import { authService } from './AuthService.service';
+
 export class RBACGuardService {
   private static instance: RBACGuardService;
-
-  // Default active session actor (Owner)
-  private currentActor: AuditActor = {
-    id: 'user_owner_default',
-    name: 'المدير المالي (المالك)',
-    role: 'owner',
-    email: 'owner@hisabati.app',
-  };
 
   public static getInstance(): RBACGuardService {
     if (!RBACGuardService.instance) {
@@ -180,37 +174,17 @@ export class RBACGuardService {
   }
 
   /**
-   * Sets the active session actor (used when switching user/role in UI).
+   * Sets the active session actor (Legacy wrapper for AuthService).
    */
   public setActiveActor(actor: AuditActor): void {
-    this.currentActor = { ...actor };
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        localStorage.setItem('hisabati_active_actor', JSON.stringify(this.currentActor));
-      }
-    } catch {
-      // Ignore storage errors in non-browser or sandbox environments
-    }
+    authService.login(actor);
   }
 
   /**
-   * Returns the current active session actor.
+   * Returns the current active session actor from AuthService.
    */
   public getActiveActor(): AuditActor {
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        const stored = localStorage.getItem('hisabati_active_actor');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed && parsed.id && parsed.role) {
-            this.currentActor = parsed;
-          }
-        }
-      }
-    } catch {
-      // Return memory actor
-    }
-    return this.currentActor;
+    return authService.getActiveActor();
   }
 
   /**

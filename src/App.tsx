@@ -31,7 +31,15 @@ export default function App() {
   useEffect(() => {
     async function initApp() {
       try {
-        await seedInitialMockData(false);
+        const isProduction = import.meta.env.PROD;
+        const enableDemoData = import.meta.env.VITE_ENABLE_DEMO_DATA === 'true';
+
+        // PRODUCTION SECURITY: Never seed mock data in production
+        // Only seed in non-production environments if explicitly enabled via flag
+        if (!isProduction && enableDemoData) {
+          await seedInitialMockData(false);
+        }
+        
         await useSettingsStore.getState().loadSettings();
       } catch (e) {
         console.error('Failed initializing app data:', e);

@@ -23,7 +23,7 @@ import { auditTrailService } from './rbac/AuditTrail.service';
 import { settingsRepository, DEFAULT_SETTINGS } from '../repositories/settings.repository';
 import { useSettingsStore } from '@/shared/stores/settingsStore';
 import { decimalToMinor } from '../money/converter';
-import { getCurrencyDecimals } from '../money/currency';
+import { getCurrencyDecimals, resolveRequiredCurrency } from '../money/currency';
 import { assertDualMoneyRepresentation } from '../money/validator';
 
 export class FinancialTransactionEngine {
@@ -115,14 +115,14 @@ export class FinancialTransactionEngine {
       // Atomic write transaction
       await db.transaction('rw', db.transactions, db.accounts, db.settings, async () => {
         // Fetch FRESH settings inside the transaction to prevent race conditions
-        const freshSettingsEntries = await db.settings.toArray();
-        const freshSettings: Record<string, any> = { ...DEFAULT_SETTINGS }; // Include defaults
-        for (const entry of freshSettingsEntries) {
-          freshSettings[entry.key] = entry.value;
-        }
-
-        // Priority: Transaction DTO -> Account Currency -> Global Settings Currency -> Fallback YER
-        const activeCurrency = dto.currency || account.currency || freshSettings.currency || 'YER';
+        const freshSettings = await settingsRepository.getSettings();
+        
+        // PRODUCTION SECURITY: Resolve currency strictly without silent fallbacks
+        const activeCurrency = resolveRequiredCurrency({
+          transactionCurrency: dto.currency,
+          accountCurrency: account.currency,
+          systemCurrency: freshSettings.currency,
+        });
 
         let amountMinor: number;
         // Recalculate amountMinor if not provided, or validate if provided
@@ -232,20 +232,19 @@ export class FinancialTransactionEngine {
     const targetAccountId = dto.accountId || oldAccountId;
 
     // Fetch account and settings for currency resolution
-    const [account, freshSettingsEntries] = await Promise.all([
+    const [account, freshSettings] = await Promise.all([
       db.accounts.get(targetAccountId),
-      db.settings.toArray()
+      settingsRepository.getSettings()
     ]);
 
     if (!account) throw new Error('الحساب المرتبط غير موجود');
 
-    const freshSettings: Record<string, any> = { ...DEFAULT_SETTINGS };
-    for (const entry of freshSettingsEntries) {
-      freshSettings[entry.key] = entry.value;
-    }
-
-    // Priority: DTO -> Existing Trx -> Account -> Global Settings
-    const activeCurrency = dto.currency || existing.currency || account.currency || freshSettings.currency || 'YER';
+    // PRODUCTION SECURITY: Resolve currency strictly without silent fallbacks
+    const activeCurrency = resolveRequiredCurrency({
+      transactionCurrency: dto.currency,
+      accountCurrency: account.currency,
+      systemCurrency: freshSettings.currency,
+    });
 
     const safeAmount = dto.amount !== undefined ? roundMoney(Math.abs(dto.amount)) : existing.amount;
     const now = new Date().toISOString();
@@ -336,7 +335,13 @@ export class FinancialTransactionEngine {
     }
 
     const accountId = existing.accountId;
-    const activeCurrency = (await settingsRepository.get<CurrencyCode>('currency', 'YER')) || 'YER';
+    const systemCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER');
+
+    // Resolve currency for balance recalculation
+    const activeCurrency = resolveRequiredCurrency({
+      transactionCurrency: existing.currency,
+      systemCurrency,
+    });
 
     await db.transaction('rw', db.transactions, db.accounts, async () => {
       await db.transactions.delete(id);
@@ -425,7 +430,12 @@ export class FinancialTransactionEngine {
    * Does NOT alter or delete any transaction records. (PERF-01)
    */
   async recalculateAllBalances(currency?: CurrencyCode): Promise<{ accountsUpdated: number }> {
-    const activeCurrency = currency || (await settingsRepository.get<CurrencyCode>('currency', 'YER')) || 'YER';
+    const systemCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER');
+
+    const activeCurrency = resolveRequiredCurrency({
+      transactionCurrency: currency,
+      systemCurrency,
+    });
     const allAccounts = await db.accounts.toArray();
     let count = 0;
 
@@ -464,7 +474,13 @@ export class FinancialTransactionEngine {
       throw new Error('الحساب غير موجود');
     }
 
-    const activeCurrency = currency || (await settingsRepository.get<CurrencyCode>('currency', 'YER')) || 'YER';
+    const systemCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER');
+
+    const activeCurrency = resolveRequiredCurrency({
+      transactionCurrency: currency,
+      accountCurrency: account.currency,
+      systemCurrency,
+    });
 
     const rawTransactions = await db.transactions
       .where('accountId')
@@ -507,8 +523,13 @@ export class FinancialTransactionEngine {
       totalTransactions += acc.transactionCount || 0;
     }
 
+    const systemCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER');
+
     const netBalanceMinor = totalDebitMinor - totalCreditMinor;
-    const activeCurrency = currency || (await settingsRepository.get<CurrencyCode>('currency', 'YER')) || 'YER';
+    const activeCurrency = resolveRequiredCurrency({
+      transactionCurrency: currency,
+      systemCurrency,
+    });
 
     const { minorToDecimal } = await import('../money/converter');
 

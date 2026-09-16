@@ -289,6 +289,13 @@ export class SyncEngine {
     pulledCount: number;
     pushedCount: number;
   }> {
+    // 0. RBAC Guard: assert sync:manage
+    const { rbacGuard } = await import('./rbac/RBACGuard.service');
+    await rbacGuard.assertPermission('sync:manage', {
+      targetType: 'system',
+      details: 'بدء عملية المزامنة اليدوية',
+    });
+
     if (this.isSyncing) {
       return { success: false, conflicts: this.getPersistedConflicts(), message: 'عملية مزامنة أخرى جارية حالياً', pulledCount: 0, pushedCount: 0 };
     }

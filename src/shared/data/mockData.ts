@@ -213,6 +213,10 @@ export async function seedInitialMockData(force = false): Promise<boolean> {
 }
 
 export async function resetToMockData(): Promise<void> {
+  const isProduction = import.meta.env.PROD;
+  if (isProduction) {
+    throw new Error('[Security Violation] Cannot reset to mock data in Production environment.');
+  }
   await db.transactions.clear();
   await db.accounts.clear();
   await db.accounts.bulkPut(INITIAL_MOCK_ACCOUNTS);

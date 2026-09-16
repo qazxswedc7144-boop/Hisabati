@@ -45,6 +45,8 @@ export const MAX_BACKUP_ACCOUNTS = 10_000;
 export const MAX_BACKUP_TRANSACTIONS = 100_000;
 export const MAX_BACKUP_SETTINGS = 500;
 
+import { rbacGuard } from './rbac/RBACGuard.service';
+
 export class BackupService {
   // Test hook to simulate safety backup failures in security unit tests
   public _simulateSafetyBackupFailure: boolean = false;
@@ -53,6 +55,12 @@ export class BackupService {
    * Generates a validated and cryptographically hashed snapshot of the local database.
    */
   public async generateBackupPayload(): Promise<BackupPayload> {
+    // 0. RBAC Guard
+    await rbacGuard.assertPermission('backup:create', {
+      targetType: 'backup',
+      details: 'إنشاء نسخة احتياطية للبيانات',
+    });
+
     const accounts = await db.accounts.toArray();
     const transactions = await db.transactions.toArray();
     const settings = await db.settings.toArray();
@@ -323,6 +331,12 @@ export class BackupService {
     rawPayload: any,
     mode: 'replace' | 'merge' = 'replace'
   ): Promise<{ success: boolean; message: string }> {
+    // 0. RBAC Guard: assert backup:restore
+    await rbacGuard.assertPermission('backup:restore', {
+      targetType: 'backup',
+      details: `استعادة البيانات من نسخة احتياطية (النمط: ${mode === 'replace' ? 'استبدال كامل' : 'دمج'})`,
+    });
+
     // 1. RAW BACKUP & STRUCTURAL BASELINE
     if (!rawPayload || typeof rawPayload !== 'object') {
       throw new Error('هيكل ملف النسخة الاحتياطية غير صالح (Invalid Payload Object)');
