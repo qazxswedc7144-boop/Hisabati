@@ -7,6 +7,7 @@ import {
   MessageSquare,
   Sparkles,
   ShieldCheck,
+  Trash2,
   Settings,
   LucideIcon,
 } from 'lucide-react';
@@ -66,6 +67,11 @@ export const APPLICATION_NAV_ITEMS: NavItemConfig[] = [
     to: '/team',
     fallbackLabel: 'الفريق والتدقيق (RBAC)',
     icon: ShieldCheck,
+  },
+  {
+    to: '/trash',
+    fallbackLabel: 'سلة المهملات',
+    icon: Trash2,
   },
   {
     to: '/settings',

@@ -11,3 +11,5 @@ export * from './rbac.types';
 export * from './bi.types';
 export * from './money.types';
 export * from './invoice.types';
+export * from './tenant.types';
+export * from './trash.types';

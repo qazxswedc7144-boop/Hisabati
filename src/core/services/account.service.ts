@@ -152,7 +152,7 @@ export class AccountService {
     return await this.getById(id);
   }
 
-  async deleteAccount(id: string, force = false): Promise<boolean> {
+  async deleteAccount(id: string, force = false, moveToTrash = false): Promise<boolean> {
     // 0. RBAC Guard
     await rbacGuard.assertPermission('accounts:delete', {
       targetType: 'account',
@@ -164,7 +164,7 @@ export class AccountService {
 
     const trxCount = await db.transactions.where('accountId').equals(id).count();
 
-    if (trxCount > 0 && !force) {
+    if (trxCount > 0 && !force && !moveToTrash) {
       // Safe guard: Suggest archiving instead of data loss
       throw new Error(
         `لا يمكن حذف هذا الحساب لوجود ${trxCount} عملية مالية مسجلة له. يرجى أرشفة الحساب للحفاظ على السجلات المالية.`
@@ -173,7 +173,25 @@ export class AccountService {
 
     const childTrx = await db.transactions.where('accountId').equals(id).toArray();
 
-    await db.transaction('rw', db.accounts, db.transactions, db.settings, async () => {
+    await db.transaction('rw', db.accounts, db.transactions, db.settings, db.trash, async () => {
+      if (moveToTrash) {
+        // Move to trash
+        const now = new Date();
+        const expiresAt = new Date(now);
+        expiresAt.setDate(now.getDate() + 30); // 30 days default
+
+        await db.trash.add({
+          id,
+          entityType: 'account',
+          data: {
+            account: existing,
+            transactions: childTrx,
+          },
+          deletedAt: now.toISOString(),
+          expiresAt: expiresAt.toISOString(),
+        });
+      }
+
       await db.transactions.where('accountId').equals(id).delete();
       await db.accounts.delete(id);
 
@@ -210,6 +228,64 @@ export class AccountService {
     }
 
     return true;
+  }
+
+  /**
+   * Restores an account and its transactions from trash.
+   */
+  async restoreFromTrash(trashId: string): Promise<boolean> {
+    // 0. RBAC Guard (usually accounts:create permission is enough for restore)
+    await rbacGuard.assertPermission('accounts:create', {
+      targetType: 'account',
+      details: 'استعادة حساب من سلة المهملات',
+    });
+
+    const trashItem = await db.trash.get(trashId);
+    if (!trashItem) throw new Error('البند غير موجود في سلة المهملات');
+
+    const { account, transactions } = trashItem.data;
+
+    await db.transaction('rw', db.accounts, db.transactions, db.trash, db.settings, async () => {
+      // 1. Re-insert account
+      await db.accounts.add(account);
+
+      // 2. Re-insert transactions
+      if (transactions.length > 0) {
+        await db.transactions.bulkAdd(transactions);
+      }
+
+      // 3. Remove from trash
+      await db.trash.delete(trashId);
+
+      // 4. Remove from tombstones
+      const existingTombstones = await db.settings.get('hisabati_permanent_tombstones');
+      if (existingTombstones && Array.isArray(existingTombstones.value)) {
+        const newList = existingTombstones.value.filter(
+          (t: any) => t.id !== account.id && !transactions.some((trx) => trx.id === t.id)
+        );
+        await db.settings.put({
+          ...existingTombstones,
+          value: newList,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    });
+
+    // Enqueue sync (CREATE)
+    await this.enqueueSyncMutation('account', account.id, 'CREATE', account, account.id);
+    for (const trx of transactions) {
+      await this.enqueueSyncMutation('transaction', trx.id, 'CREATE', trx, trx.id);
+    }
+
+    return true;
+  }
+
+  async getTrashItems(): Promise<any[]> {
+    return await db.trash.orderBy('deletedAt').reverse().toArray();
+  }
+
+  async deletePermanentlyFromTrash(trashId: string): Promise<void> {
+    await db.trash.delete(trashId);
   }
 
   async search(query: string, filter?: AccountFilterType): Promise<Account[]> {

@@ -25,7 +25,14 @@ export class AuthService {
   private firebaseUser: User | null = null;
 
   private constructor() {
+    // Only initialize the auth listener. 
+    // The database initialization is orchestrated by TenantService 
+    // which is called by App.tsx to ensure correct sequencing.
     this.initializeAuthListener();
+  }
+
+  private async initializeDefaultDb(): Promise<void> {
+    // Deprecated: Redundant with TenantService.initialize()
   }
 
   public static getInstance(): AuthService {
@@ -60,7 +67,6 @@ export class AuthService {
         this.authStatus = 'unauthenticated';
       }
       
-      // Notify listeners if needed (e.g., via a store)
       console.log(`AuthService: Status changed to ${this.authStatus}`);
     });
 

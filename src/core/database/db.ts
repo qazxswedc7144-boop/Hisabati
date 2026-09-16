@@ -15,6 +15,7 @@ import {
   Team,
   TeamMember,
   AuditTrailEntry,
+  TrashItem,
 } from '@/shared/types';
 
 export class HisabatiDatabase extends Dexie {
@@ -39,9 +40,10 @@ export class HisabatiDatabase extends Dexie {
   teams!: Table<Team, string>;
   teamMembers!: Table<TeamMember, string>;
   auditTrail!: Table<AuditTrailEntry, string>;
+  trash!: Table<TrashItem, string>;
 
-  constructor() {
-    super('HisabatiDatabase');
+  constructor(dbName: string = 'HisabatiDatabase') {
+    super(dbName);
     
     // Version 1 Schema (Initial Baseline)
     this.version(1).stores({
@@ -113,8 +115,40 @@ export class HisabatiDatabase extends Dexie {
       teamMembers: 'id, teamId, userId, role, status, [teamId+userId], createdAt',
       auditTrail: 'id, sequenceNumber, timestamp, action, targetType, targetId, riskLevel, [targetType+targetId]',
     });
+
+    // Version 7 Schema (Recycle Bin / Trash Integration)
+    this.version(7).stores({
+      accounts: 'id, name, phone, archived, createdAt, updatedAt',
+      transactions: 'id, accountId, type, date, operationId, createdAt, updatedAt, [accountId+date]',
+      settings: 'id, key, updatedAt',
+      syncQueue: 'id, entityType, entityId, operation, operationId, status, createdAt',
+      syncAuditLogs: 'id, action, timestamp, deviceId, success',
+      messages: 'id, messageId, channel, type, status, recipient, priority, operationId, createdAt, scheduledAt',
+      messageTemplates: 'id, name, type, defaultChannel, active, createdAt',
+      inAppNotifications: 'id, type, priority, read, createdAt',
+      scheduledMessages: 'id, channel, status, scheduledAt, nextRunAt, operationId, createdAt',
+      messageQueue: 'id, messageId, channel, status, operationId, nextRetryAt, createdAt',
+      aiAuditLogs: 'id, requestId, intent, status, provider, confirmed, timestamp',
+      users: 'id, email, phone, role, activeTeamId, createdAt',
+      teams: 'id, name, ownerId, createdAt',
+      teamMembers: 'id, teamId, userId, role, status, [teamId+userId], createdAt',
+      auditTrail: 'id, sequenceNumber, timestamp, action, targetType, targetId, riskLevel, [targetType+targetId]',
+      trash: 'id, entityType, deletedAt, expiresAt',
+    });
   }
 }
 
-// Singleton database instance
-export const db = new HisabatiDatabase();
+import { tenantDbManager } from './TenantDatabaseManager';
+
+// We use a Proxy to keep the 'db' export stable while switching the underlying Dexie instance
+// This prevents having to update 40+ files and allows dynamic multi-tenancy.
+export const db = new Proxy({} as HisabatiDatabase, {
+  get(_, prop) {
+    const activeDb = tenantDbManager.getActiveDatabase();
+    const value = (activeDb as any)[prop];
+    if (typeof value === 'function') {
+      return value.bind(activeDb);
+    }
+    return value;
+  }
+});

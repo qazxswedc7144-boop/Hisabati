@@ -12,6 +12,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/core/database/firebase';
 import { useSettingsStore, useRBACStore } from '@/shared/stores';
 import { AuditActor } from '@/shared/types';
+import { tenantService } from '@/core/services/TenantService';
 
 // Lazy loaded features
 const ReportsPage = lazy(() => import('@/features/reports/pages/ReportsPage').then(m => ({ default: m.ReportsPage })));
@@ -19,6 +20,7 @@ const SettingsPage = lazy(() => import('@/features/settings/pages/SettingsPage')
 const MessagingPage = lazy(() => import('@/features/messaging/pages/MessagingPage').then(m => ({ default: m.MessagingPage })));
 const AIAssistantPage = lazy(() => import('@/features/ai/pages/AIAssistantPage').then(m => ({ default: m.AIAssistantPage })));
 const TeamPage = lazy(() => import('@/features/team/pages/TeamPage').then(m => ({ default: m.TeamPage })));
+const RecycleBinPage = lazy(() => import('@/features/trash/pages/RecycleBinPage').then(m => ({ default: m.RecycleBinPage })));
 const FinancialHealthDashboardPage = lazy(() => import('@/features/bi/pages/FinancialHealthDashboardPage').then(m => ({ default: m.FinancialHealthDashboardPage })));
 
 const PageLoader = () => (
@@ -38,6 +40,9 @@ export default function App() {
         const isProduction = import.meta.env.PROD;
         const enableDemoData = import.meta.env.VITE_ENABLE_DEMO_DATA === 'true';
 
+        // 0. Initialize Tenant Database (CRITICAL: Must be first)
+        await tenantService.initialize();
+
         // PRODUCTION SECURITY: Never seed mock data in production
         // Only seed in non-production environments if explicitly enabled via flag
         if (!isProduction && enableDemoData) {
@@ -49,7 +54,7 @@ export default function App() {
 
         // 2. Synchronize Firebase Auth with Store (Only if initialized)
         if (auth) {
-          onAuthStateChanged(auth, (user) => {
+          onAuthStateChanged(auth, async (user) => {
             if (user) {
               const actor: AuditActor = {
                 id: user.uid,
@@ -67,6 +72,9 @@ export default function App() {
               };
               updateAuthStatus('unauthenticated', defaultActor);
             }
+
+            // Re-initialize tenant context on auth change (switches DB if needed)
+            await tenantService.initialize();
           });
         } else {
           // If Firebase is not initialized, we stay in local mode
@@ -113,6 +121,7 @@ export default function App() {
               <Route path="/messaging" element={<MessagingPage />} />
               <Route path="/ai" element={<AIAssistantPage />} />
               <Route path="/team" element={<TeamPage />} />
+              <Route path="/trash" element={<RecycleBinPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

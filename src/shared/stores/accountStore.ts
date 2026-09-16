@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Account, AccountFilterType, AccountSortField, CreateAccountDTO, UpdateAccountDTO } from '@/shared/types';
+import { Account, AccountFilterType, AccountSortField, CreateAccountDTO, UpdateAccountDTO, TrashItem } from '@/shared/types';
 import { accountRepository } from '@/core/repositories/account.repository';
 import { seedMockDataIfEmpty } from '@/shared/data/mockData';
 
@@ -11,13 +11,17 @@ interface AccountState {
   filterType: AccountFilterType;
   sortField: AccountSortField;
   
+  trashItems: TrashItem[];
   fetchAccounts: (includeArchived?: boolean) => Promise<void>;
   fetchAccountById: (id: string) => Promise<Account | undefined>;
   addAccount: (dto: CreateAccountDTO) => Promise<Account>;
   updateAccount: (id: string, dto: UpdateAccountDTO) => Promise<Account | undefined>;
   archiveAccount: (id: string) => Promise<boolean>;
   unarchiveAccount: (id: string) => Promise<boolean>;
-  deleteAccount: (id: string, force?: boolean) => Promise<boolean>;
+  deleteAccount: (id: string, force?: boolean, moveToTrash?: boolean) => Promise<boolean>;
+  fetchTrashItems: () => Promise<void>;
+  restoreFromTrash: (trashId: string) => Promise<boolean>;
+  deletePermanentlyFromTrash: (trashId: string) => Promise<void>;
   recalculateAll: () => Promise<void>;
   setSearchQuery: (query: string) => void;
   setFilterType: (filter: AccountFilterType) => void;
@@ -32,6 +36,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   searchQuery: '',
   filterType: 'all',
   sortField: 'recent',
+  trashItems: [],
 
   fetchAccounts: async (includeArchived = false) => {
     set({ isLoading: true });
@@ -97,15 +102,52 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     return false;
   },
 
-  deleteAccount: async (id: string, force = false) => {
-    const success = await accountRepository.delete(id, force);
+  deleteAccount: async (id: string, force = false, moveToTrash = false) => {
+    const success = await accountRepository.delete(id, force, moveToTrash);
     if (success) {
       set((state) => ({
         accounts: state.accounts.filter((a) => a.id !== id),
         selectedAccount: state.selectedAccount?.id === id ? null : state.selectedAccount,
       }));
+      if (moveToTrash) {
+        get().fetchTrashItems();
+      }
     }
     return success;
+  },
+
+  fetchTrashItems: async () => {
+    try {
+      const items = await accountRepository.getTrashItems();
+      set({ trashItems: items });
+    } catch (e) {
+      console.error('Failed to fetch trash items:', e);
+    }
+  },
+
+  restoreFromTrash: async (trashId: string) => {
+    try {
+      const success = await accountRepository.restoreFromTrash(trashId);
+      if (success) {
+        await get().fetchAccounts();
+        await get().fetchTrashItems();
+      }
+      return success;
+    } catch (e) {
+      console.error('Failed to restore from trash:', e);
+      return false;
+    }
+  },
+
+  deletePermanentlyFromTrash: async (trashId: string) => {
+    try {
+      await accountRepository.deletePermanentlyFromTrash(trashId);
+      set((state) => ({
+        trashItems: state.trashItems.filter((item) => item.id !== trashId),
+      }));
+    } catch (e) {
+      console.error('Failed to delete permanently from trash:', e);
+    }
   },
 
   recalculateAll: async () => {

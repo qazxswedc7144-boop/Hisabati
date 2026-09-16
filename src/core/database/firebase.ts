@@ -14,14 +14,15 @@ const getEnv = (key: string) => {
   return undefined;
 };
 
+// Configuration prioritizing the applet JSON config
 const firebaseConfig = {
-  apiKey: getEnv('VITE_FIREBASE_API_KEY') || firebaseConfigJson.apiKey,
-  authDomain: getEnv('VITE_FIREBASE_AUTH_DOMAIN') || firebaseConfigJson.authDomain,
-  projectId: getEnv('VITE_FIREBASE_PROJECT_ID') || firebaseConfigJson.projectId,
-  storageBucket: getEnv('VITE_FIREBASE_STORAGE_BUCKET') || firebaseConfigJson.storageBucket,
-  messagingSenderId: getEnv('VITE_FIREBASE_MESSAGING_SENDER_ID') || firebaseConfigJson.messagingSenderId,
-  appId: getEnv('VITE_FIREBASE_APP_ID') || firebaseConfigJson.appId,
-  firestoreDatabaseId: getEnv('VITE_FIREBASE_DATABASE_ID') || firebaseConfigJson.firestoreDatabaseId,
+  apiKey: firebaseConfigJson.apiKey || getEnv('VITE_FIREBASE_API_KEY'),
+  authDomain: firebaseConfigJson.authDomain || getEnv('VITE_FIREBASE_AUTH_DOMAIN'),
+  projectId: firebaseConfigJson.projectId || getEnv('VITE_FIREBASE_PROJECT_ID'),
+  storageBucket: firebaseConfigJson.storageBucket || getEnv('VITE_FIREBASE_STORAGE_BUCKET'),
+  messagingSenderId: firebaseConfigJson.messagingSenderId || getEnv('VITE_FIREBASE_MESSAGING_SENDER_ID'),
+  appId: firebaseConfigJson.appId || getEnv('VITE_FIREBASE_APP_ID'),
+  firestoreDatabaseId: firebaseConfigJson.firestoreDatabaseId || getEnv('VITE_FIREBASE_DATABASE_ID'),
 };
 
 let app: FirebaseApp | undefined;

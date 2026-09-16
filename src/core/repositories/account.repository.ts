@@ -28,8 +28,20 @@ export class AccountRepository {
     return await accountService.unarchiveAccount(id);
   }
 
-  async delete(id: string, cascade = true): Promise<boolean> {
-    return await accountService.deleteAccount(id, cascade);
+  async delete(id: string, cascade = true, moveToTrash = false): Promise<boolean> {
+    return await accountService.deleteAccount(id, cascade, moveToTrash);
+  }
+
+  async getTrashItems(): Promise<any[]> {
+    return await accountService.getTrashItems();
+  }
+
+  async restoreFromTrash(trashId: string): Promise<boolean> {
+    return await accountService.restoreFromTrash(trashId);
+  }
+
+  async deletePermanentlyFromTrash(trashId: string): Promise<void> {
+    await accountService.deletePermanentlyFromTrash(trashId);
   }
 
   async recalculateAccountBalance(accountId: string): Promise<Account | undefined> {

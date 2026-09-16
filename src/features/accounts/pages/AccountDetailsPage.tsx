@@ -147,6 +147,16 @@ export const AccountDetailsPage: React.FC = () => {
     }
   };
 
+  const handleMoveToTrash = async () => {
+    try {
+      await deleteAccount(account.id, true, true);
+      showToast('تم نقل الحساب وكافة عملياته إلى سلة المهملات', 'success');
+      navigate('/accounts');
+    } catch (err: any) {
+      showToast(err?.message || 'فشل النقل لسلة المهملات', 'error');
+    }
+  };
+
   const handleDeleteTrx = async (trxId: string) => {
     await deleteTransaction(trxId, account.id);
     await fetchAccountById(account.id);
@@ -585,15 +595,23 @@ export const AccountDetailsPage: React.FC = () => {
               <div className="my-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 text-xs text-amber-800 dark:text-amber-300 text-start leading-relaxed">
                 <p className="font-bold mb-1">تنبيه أمان البيانات:</p>
                 <p>{deleteErrorMessage}</p>
-                <div className="mt-3 flex gap-2">
+                <div className="mt-4 space-y-2">
                   <button
                     onClick={() => {
                       handleToggleArchive();
                       setShowDeleteConfirm(false);
                     }}
-                    className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs"
+                    className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs transition active:scale-[0.98]"
                   >
                     أرشفة الحساب بدلاً من الحذف
+                  </button>
+                  
+                  <button
+                    onClick={handleMoveToTrash}
+                    className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs transition active:scale-[0.98] flex items-center justify-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>حذف نهائي مع كافة العمليات (سلة المهملات)</span>
                   </button>
                 </div>
               </div>

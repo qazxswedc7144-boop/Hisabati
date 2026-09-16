@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { X, UserPlus, Phone, FileText, Tag, UserCheck, ChevronDown, Contact, Search, Check } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { X, UserPlus, Phone, FileText, Tag, UserCheck, ChevronDown, Contact, Search, Check, ExternalLink } from 'lucide-react';
 import { useUIStore, useAccountStore, useSettingsStore } from '@/shared/stores';
 import { validateAccountForm } from '@/core/utils/validators';
 import { useLockBody } from '@/shared/hooks';
@@ -15,6 +16,7 @@ const normalizeSearchText = (value: string): string =>
     .trim();
 
 export const AddAccountModal: React.FC = () => {
+  const navigate = useNavigate();
   const isOpen = useUIStore((state) => state.isAddAccountOpen);
   const close = useUIStore((state) => state.closeAddAccount);
   const showToast = useUIStore((state) => state.showToast);
@@ -142,6 +144,20 @@ export const AddAccountModal: React.FC = () => {
       return;
     }
 
+    // Smart Duplicate Validation (Total Match Check)
+    const normalizedNewName = normalizeSearchText(name);
+    const existingMatch = accounts.find((acc) => {
+      const nameMatch = normalizeSearchText(acc.name) === normalizedNewName;
+      const phoneMatch = (acc.phone || '').trim() === (fullPhone || '').trim();
+      return nameMatch && phoneMatch;
+    });
+
+    if (existingMatch) {
+      setErrors({ name: 'هذا الحساب موجود بالفعل بنفس الاسم ورقم الهاتف' });
+      showToast('تنبيه: لا يمكن إنشاء حساب مطابِق تماماً لحساب موجود', 'error');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const initBalNum = hasInitialBalance && initialBalance ? parseFloat(initialBalance) : undefined;
@@ -213,18 +229,18 @@ export const AddAccountModal: React.FC = () => {
         {/* Form */}
         <form
           onSubmit={handleSubmit}
-          className="p-4 sm:p-5 space-y-3 sm:space-y-3.5 overflow-y-auto flex-1 overscroll-contain"
+          className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 overscroll-contain"
         >
           {/* 1. حقل اسم الحساب التنبؤي */}
-          <div className="grid grid-cols-12 gap-2 sm:gap-3 items-center">
+          <div className="space-y-1.5">
             <label
               htmlFor="input-account-name"
-              className="col-span-4 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1"
+              className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1"
             >
-              <span className="truncate">اسم الحساب</span>
+              <span>اسم الحساب</span>
               <span className="text-rose-500">*</span>
             </label>
-            <div className="col-span-8 relative" ref={containerRef}>
+            <div className="relative" ref={containerRef}>
               <div className="relative">
                 <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                 <input
@@ -233,6 +249,7 @@ export const AddAccountModal: React.FC = () => {
                   type="text"
                   required
                   placeholder="مثال: محمد أحمد، شركة النور..."
+                  autoComplete="off"
                   value={name}
                   onFocus={() => {
                     if (name.trim().length > 0) setIsSearchOpen(true);
@@ -243,35 +260,42 @@ export const AddAccountModal: React.FC = () => {
                     setIsSearchOpen(val.trim().length > 0);
                     if (errors.name) setErrors((prev) => ({ ...prev, name: '' }));
                   }}
-                  className="w-full ps-9 pe-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs sm:text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition min-h-[40px] sm:min-h-[42px]"
+                  className="w-full ps-9 pe-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs sm:text-sm font-bold focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition min-h-[44px]"
                   autoFocus
                 />
               </div>
 
-              {/* Search Results Dropdown */}
+              {/* Search Results Dropdown (Clickable Predictive Search) */}
               {isSearchOpen && filteredAccounts.length > 0 && (
                 <div className="absolute inset-x-0 top-full mt-1 z-50 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
                   <div className="px-2.5 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800 mb-1">
                     حسابات موجودة بالفعل
                   </div>
                   {filteredAccounts.map((acc) => (
-                    <div
+                    <button
                       key={acc.id}
-                      className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-right bg-teal-50/30 dark:bg-teal-950/10 border border-teal-100/50 dark:border-teal-900/30 mb-1 last:mb-0"
+                      type="button"
+                      onClick={() => {
+                        setIsSearchOpen(false);
+                        close();
+                        navigate(`/accounts/${acc.id}`);
+                        showToast(`تم التوجيه إلى حساب "${acc.name}" موجود مسبقاً`, 'info');
+                      }}
+                      className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-right hover:bg-teal-50 dark:hover:bg-teal-950/40 border border-transparent hover:border-teal-100/50 transition-all mb-1 last:mb-0 group"
                     >
-                      <div className="min-w-0">
-                        <div className="truncate text-xs font-black text-teal-700 dark:text-teal-300">
+                      <div className="min-w-0 text-right">
+                        <div className="truncate text-xs font-black text-slate-700 dark:text-slate-200 group-hover:text-teal-700 dark:group-hover:text-teal-300">
                           {acc.name}
                         </div>
                         {acc.phone && (
                           <div className="text-[10px] text-slate-500">{acc.phone}</div>
                         )}
                       </div>
-                      <Check className="w-3.5 h-3.5 text-teal-600" />
-                    </div>
+                      <ExternalLink className="w-3.5 h-3.5 text-teal-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </button>
                   ))}
                   <div className="p-2 text-[10px] text-slate-500 text-center border-t border-slate-100 dark:border-slate-800 mt-1">
-                    سيتم تنبيهك إذا كان الحساب مكرراً عند الحفظ
+                    اختيار حساب موجود سيقوم بنقلك إليه مباشرة
                   </div>
                 </div>
               )}
@@ -282,18 +306,18 @@ export const AddAccountModal: React.FC = () => {
             </div>
           </div>
 
-          {/* 2. حقل رقم الهاتف النظيف */}
-          <div className="grid grid-cols-12 gap-2 sm:gap-3 items-center">
+          {/* 2. حقل رقم الهاتف النظيف - كامل العرض */}
+          <div className="space-y-1.5">
             <label
               htmlFor="input-account-phone"
-              className="col-span-4 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5"
+              className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5"
             >
               <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="truncate">رقم الهاتف</span>
+              <span>رقم الهاتف</span>
             </label>
 
-            <div className="col-span-8">
-              <div className="flex items-center rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 focus-within:ring-2 focus-within:ring-teal-500 focus-within:border-teal-500 transition overflow-hidden min-h-[40px] sm:min-h-[42px]">
+            <div className="relative group">
+              <div className="flex items-center rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 focus-within:ring-2 focus-within:ring-teal-500 focus-within:border-teal-500 transition overflow-hidden min-h-[44px]">
                 <input
                   id="input-account-phone"
                   name="phone"
@@ -303,16 +327,16 @@ export const AddAccountModal: React.FC = () => {
                   placeholder="77XXXXXXX"
                   value={phone}
                   onChange={handlePhoneChange}
-                  className="flex-1 px-3 py-2 bg-transparent text-slate-900 dark:text-slate-100 text-xs sm:text-sm focus:outline-none text-right font-medium placeholder:text-slate-400 min-w-0"
+                  className="flex-1 px-4 py-2.5 bg-transparent text-slate-900 dark:text-slate-100 text-sm focus:outline-none text-right font-bold placeholder:text-slate-400 min-w-0"
                 />
 
                 <button
                   type="button"
                   onClick={handlePickContact}
                   title="اختيار من جهات الاتصال"
-                  className="p-2.5 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-teal-50 dark:hover:bg-teal-900/30 text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 transition-colors border-s border-slate-200 dark:border-slate-700 h-full self-stretch flex items-center justify-center min-w-[42px]"
+                  className="p-2.5 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-teal-50 dark:hover:bg-teal-900/30 text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 transition-colors border-s border-slate-200 dark:border-slate-700 h-full self-stretch flex items-center justify-center min-w-[48px]"
                 >
-                  <Contact className="w-4 h-4" />
+                  <Contact className="w-5 h-5" />
                 </button>
               </div>
               {errors.phone && (
@@ -322,13 +346,13 @@ export const AddAccountModal: React.FC = () => {
           </div>
 
           {/* 3. حقل التصنيف */}
-          <div className="grid grid-cols-12 gap-2 sm:gap-3 items-center">
-            <label className="col-span-4 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
               <Tag className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="truncate">التصنيف</span>
+              <span>التصنيف</span>
             </label>
 
-            <div className="col-span-8 grid grid-cols-3 gap-1.5 sm:gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {[
                 { id: 'customer', label: 'عميل' },
                 { id: 'supplier', label: 'مورد' },
@@ -340,9 +364,9 @@ export const AddAccountModal: React.FC = () => {
                     key={cat.id}
                     type="button"
                     onClick={() => setCategory(cat.id as any)}
-                    className={`py-1.5 px-1 sm:px-2 text-xs font-bold rounded-xl border transition-all min-h-[38px] sm:min-h-[40px] flex items-center justify-center text-center ${
+                    className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all min-h-[40px] flex items-center justify-center text-center ${
                       isSelected
-                        ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 shadow-xs'
+                        ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 shadow-xs ring-1 ring-teal-500'
                         : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                     }`}
                   >
@@ -354,24 +378,22 @@ export const AddAccountModal: React.FC = () => {
           </div>
 
           {/* 4. حقل ملاحظة */}
-          <div className="grid grid-cols-12 gap-2 sm:gap-3 items-start">
+          <div className="space-y-1.5">
             <label
               htmlFor="textarea-account-note"
-              className="col-span-4 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 pt-2"
+              className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5"
             >
               <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="truncate">ملاحظة</span>
+              <span>ملاحظة</span>
             </label>
-            <div className="col-span-8">
-              <textarea
-                id="textarea-account-note"
-                rows={2}
-                placeholder="مثال: عنوان السكن أو العمل، طبيعة التعامل..."
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs sm:text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition resize-none min-h-[42px]"
-              />
-            </div>
+            <textarea
+              id="textarea-account-note"
+              rows={2}
+              placeholder="مثال: عنوان السكن أو العمل، طبيعة التعامل..."
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs sm:text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition resize-none min-h-[60px]"
+            />
           </div>
 
           {/* 5. الرصيد الافتتاحي */}
@@ -391,32 +413,30 @@ export const AddAccountModal: React.FC = () => {
 
             {hasInitialBalance && (
               <div className="mt-2.5 space-y-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 animate-in fade-in duration-150">
-                <div className="grid grid-cols-12 gap-2 sm:gap-3 items-center">
+                <div className="grid grid-cols-1 gap-2.5 items-center">
                   <label
                     htmlFor="input-initial-balance-amount"
-                    className="col-span-4 text-xs font-medium text-slate-600 dark:text-slate-400"
+                    className="text-xs font-medium text-slate-600 dark:text-slate-400"
                   >
                     المبلغ ({currency})
                   </label>
-                  <div className="col-span-8">
-                    <input
-                      id="input-initial-balance-amount"
-                      type="number"
-                      step="any"
-                      min="0"
-                      placeholder="0.00"
-                      value={initialBalance}
-                      onChange={(e) => setInitialBalance(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs sm:text-sm font-bold min-h-[38px] sm:min-h-[40px] focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-                    />
-                  </div>
+                  <input
+                    id="input-initial-balance-amount"
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder="0.00"
+                    value={initialBalance}
+                    onChange={(e) => setInitialBalance(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-bold min-h-[44px] focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                  />
                 </div>
 
-                <div className="grid grid-cols-12 gap-2 sm:gap-3 items-center">
-                  <span className="col-span-4 text-xs font-medium text-slate-600 dark:text-slate-400">
+                <div className="grid grid-cols-1 gap-2.5 items-center">
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
                     طبيعة الرصيد
                   </span>
-                  <div className="col-span-8 grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       id="btn-balance-owed-to-me"
