@@ -1,18 +1,18 @@
-import React, { useState, useMemo } from 'react';
-import { X, UserPlus, Phone, FileText, Tag, UserCheck, ChevronDown } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { X, UserPlus, Phone, FileText, Tag, UserCheck, ChevronDown, Contact, Search, Check } from 'lucide-react';
 import { useUIStore, useAccountStore, useSettingsStore } from '@/shared/stores';
 import { validateAccountForm } from '@/core/utils/validators';
 import { useLockBody } from '@/shared/hooks';
 
-const POPULAR_COUNTRY_CODES = [
-  { code: '+967', label: '+967 (اليمن)' },
-  { code: '+966', label: '+966 (السعودية)' },
-  { code: '+20', label: '+20 (مصر)' },
-  { code: '+971', label: '+971 (الإمارات)' },
-  { code: '+965', label: '+965 (الكويت)' },
-  { code: '+968', label: '+968 (عُمان)' },
-  { code: '+962', label: '+962 (الأردن)' },
-];
+const normalizeSearchText = (value: string): string =>
+  value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .trim();
 
 export const AddAccountModal: React.FC = () => {
   const isOpen = useUIStore((state) => state.isAddAccountOpen);
@@ -25,7 +25,7 @@ export const AddAccountModal: React.FC = () => {
   useLockBody(isOpen);
 
   const [name, setName] = useState('');
-  const [countryCode, setCountryCode] = useState('+967');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [phone, setPhone] = useState('');
   const [note, setNote] = useState('');
   const [category, setCategory] = useState<'personal' | 'supplier' | 'customer'>('customer');
@@ -35,26 +35,88 @@ export const AddAccountModal: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Autocomplete suggestions from existing accounts
-  const nameSuggestions = useMemo(() => {
-    const set = new Set<string>();
-    accounts.forEach((a) => {
-      if (a.name) set.add(a.name.trim());
-    });
-    return Array.from(set).slice(0, 15);
-  }, [accounts]);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const phoneSuggestions = useMemo(() => {
-    const set = new Set<string>();
-    accounts.forEach((a) => {
-      if (a.phone) set.add(a.phone.trim());
-    });
-    return Array.from(set).slice(0, 15);
-  }, [accounts]);
+  // Click outside to close search dropdown
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setIsSearchOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, []);
+
+  const normalizedQuery = useMemo(() => normalizeSearchText(name), [name]);
+  const filteredAccounts = useMemo(() => {
+    if (!normalizedQuery) return [];
+    return accounts
+      .filter((acc) => {
+        const accName = normalizeSearchText(acc.name || '');
+        const accPhone = normalizeSearchText(acc.phone || '');
+        return accName.includes(normalizedQuery) || accPhone.includes(normalizedQuery);
+      })
+      .slice(0, 5);
+  }, [accounts, normalizedQuery]);
+
+  const canPickContacts = typeof navigator !== 'undefined' && 'contacts' in navigator && 'select' in (navigator as any).contacts;
+
+  const handlePickContact = async () => {
+    try {
+      const isIframe = typeof window !== 'undefined' && window.self !== window.top;
+      if (isIframe) {
+        showToast('لمزيد من الأمان، يرجى فتح التطبيق في علامة تبويب جديدة لاستخدام ميزة اختيار جهات الاتصال', 'info');
+        return;
+      }
+
+      if (canPickContacts) {
+        const props = ['name', 'tel'];
+        const opts = { multiple: false };
+        const pickedContacts = await (navigator as any).contacts.select(props, opts);
+        
+        if (pickedContacts.length > 0) {
+          const contact = pickedContacts[0];
+          if (contact.name && contact.name.length > 0 && !name) {
+            setName(contact.name[0]);
+          }
+          if (contact.tel && contact.tel.length > 0) {
+            const pickedNum = contact.tel[0];
+            const digitsOnly = pickedNum.replace(/[^\d]/g, '');
+            let finalNum = digitsOnly;
+            if (digitsOnly.startsWith('967')) {
+              finalNum = digitsOnly.slice(3);
+            } else if (digitsOnly.startsWith('00967')) {
+              finalNum = digitsOnly.slice(5);
+            } else if (digitsOnly.startsWith('0')) {
+              finalNum = digitsOnly.slice(1);
+            }
+            
+            let formatted = finalNum;
+            if (finalNum.length > 3 && finalNum.length <= 6) {
+              formatted = `${finalNum.slice(0, 3)} ${finalNum.slice(3)}`;
+            } else if (finalNum.length > 6) {
+              formatted = `${finalNum.slice(0, 3)} ${finalNum.slice(3, 6)} ${finalNum.slice(6, 10)}`;
+            }
+            setPhone(formatted);
+          }
+        }
+      } else {
+        showToast('ميزة اختيار جهات الاتصال غير مدعومة في هذا المتصفح أو الجهاز حالياً', 'info');
+      }
+    } catch (err: any) {
+      console.error('Contact picker error:', err);
+      if (err?.message?.includes('top frame')) {
+        showToast('يرجى فتح التطبيق في علامة تبويب جديدة لاستخدام ميزة جهات الاتصال', 'info');
+      }
+    }
+  };
 
   if (!isOpen) return null;
 
-  // Phone number auto-formatter: formats digits cleanly (e.g., 770 123 456)
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value;
     const digitsOnly = raw.replace(/[^\d]/g, '');
@@ -70,10 +132,9 @@ export const AddAccountModal: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    // Prepare full phone number with country code if provided
     const cleanNumber = phone.replace(/\s+/g, '').trim();
-    const fullPhone = cleanNumber ? `${countryCode} ${cleanNumber}` : undefined;
+    // Defaulting to +967 for now as per previous logic but without the selector UI
+    const fullPhone = cleanNumber ? `+967 ${cleanNumber}` : undefined;
 
     const validation = validateAccountForm({ name, phone: fullPhone });
     if (!validation.isValid) {
@@ -95,7 +156,6 @@ export const AddAccountModal: React.FC = () => {
       });
 
       showToast(`تم إضافة الحساب "${name.trim()}" بنجاح`, 'success');
-      // Reset form
       setName('');
       setPhone('');
       setNote('');
@@ -121,12 +181,11 @@ export const AddAccountModal: React.FC = () => {
         if (e.target === e.currentTarget) close();
       }}
     >
-      {/* 1. النافذة الرئيسية مستقرة وثابتة في المنتصف مع أقصى ارتفاع وتمرير داخلي لمنع الاهتزاز */}
       <div
         id="add-account-modal"
         className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[85dvh] animate-in fade-in zoom-in-95 duration-150 my-auto"
       >
-        {/* Header: رأس النافذة */}
+        {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
@@ -151,25 +210,12 @@ export const AddAccountModal: React.FC = () => {
           </button>
         </div>
 
-        {/* Form: المحتوى المدمج في شبكة محكمة تقلل الطول الرأسي */}
+        {/* Form */}
         <form
           onSubmit={handleSubmit}
           className="p-4 sm:p-5 space-y-3 sm:space-y-3.5 overflow-y-auto flex-1 overscroll-contain"
         >
-          {/* Autocomplete Datalists */}
-          <datalist id="account-name-autocomplete-list">
-            {nameSuggestions.map((sug) => (
-              <option key={sug} value={sug} />
-            ))}
-          </datalist>
-
-          <datalist id="account-phone-autocomplete-list">
-            {phoneSuggestions.map((sug) => (
-              <option key={sug} value={sug} />
-            ))}
-          </datalist>
-
-          {/* 1. حقل اسم الحساب / الشخص (4 أعمدة للعنوان و 8 أعمدة للحقل) */}
+          {/* 1. حقل اسم الحساب التنبؤي */}
           <div className="grid grid-cols-12 gap-2 sm:gap-3 items-center">
             <label
               htmlFor="input-account-name"
@@ -178,30 +224,65 @@ export const AddAccountModal: React.FC = () => {
               <span className="truncate">اسم الحساب</span>
               <span className="text-rose-500">*</span>
             </label>
-            <div className="col-span-8">
-              <input
-                id="input-account-name"
-                name="accountName"
-                type="text"
-                required
-                autoComplete="name"
-                list="account-name-autocomplete-list"
-                placeholder="مثال: محمد أحمد، شركة النور..."
-                value={name}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  if (errors.name) setErrors((prev) => ({ ...prev, name: '' }));
-                }}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs sm:text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition min-h-[40px] sm:min-h-[42px]"
-                autoFocus
-              />
+            <div className="col-span-8 relative" ref={containerRef}>
+              <div className="relative">
+                <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                <input
+                  id="input-account-name"
+                  name="accountName"
+                  type="text"
+                  required
+                  placeholder="مثال: محمد أحمد، شركة النور..."
+                  value={name}
+                  onFocus={() => {
+                    if (name.trim().length > 0) setIsSearchOpen(true);
+                  }}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setName(val);
+                    setIsSearchOpen(val.trim().length > 0);
+                    if (errors.name) setErrors((prev) => ({ ...prev, name: '' }));
+                  }}
+                  className="w-full ps-9 pe-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs sm:text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition min-h-[40px] sm:min-h-[42px]"
+                  autoFocus
+                />
+              </div>
+
+              {/* Search Results Dropdown */}
+              {isSearchOpen && filteredAccounts.length > 0 && (
+                <div className="absolute inset-x-0 top-full mt-1 z-50 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-2.5 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800 mb-1">
+                    حسابات موجودة بالفعل
+                  </div>
+                  {filteredAccounts.map((acc) => (
+                    <div
+                      key={acc.id}
+                      className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-right bg-teal-50/30 dark:bg-teal-950/10 border border-teal-100/50 dark:border-teal-900/30 mb-1 last:mb-0"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-black text-teal-700 dark:text-teal-300">
+                          {acc.name}
+                        </div>
+                        {acc.phone && (
+                          <div className="text-[10px] text-slate-500">{acc.phone}</div>
+                        )}
+                      </div>
+                      <Check className="w-3.5 h-3.5 text-teal-600" />
+                    </div>
+                  ))}
+                  <div className="p-2 text-[10px] text-slate-500 text-center border-t border-slate-100 dark:border-slate-800 mt-1">
+                    سيتم تنبيهك إذا كان الحساب مكرراً عند الحفظ
+                  </div>
+                </div>
+              )}
+
               {errors.name && (
                 <p className="text-xs text-rose-500 mt-1">{errors.name}</p>
               )}
             </div>
           </div>
 
-          {/* 2. حقل رقم الهاتف: الجهة اليمنى للعنوان (4 أعمدة) واليسرى لحقل الرقم والبادئة LTR (8 أعمدة) */}
+          {/* 2. حقل رقم الهاتف النظيف */}
           <div className="grid grid-cols-12 gap-2 sm:gap-3 items-center">
             <label
               htmlFor="input-account-phone"
@@ -213,42 +294,26 @@ export const AddAccountModal: React.FC = () => {
 
             <div className="col-span-8">
               <div className="flex items-center rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 focus-within:ring-2 focus-within:ring-teal-500 focus-within:border-teal-500 transition overflow-hidden min-h-[40px] sm:min-h-[42px]">
-                {/* حقل إدخال رقم الهاتف في الجهة اليمنى */}
                 <input
                   id="input-account-phone"
                   name="phone"
                   type="tel"
                   autoComplete="tel"
-                  list="account-phone-autocomplete-list"
                   dir="ltr"
                   placeholder="77XXXXXXX"
                   value={phone}
                   onChange={handlePhoneChange}
-                  className="flex-1 px-3 py-2 bg-transparent text-slate-900 dark:text-slate-100 text-xs sm:text-sm focus:outline-hidden text-right font-medium placeholder:text-slate-400 min-w-0"
+                  className="flex-1 px-3 py-2 bg-transparent text-slate-900 dark:text-slate-100 text-xs sm:text-sm focus:outline-none text-right font-medium placeholder:text-slate-400 min-w-0"
                 />
 
-                {/* فاصل بصري وقائمة مفتاح الدولة في الجهة اليسرى مع سهم منسدل واضح */}
-                <div className="relative flex items-center shrink-0 border-s border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-750 transition h-full self-stretch">
-                  <select
-                    id="select-account-country-code"
-                    value={countryCode}
-                    onChange={(e) => setCountryCode(e.target.value)}
-                    dir="ltr"
-                    aria-label="مفتاح الدولة"
-                    className="appearance-none ps-2.5 pe-6 py-2 bg-transparent text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-hidden cursor-pointer h-full"
-                  >
-                    {POPULAR_COUNTRY_CODES.map((item) => (
-                      <option
-                        key={item.code}
-                        value={item.code}
-                        className="text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900"
-                      >
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 pointer-events-none absolute end-1.5 shrink-0" />
-                </div>
+                <button
+                  type="button"
+                  onClick={handlePickContact}
+                  title="اختيار من جهات الاتصال"
+                  className="p-2.5 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-teal-50 dark:hover:bg-teal-900/30 text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 transition-colors border-s border-slate-200 dark:border-slate-700 h-full self-stretch flex items-center justify-center min-w-[42px]"
+                >
+                  <Contact className="w-4 h-4" />
+                </button>
               </div>
               {errors.phone && (
                 <p className="text-xs text-rose-500 mt-1">{errors.phone}</p>
@@ -256,7 +321,7 @@ export const AddAccountModal: React.FC = () => {
             </div>
           </div>
 
-          {/* 3. حقل التصنيف: 4 أعمدة للعنوان والأيقونة و 8 أعمدة لأزرار التصنيف الأفقية الثلاثة (عميل، مورد، شخصي) */}
+          {/* 3. حقل التصنيف */}
           <div className="grid grid-cols-12 gap-2 sm:gap-3 items-center">
             <label className="col-span-4 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
               <Tag className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -288,7 +353,7 @@ export const AddAccountModal: React.FC = () => {
             </div>
           </div>
 
-          {/* 4. حقل ملاحظة عن الحساب */}
+          {/* 4. حقل ملاحظة */}
           <div className="grid grid-cols-12 gap-2 sm:gap-3 items-start">
             <label
               htmlFor="textarea-account-note"
@@ -309,7 +374,7 @@ export const AddAccountModal: React.FC = () => {
             </div>
           </div>
 
-          {/* 5. خانة اختيار تسجيل رصيد افتتاحي سابق */}
+          {/* 5. الرصيد الافتتاحي */}
           <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
@@ -326,7 +391,6 @@ export const AddAccountModal: React.FC = () => {
 
             {hasInitialBalance && (
               <div className="mt-2.5 space-y-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 animate-in fade-in duration-150">
-                {/* المبلغ */}
                 <div className="grid grid-cols-12 gap-2 sm:gap-3 items-center">
                   <label
                     htmlFor="input-initial-balance-amount"
@@ -348,13 +412,11 @@ export const AddAccountModal: React.FC = () => {
                   </div>
                 </div>
 
-                {/* طبيعة الرصيد */}
                 <div className="grid grid-cols-12 gap-2 sm:gap-3 items-center">
                   <span className="col-span-4 text-xs font-medium text-slate-600 dark:text-slate-400">
                     طبيعة الرصيد
                   </span>
                   <div className="col-span-8 grid grid-cols-2 gap-2">
-                    {/* لك عنده (مستحق لك) - أخضر */}
                     <button
                       type="button"
                       id="btn-balance-owed-to-me"
@@ -368,7 +430,6 @@ export const AddAccountModal: React.FC = () => {
                       لك عنده (مستحق لك)
                     </button>
 
-                    {/* له عليك (عليك له) - وردي */}
                     <button
                       type="button"
                       id="btn-balance-owed-by-me"
@@ -387,7 +448,7 @@ export const AddAccountModal: React.FC = () => {
             )}
           </div>
 
-          {/* 6. زر الحفظ الرئيسي في الأسفل */}
+          {/* 6. زر الحفظ */}
           <div className="pt-2">
             <button
               id="btn-submit-account"
