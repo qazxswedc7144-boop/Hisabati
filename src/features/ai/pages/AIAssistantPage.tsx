@@ -146,7 +146,7 @@ export const AIAssistantPage: React.FC = () => {
   ];
 
   return (
-    <div className="flex flex-col h-[calc(100vh-80px)] max-w-4xl mx-auto px-3 sm:px-4 py-2 space-y-3">
+    <div className="flex flex-col min-h-screen max-w-4xl mx-auto px-3 sm:px-4 py-2 space-y-3">
       {/* Header Bar */}
       <div className="flex items-center justify-between py-2 border-b border-slate-200/80 dark:border-slate-800 shrink-0">
         <div className="flex items-center gap-2.5">
@@ -177,18 +177,50 @@ export const AIAssistantPage: React.FC = () => {
       </div>
 
       {/* Quick Prompts Bar */}
-      <div className="flex overflow-x-auto whitespace-nowrap scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] gap-2 items-center pb-1 shrink-0">
-        <span className="text-[11px] font-bold text-slate-400 shrink-0 ms-1">اقتراحات سريعة:</span>
-        {quickPills.map((pill) => (
-          <button
-            key={pill}
-            onClick={() => handleSendMessage(pill)}
-            disabled={isLoading}
-            className="text-xs px-3 py-1.5 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-teal-400 hover:text-teal-700 dark:hover:text-teal-400 hover:bg-teal-50/50 dark:hover:bg-teal-950/20 transition whitespace-nowrap shrink-0 min-h-[34px]"
-          >
-            {pill}
-          </button>
-        ))}
+      <div className="space-y-2 shrink-0">
+        <div className="flex items-center gap-1.5 px-1">
+          <span className="text-[11px] font-bold text-slate-400">اقتراحات سريعة:</span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {quickPills.slice(0, 4).map((pill) => (
+            <button
+              key={pill}
+              onClick={() => handleSendMessage(pill)}
+              disabled={isLoading}
+              className="text-xs px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-teal-400 hover:text-teal-700 dark:hover:text-teal-400 hover:bg-teal-50/50 dark:hover:bg-teal-950/20 transition text-center font-bold min-h-[40px] shadow-xs"
+            >
+              {pill}
+            </button>
+          ))}
+          {quickPills.length > 4 && (
+            <button
+              onClick={() => {
+                // For AI prompts, we can just show a small list or expand
+                // but let's stick to the expand or simple modal as requested
+                // Here we'll just toggle a simple expansion for this specific area
+                const container = document.getElementById('ai-quick-prompts-grid');
+                if (container) container.classList.toggle('hidden');
+              }}
+              className="text-xs px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition text-center font-bold min-h-[40px]"
+            >
+              عرض المزيد (+)
+            </button>
+          )}
+        </div>
+        
+        {/* Expanded Area */}
+        <div id="ai-quick-prompts-grid" className="hidden grid grid-cols-2 sm:grid-cols-3 gap-2 animate-in slide-in-from-top-1 duration-200">
+          {quickPills.slice(4).map((pill) => (
+            <button
+              key={pill}
+              onClick={() => handleSendMessage(pill)}
+              disabled={isLoading}
+              className="text-xs px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-teal-400 hover:text-teal-700 dark:hover:text-teal-400 hover:bg-teal-50/50 dark:hover:bg-teal-950/20 transition text-center font-bold min-h-[40px] shadow-xs"
+            >
+              {pill}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Messages Scroll Area */}
@@ -271,7 +303,7 @@ export const AIAssistantPage: React.FC = () => {
       </div>
 
       {/* Input Bar */}
-      <div className="shrink-0 pt-2 border-t border-slate-200/80 dark:border-slate-800">
+      <div className="sticky bottom-0 bg-slate-50 dark:bg-slate-950/95 backdrop-blur-sm z-30 shrink-0 pt-2 pb-4 border-t border-slate-200/80 dark:border-slate-800">
         <form
           onSubmit={(e) => {
             e.preventDefault();

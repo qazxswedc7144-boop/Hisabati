@@ -184,27 +184,62 @@ export const NotificationCenterDrawer: React.FC = () => {
           </div>
 
           {/* Filter Pills */}
-          <div className="flex overflow-x-auto whitespace-nowrap scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] gap-2 items-center px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 text-xs shrink-0">
-            {[
-              { id: 'all', label: 'الكل' },
-              { id: 'unread', label: `غير المقروءة (${unreadNotificationsCount})` },
-              { id: 'financial', label: 'مالي' },
-              { id: 'system', label: 'النظام' },
-              { id: 'sync', label: 'المزامنة' },
-            ].map((tab) => (
+          <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 space-y-2 shrink-0">
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { id: 'all', label: 'الكل' },
+                { id: 'unread', label: `غير المقروءة (${unreadNotificationsCount})` },
+                { id: 'financial', label: 'مالي' },
+                { id: 'system', label: 'النظام' },
+                { id: 'sync', label: 'المزامنة' },
+              ].slice(0, 4).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setFilterType(tab.id)}
+                  className={`px-3 py-2 rounded-xl font-bold text-xs transition min-h-[38px] text-center justify-center flex items-center ${
+                    filterType === tab.id
+                      ? 'bg-teal-600 text-white shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
               <button
-                key={tab.id}
-                type="button"
-                onClick={() => setFilterType(tab.id)}
-                className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shrink-0 transition min-h-[34px] ${
-                  filterType === tab.id
-                    ? 'bg-teal-600 text-white shadow-xs'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
+                onClick={() => {
+                  const el = document.getElementById('notif-filters-more');
+                  if (el) el.classList.toggle('hidden');
+                }}
+                className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-teal-600 dark:text-teal-400 font-bold text-xs text-center justify-center flex items-center min-h-[38px]"
               >
-                {tab.label}
+                المزيد (+)
               </button>
-            ))}
+            </div>
+
+            {/* Expanded Filters */}
+            <div id="notif-filters-more" className="hidden grid grid-cols-2 gap-2 animate-in slide-in-from-top-1 duration-200">
+              {[
+                { id: 'all', label: 'الكل' },
+                { id: 'unread', label: `غير المقروءة (${unreadNotificationsCount})` },
+                { id: 'financial', label: 'مالي' },
+                { id: 'system', label: 'النظام' },
+                { id: 'sync', label: 'المزامنة' },
+              ].slice(4).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setFilterType(tab.id)}
+                  className={`px-3 py-2 rounded-xl font-bold text-xs transition min-h-[38px] text-center justify-center flex items-center ${
+                    filterType === tab.id
+                      ? 'bg-teal-600 text-white shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Quick Global Actions Bar */}
@@ -231,7 +266,7 @@ export const NotificationCenterDrawer: React.FC = () => {
           )}
 
           {/* Notifications List */}
-          <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 p-2 sm:p-3 space-y-1">
+          <div className="flex-1 p-2 sm:p-3 space-y-1">
             {filteredNotifications.length === 0 ? (
               <div className="h-48 flex flex-col items-center justify-center text-center p-6 text-slate-400 dark:text-slate-500">
                 <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-2">
@@ -241,66 +276,149 @@ export const NotificationCenterDrawer: React.FC = () => {
                 <p className="text-[11px] mt-0.5">كافة التنبيهات والعمليات محدثة ولا يوجد إشعار جديد.</p>
               </div>
             ) : (
-              filteredNotifications.map((notif) => (
-                <div
-                  key={notif.id}
-                  onClick={() => handleNotificationClick(notif)}
-                  className={`group p-3 rounded-xl transition cursor-pointer flex items-start gap-2.5 ${
-                    !notif.read
-                      ? 'bg-teal-50/60 dark:bg-teal-950/30 border border-teal-100 dark:border-teal-900/40'
-                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                  }`}
-                >
-                  <div
-                    className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
-                      !notif.read
-                        ? 'bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
-                    }`}
-                  >
-                    {getTypeIcon(notif.type)}
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className={`text-xs font-bold truncate ${!notif.read ? 'text-slate-900 dark:text-slate-100' : 'text-slate-700 dark:text-slate-300'}`}>
-                        {notif.title}
-                      </h3>
-                      <span className="text-[10px] text-slate-400 shrink-0 font-mono">
-                        {formatTime(notif.createdAt)}
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
-                      {notif.body}
-                    </p>
-
-                    <div className="flex items-center justify-between mt-2 pt-1">
-                      {notif.actionUrl || notif.relatedEntityId ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-teal-700 dark:text-teal-400">
-                          <span>عرض التفاصيل</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </span>
-                      ) : (
-                        <span />
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteNotification(notif.id);
-                        }}
-                        aria-label="حذف الإشعار"
-                        title="حذف الإشعار"
-                        className="text-slate-400 hover:text-rose-600 p-1.5 transition flex items-center justify-center"
+              <div className="space-y-1">
+                {/* Initial visible notifications */}
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filteredNotifications.slice(0, 5).map((notif) => (
+                    <div
+                      key={notif.id}
+                      onClick={() => handleNotificationClick(notif)}
+                      className={`group p-3 rounded-xl transition cursor-pointer flex items-start gap-2.5 ${
+                        !notif.read
+                          ? 'bg-teal-50/60 dark:bg-teal-950/30 border border-teal-100 dark:border-teal-900/40'
+                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                      }`}
+                    >
+                      <div
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                          !notif.read
+                            ? 'bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                        }`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                        {getTypeIcon(notif.type)}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className={`text-xs font-bold truncate ${!notif.read ? 'text-slate-900 dark:text-slate-100' : 'text-slate-700 dark:text-slate-300'}`}>
+                            {notif.title}
+                          </h3>
+                          <span className="text-[10px] text-slate-400 shrink-0 font-mono">
+                            {formatTime(notif.createdAt)}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                          {notif.body}
+                        </p>
+
+                        <div className="flex items-center justify-between mt-2 pt-1">
+                          {notif.actionUrl || notif.relatedEntityId ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-teal-700 dark:text-teal-400">
+                              <span>عرض التفاصيل</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </span>
+                          ) : (
+                            <span />
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteNotification(notif.id);
+                            }}
+                            aria-label="حذف الإشعار"
+                            title="حذف الإشعار"
+                            className="text-slate-400 hover:text-rose-600 p-1.5 transition flex items-center justify-center"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ))}
                 </div>
-              ))
+
+                {filteredNotifications.length > 5 && (
+                  <div className="pt-2">
+                    <button
+                      onClick={() => {
+                        const el = document.getElementById('notif-list-more');
+                        if (el) el.classList.toggle('hidden');
+                      }}
+                      className="w-full py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-teal-600 dark:text-teal-400 font-bold text-xs text-center justify-center flex items-center min-h-[40px] shadow-xs"
+                    >
+                      عرض كافة الإشعارات المتبقية (+)
+                    </button>
+                  </div>
+                )}
+
+                {/* Expanded Notifications */}
+                <div id="notif-list-more" className="hidden divide-y divide-slate-100 dark:divide-slate-800 animate-in slide-in-from-top-1 duration-200">
+                  {filteredNotifications.slice(5).map((notif) => (
+                    <div
+                      key={notif.id}
+                      onClick={() => handleNotificationClick(notif)}
+                      className={`group p-3 rounded-xl transition cursor-pointer flex items-start gap-2.5 ${
+                        !notif.read
+                          ? 'bg-teal-50/60 dark:bg-teal-950/30 border border-teal-100 dark:border-teal-900/40'
+                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                      }`}
+                    >
+                      <div
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                          !notif.read
+                            ? 'bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        {getTypeIcon(notif.type)}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className={`text-xs font-bold truncate ${!notif.read ? 'text-slate-900 dark:text-slate-100' : 'text-slate-700 dark:text-slate-300'}`}>
+                            {notif.title}
+                          </h3>
+                          <span className="text-[10px] text-slate-400 shrink-0 font-mono">
+                            {formatTime(notif.createdAt)}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                          {notif.body}
+                        </p>
+
+                        <div className="flex items-center justify-between mt-2 pt-1">
+                          {notif.actionUrl || notif.relatedEntityId ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-teal-700 dark:text-teal-400">
+                              <span>عرض التفاصيل</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </span>
+                          ) : (
+                            <span />
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteNotification(notif.id);
+                            }}
+                            aria-label="حذف الإشعار"
+                            title="حذف الإشعار"
+                            className="text-slate-400 hover:text-rose-600 p-1.5 transition flex items-center justify-center"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         </div>
