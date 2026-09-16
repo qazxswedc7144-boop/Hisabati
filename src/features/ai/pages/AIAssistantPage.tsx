@@ -177,14 +177,14 @@ export const AIAssistantPage: React.FC = () => {
       </div>
 
       {/* Quick Prompts Bar */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 shrink-0 no-scrollbar">
+      <div className="flex overflow-x-auto whitespace-nowrap scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] gap-2 items-center pb-1 shrink-0">
         <span className="text-[11px] font-bold text-slate-400 shrink-0 ms-1">اقتراحات سريعة:</span>
         {quickPills.map((pill) => (
           <button
             key={pill}
             onClick={() => handleSendMessage(pill)}
             disabled={isLoading}
-            className="text-xs px-3 py-1.5 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-teal-400 hover:text-teal-700 dark:hover:text-teal-400 hover:bg-teal-50/50 dark:hover:bg-teal-950/20 transition whitespace-nowrap min-h-[34px]"
+            className="text-xs px-3 py-1.5 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-teal-400 hover:text-teal-700 dark:hover:text-teal-400 hover:bg-teal-50/50 dark:hover:bg-teal-950/20 transition whitespace-nowrap shrink-0 min-h-[34px]"
           >
             {pill}
           </button>

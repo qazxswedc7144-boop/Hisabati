@@ -200,7 +200,7 @@ export const CashFlowTrendView: React.FC<CashFlowTrendViewProps> = ({
             لا توجد حركات مسجلة للفترة المحددة.
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800">
+          <div className="overflow-x-auto scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] rounded-xl border border-slate-200/80 dark:border-slate-800">
             <table className="w-full text-xs text-start">
               <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 font-bold border-b border-slate-200/80 dark:border-slate-800">
                 <tr>

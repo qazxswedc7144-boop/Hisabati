@@ -19,7 +19,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   return (
     <div className="space-y-3">
       {/* Preset Pills */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 no-scrollbar">
+      <div className="flex overflow-x-auto whitespace-nowrap scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] gap-2 items-center">
         {DATE_PRESETS.map((p) => {
           const isSelected = preset === p.id;
           return (

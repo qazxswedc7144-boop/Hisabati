@@ -130,7 +130,7 @@ export const ConflictResolutionModal: React.FC<ConflictResolutionModalProps> = (
           <>
             {/* Conflict Selector Tabs (if multiple) */}
             {conflicts.length > 1 && (
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+              <div className="flex overflow-x-auto whitespace-nowrap scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] gap-2 items-center">
                 {conflicts.map((c, idx) => (
                   <button
                     key={c.id}

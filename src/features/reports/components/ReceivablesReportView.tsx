@@ -479,7 +479,7 @@ export const ReceivablesReportView: React.FC = () => {
 
               {/* Desktop Table View (hidden sm:block) */}
               <div className="hidden sm:block rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs">
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none]">
                   <table className="w-full text-xs text-right">
                     <thead>
                       <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800 text-slate-500 font-bold">

@@ -260,11 +260,11 @@ export const AuditTrailViewer: React.FC = () => {
                 {isExpanded && (
                   <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-2 text-xs animate-in fade-in duration-100">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 font-mono text-[10px]">
-                      <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 overflow-x-auto">
+                      <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 overflow-x-auto scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none]">
                         <span className="text-slate-400 block mb-0.5 font-sans font-bold">بصمة التجزئة الحالية (SHA-256):</span>
                         <span className="text-teal-700 dark:text-teal-300 select-all">{entry.hash}</span>
                       </div>
-                      <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 overflow-x-auto">
+                      <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 overflow-x-auto scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none]">
                         <span className="text-slate-400 block mb-0.5 font-sans font-bold">بصمة السجل السابق (Linked Hash):</span>
                         <span className="text-slate-600 dark:text-slate-400 select-all">{entry.previousEntryHash}</span>
                       </div>
@@ -275,7 +275,7 @@ export const AuditTrailViewer: React.FC = () => {
                         {entry.beforeState && (
                           <div className="p-2.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40">
                             <span className="text-amber-800 dark:text-amber-300 font-bold block mb-1 text-[11px]">الحالة السابقة (Before):</span>
-                            <pre className="text-[10px] font-mono text-slate-600 dark:text-slate-400 overflow-x-auto whitespace-pre-wrap">
+                            <pre className="text-[10px] font-mono text-slate-600 dark:text-slate-400 overflow-x-auto scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] whitespace-pre-wrap">
                               {JSON.stringify(entry.beforeState, null, 2)}
                             </pre>
                           </div>
@@ -283,7 +283,7 @@ export const AuditTrailViewer: React.FC = () => {
                         {entry.afterState && (
                           <div className="p-2.5 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40">
                             <span className="text-emerald-800 dark:text-emerald-300 font-bold block mb-1 text-[11px]">الحالة الناتجة (After):</span>
-                            <pre className="text-[10px] font-mono text-slate-600 dark:text-slate-400 overflow-x-auto whitespace-pre-wrap">
+                            <pre className="text-[10px] font-mono text-slate-600 dark:text-slate-400 overflow-x-auto scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] whitespace-pre-wrap">
                               {JSON.stringify(entry.afterState, null, 2)}
                             </pre>
                           </div>

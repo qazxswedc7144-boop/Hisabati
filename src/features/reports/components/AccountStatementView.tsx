@@ -803,7 +803,7 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
                 </div>
 
                 {/* Desktop View: Full Financial Table */}
-                <div className="hidden overflow-x-auto md:block">
+                <div className="hidden overflow-x-auto scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] md:block">
                   <table className="w-full min-w-[760px] text-right text-xs">
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-300">

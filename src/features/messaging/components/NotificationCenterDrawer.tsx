@@ -184,7 +184,7 @@ export const NotificationCenterDrawer: React.FC = () => {
           </div>
 
           {/* Filter Pills */}
-          <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs shrink-0">
+          <div className="flex overflow-x-auto whitespace-nowrap scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] gap-2 items-center px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 text-xs shrink-0">
             {[
               { id: 'all', label: 'الكل' },
               { id: 'unread', label: `غير المقروءة (${unreadNotificationsCount})` },
@@ -196,7 +196,7 @@ export const NotificationCenterDrawer: React.FC = () => {
                 key={tab.id}
                 type="button"
                 onClick={() => setFilterType(tab.id)}
-                className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition min-h-[34px] ${
+                className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shrink-0 transition min-h-[34px] ${
                   filterType === tab.id
                     ? 'bg-teal-600 text-white shadow-xs'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
