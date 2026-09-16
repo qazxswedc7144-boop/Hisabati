@@ -8,7 +8,10 @@ import {
 } from '@/features';
 import { ErrorBoundary } from '@/shared/components/ErrorBoundary';
 import { seedInitialMockData } from '@/shared/data/mockData';
-import { useSettingsStore } from '@/shared/stores';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '@/core/database/firebase';
+import { useSettingsStore, useRBACStore } from '@/shared/stores';
+import { AuditActor } from '@/shared/types';
 
 // Lazy loaded features
 const ReportsPage = lazy(() => import('@/features/reports/pages/ReportsPage').then(m => ({ default: m.ReportsPage })));
@@ -27,6 +30,7 @@ const PageLoader = () => (
 
 export default function App() {
   const [isReady, setIsReady] = useState(false);
+  const { initialize: initRBAC, updateAuthStatus } = useRBACStore();
 
   useEffect(() => {
     async function initApp() {
@@ -40,7 +44,41 @@ export default function App() {
           await seedInitialMockData(false);
         }
         
+        await initRBAC();
         await useSettingsStore.getState().loadSettings();
+
+        // 2. Synchronize Firebase Auth with Store (Only if initialized)
+        if (auth) {
+          onAuthStateChanged(auth, (user) => {
+            if (user) {
+              const actor: AuditActor = {
+                id: user.uid,
+                name: user.displayName || user.email?.split('@')[0] || 'مستخدم',
+                email: user.email || undefined,
+                role: 'owner', // Default role for now
+              };
+              updateAuthStatus('authenticated', actor);
+            } else {
+              const defaultActor: AuditActor = {
+                id: 'user_local_default',
+                name: 'مستخدم محلي',
+                role: 'owner',
+                email: 'local@hisabati.app',
+              };
+              updateAuthStatus('unauthenticated', defaultActor);
+            }
+          });
+        } else {
+          // If Firebase is not initialized, we stay in local mode
+          const defaultActor: AuditActor = {
+            id: 'user_local_default',
+            name: 'مستخدم محلي',
+            role: 'owner',
+            email: 'local@hisabati.app',
+          };
+          updateAuthStatus('unauthenticated', defaultActor);
+        }
+
       } catch (e) {
         console.error('Failed initializing app data:', e);
       } finally {
@@ -48,7 +86,7 @@ export default function App() {
       }
     }
     initApp();
-  }, []);
+  }, [initRBAC, updateAuthStatus]);
 
   if (!isReady) {
     return (

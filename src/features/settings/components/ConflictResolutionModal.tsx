@@ -130,58 +130,24 @@ export const ConflictResolutionModal: React.FC<ConflictResolutionModalProps> = (
           <>
             {/* Conflict Selector Tabs (if multiple) */}
             {conflicts.length > 1 && (
-              <div className="space-y-2">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {conflicts.slice(0, 4).map((c, idx) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => {
-                        setActiveConflict(c);
-                        setPendingChoice(null);
-                      }}
-                      className={`px-3 py-2 rounded-xl text-xs font-bold transition text-center justify-center flex items-center min-h-[38px] ${
-                        currentConflict?.id === c.id
-                          ? 'bg-amber-600 text-white shadow-xs'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      تعارض #{idx + 1}
-                    </button>
-                  ))}
-                  {conflicts.length > 4 && (
-                    <button
-                      onClick={() => {
-                        const el = document.getElementById('conflict-tabs-more');
-                        if (el) el.classList.toggle('hidden');
-                      }}
-                      className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-amber-600 dark:text-amber-400 font-bold text-xs text-center justify-center flex items-center min-h-[38px]"
-                    >
-                      المزيد (+)
-                    </button>
-                  )}
-                </div>
-
-                {/* Expanded Conflicts */}
-                <div id="conflict-tabs-more" className="hidden grid grid-cols-2 sm:grid-cols-3 gap-2 animate-in slide-in-from-top-1 duration-200">
-                  {conflicts.slice(4).map((c, idx) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => {
-                        setActiveConflict(c);
-                        setPendingChoice(null);
-                      }}
-                      className={`px-3 py-2 rounded-xl text-xs font-bold transition text-center justify-center flex items-center min-h-[38px] ${
-                        currentConflict?.id === c.id
-                          ? 'bg-amber-600 text-white shadow-xs'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      تعارض #{idx + 5}
-                    </button>
-                  ))}
-                </div>
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                {conflicts.map((c, idx) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveConflict(c);
+                      setPendingChoice(null);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shrink-0 min-h-[36px] ${
+                      currentConflict?.id === c.id
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    تعارض #{idx + 1}: {c.localVersion.title || c.entityType}
+                  </button>
+                ))}
               </div>
             )}
 

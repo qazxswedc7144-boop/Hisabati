@@ -231,7 +231,7 @@ export const MessagingPage: React.FC = () => {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 h-auto overflow-visible text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-60 overflow-y-auto text-xs">
             {testSuiteResult.results.map((r) => (
               <div key={r.id} className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-start justify-between gap-2">
                 <div className="flex items-center gap-1.5 min-w-0">
@@ -246,62 +246,27 @@ export const MessagingPage: React.FC = () => {
       )}
 
       {/* Main Tabs Navigation */}
-      <div className="space-y-2">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {[
-            { id: 'overdue', label: 'متابعة الديون والتحصيل', icon: Bell },
-            { id: 'scheduled', label: `الرسائل المجدولة (${scheduledMessages.length})`, icon: Clock },
-            { id: 'history', label: `سجل الرسائل (${messages.length})`, icon: MessageSquare },
-            { id: 'templates', label: `القوالب المعتمدة (${templates.length})`, icon: FileText },
-            { id: 'providers', label: 'بوابات الإرسال (Providers)', icon: Radio },
-          ].slice(0, 4).map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-3 py-2.5 rounded-2xl transition font-bold text-xs sm:text-sm text-center justify-center min-h-[44px] ${
-                activeTab === tab.id
-                  ? 'bg-teal-600 text-white shadow-xs'
-                  : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-            >
-              <tab.icon className="w-4 h-4 shrink-0" />
-              <span>{tab.label}</span>
-            </button>
-          ))}
+      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 text-xs sm:text-sm font-bold overflow-x-auto no-scrollbar">
+        {[
+          { id: 'overdue', label: 'متابعة الديون والتحصيل', icon: Bell },
+          { id: 'scheduled', label: `الرسائل المجدولة (${scheduledMessages.length})`, icon: Clock },
+          { id: 'history', label: `سجل الرسائل (${messages.length})`, icon: MessageSquare },
+          { id: 'templates', label: `القوالب المعتمدة (${templates.length})`, icon: FileText },
+          { id: 'providers', label: 'بوابات الإرسال (Providers)', icon: Radio },
+        ].map((tab) => (
           <button
-            onClick={() => {
-              const el = document.getElementById('messaging-tabs-more');
-              if (el) el.classList.toggle('hidden');
-            }}
-            className="flex items-center gap-2 px-3 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-teal-600 dark:text-teal-400 font-bold text-xs sm:text-sm text-center justify-center min-h-[44px]"
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl transition whitespace-nowrap min-h-[42px] ${
+              activeTab === tab.id
+                ? 'bg-teal-600 text-white shadow-xs'
+                : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+            }`}
           >
-            عرض المزيد (+)
+            <tab.icon className="w-4 h-4" />
+            <span>{tab.label}</span>
           </button>
-        </div>
-
-        {/* Expanded Tabs */}
-        <div id="messaging-tabs-more" className="hidden grid grid-cols-2 sm:grid-cols-3 gap-2 animate-in slide-in-from-top-1 duration-200">
-          {[
-            { id: 'overdue', label: 'متابعة الديون والتحصيل', icon: Bell },
-            { id: 'scheduled', label: `الرسائل المجدولة (${scheduledMessages.length})`, icon: Clock },
-            { id: 'history', label: `سجل الرسائل (${messages.length})`, icon: MessageSquare },
-            { id: 'templates', label: `القوالب المعتمدة (${templates.length})`, icon: FileText },
-            { id: 'providers', label: 'بوابات الإرسال (Providers)', icon: Radio },
-          ].slice(4).map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-3 py-2.5 rounded-2xl transition font-bold text-xs sm:text-sm text-center justify-center min-h-[44px] ${
-                activeTab === tab.id
-                  ? 'bg-teal-600 text-white shadow-xs'
-                  : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-            >
-              <tab.icon className="w-4 h-4 shrink-0" />
-              <span>{tab.label}</span>
-            </button>
-          ))}
-        </div>
+        ))}
       </div>
 
       {/* TAB 0: OVERDUE DEBTS & COLLECTION MANAGER */}
@@ -323,11 +288,11 @@ export const MessagingPage: React.FC = () => {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-2 w-full sm:w-auto text-xs">
+            <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto text-xs">
               <select
                 value={channelFilter}
                 onChange={(e) => setChannelFilter(e.target.value)}
-                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold min-h-[38px] w-full"
+                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold min-h-[38px]"
               >
                 <option value="all">كافة القنوات</option>
                 <option value="whatsapp">واتساب (WhatsApp)</option>
@@ -338,7 +303,7 @@ export const MessagingPage: React.FC = () => {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold min-h-[38px] w-full"
+                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold min-h-[38px]"
               >
                 <option value="all">كافة الحالات</option>
                 <option value="ready_to_send">مجهز للإرسال</option>
@@ -349,10 +314,9 @@ export const MessagingPage: React.FC = () => {
 
               <button
                 onClick={() => fetchMessages()}
-                className="col-span-2 p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 hover:text-teal-600 transition min-h-[38px] flex items-center justify-center font-bold"
+                className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-teal-600 transition min-h-[38px] min-w-[38px] flex items-center justify-center"
               >
-                <RefreshCw className="w-4 h-4 me-2" />
-                <span>تحديث البيانات</span>
+                <RefreshCw className="w-4 h-4" />
               </button>
             </div>
           </div>

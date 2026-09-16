@@ -291,7 +291,7 @@ export const DebtCollectionManager: React.FC = () => {
         </div>
       </div>
 
-      {/* Debts Grid / List */}
+      {/* Debts Table / List */}
       {isLoading ? (
         <div className="p-12 text-center rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
           <RefreshCw className="w-6 h-6 animate-spin text-teal-600 mx-auto mb-2" />
@@ -308,21 +308,29 @@ export const DebtCollectionManager: React.FC = () => {
           </span>
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredItems.slice(0, 6).map((item) => {
-              const targetAcc = accounts.find((a) => a.id === item.accountId);
-              return (
-                <div
-                  key={item.accountId}
-                  className="p-5 rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs space-y-4 hover:border-teal-300 transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 flex items-center justify-center font-bold">
-                        {item.accountName.charAt(0)}
-                      </div>
-                      <div>
+        <div className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs">
+          <div className="overflow-x-auto">
+            <table className="w-full text-start text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-800/70 border-b border-slate-200/80 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold">
+                <tr>
+                  <th className="px-4 py-3 text-start">العميل / الحساب</th>
+                  <th className="px-4 py-3 text-start">المبلغ المطلوب</th>
+                  <th className="px-4 py-3 text-start">فترة الركود</th>
+                  <th className="px-4 py-3 text-start">حالة الاستحقاق</th>
+                  <th className="px-4 py-3 text-start">الموعد والتنبيه المجدول</th>
+                  <th className="px-4 py-3 text-center">إجراءات المتابعة</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                {filteredItems.map((item) => {
+                  const targetAcc = accounts.find((a) => a.id === item.accountId);
+                  return (
+                    <tr
+                      key={item.accountId}
+                      className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition"
+                    >
+                      {/* Account Info */}
+                      <td className="px-4 py-3.5">
                         <div className="font-extrabold text-slate-900 dark:text-slate-100 text-sm">
                           {item.accountName}
                         </div>
@@ -331,193 +339,111 @@ export const DebtCollectionManager: React.FC = () => {
                             {item.phone}
                           </span>
                         )}
-                      </div>
-                    </div>
-                    {item.status === 'due_now' ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                        <AlertTriangle className="w-3 h-3" />
-                        <span>مستحق</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500">
-                        <span>منتظم</span>
-                      </span>
-                    )}
-                  </div>
+                      </td>
 
-                  <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                    <div>
-                      <span className="text-[10px] text-slate-500 block mb-0.5">المبلغ المطلوب:</span>
-                      <span className="font-black text-rose-600 dark:text-rose-400 text-sm">
-                        {formatCurrency(item.balance, currency)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 block mb-0.5">فترة الركود:</span>
-                      <span className="font-bold text-slate-700 dark:text-slate-300 text-xs">
-                        {item.daysSinceLastTransaction} يوماً
-                      </span>
-                    </div>
-                  </div>
+                      {/* Amount */}
+                      <td className="px-4 py-3.5">
+                        <span className="font-black text-rose-600 dark:text-rose-400 text-sm">
+                          {formatCurrency(item.balance, currency)}
+                        </span>
+                        <span className="text-[10px] text-slate-400 block mt-0.5">مطلوب منه</span>
+                      </td>
 
-                  <div className="flex items-center justify-between text-xs pt-1">
-                    <div className="flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="text-slate-500">آخر حركة:</span>
-                      <span className="font-mono text-slate-700 dark:text-slate-300">{item.lastTransactionDate || '---'}</span>
-                    </div>
-                    {item.hasScheduledAlert && (
-                      <div className="flex items-center gap-1.5 text-teal-600 dark:text-teal-400 font-bold">
-                        <Bell className="w-3.5 h-3.5" />
-                        <span>مجدول</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => openScheduleModal(targetAcc || null)}
-                      className="flex flex-col items-center justify-center gap-1 p-2 rounded-2xl border border-teal-200 dark:border-teal-800/80 bg-teal-50/40 dark:bg-teal-950/20 text-teal-700 dark:text-teal-300 hover:bg-teal-100 transition min-h-[50px]"
-                    >
-                      <Clock className="w-4 h-4" />
-                      <span className="text-[10px] font-bold">جدولة</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleSendInstantWhatsApp(item)}
-                      className="flex flex-col items-center justify-center gap-1 p-2 rounded-2xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 transition min-h-[50px]"
-                    >
-                      <Smartphone className="w-4 h-4" />
-                      <span className="text-[10px] font-bold">واتساب</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/accounts/${item.accountId}`)}
-                      className="flex flex-col items-center justify-center gap-1 p-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 transition min-h-[50px]"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      <span className="text-[10px] font-bold">كشف حساب</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {filteredItems.length > 6 && (
-            <div className="flex justify-center pt-2">
-              <button
-                onClick={() => {
-                  const el = document.getElementById('debt-grid-more');
-                  if (el) el.classList.toggle('hidden');
-                }}
-                className="w-full sm:w-auto px-12 py-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-teal-600 dark:text-teal-400 font-bold text-xs shadow-xs hover:bg-slate-50 transition"
-              >
-                عرض المزيد من المديونيات (+)
-              </button>
-            </div>
-          )}
-
-          {/* Expanded Grid */}
-          <div id="debt-grid-more" className="hidden grid grid-cols-1 md:grid-cols-2 gap-4 animate-in slide-in-from-top-1 duration-200">
-            {filteredItems.slice(6).map((item) => {
-              const targetAcc = accounts.find((a) => a.id === item.accountId);
-              return (
-                <div
-                  key={item.accountId}
-                  className="p-5 rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs space-y-4 hover:border-teal-300 transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 flex items-center justify-center font-bold">
-                        {item.accountName.charAt(0)}
-                      </div>
-                      <div>
-                        <div className="font-extrabold text-slate-900 dark:text-slate-100 text-sm">
-                          {item.accountName}
-                        </div>
-                        {item.phone && (
-                          <span className="text-[11px] font-mono text-slate-400 block mt-0.5">
-                            {item.phone}
+                      {/* Stagnancy Days */}
+                      <td className="px-4 py-3.5 font-semibold text-slate-700 dark:text-slate-300">
+                        {item.daysSinceLastTransaction > 0 ? (
+                          <span>{item.daysSinceLastTransaction} يوماً</span>
+                        ) : (
+                          <span className="text-slate-400">حركة حديثة اليوم</span>
+                        )}
+                        {item.lastTransactionDate && (
+                          <span className="text-[10px] text-slate-400 block mt-0.5 font-mono">
+                            آخر حركة: {item.lastTransactionDate}
                           </span>
                         )}
-                      </div>
-                    </div>
-                    {item.status === 'due_now' ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                        <AlertTriangle className="w-3 h-3" />
-                        <span>مستحق</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500">
-                        <span>منتظم</span>
-                      </span>
-                    )}
-                  </div>
+                      </td>
 
-                  <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                    <div>
-                      <span className="text-[10px] text-slate-500 block mb-0.5">المبلغ المطلوب:</span>
-                      <span className="font-black text-rose-600 dark:text-rose-400 text-sm">
-                        {formatCurrency(item.balance, currency)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 block mb-0.5">فترة الركود:</span>
-                      <span className="font-bold text-slate-700 dark:text-slate-300 text-xs">
-                        {item.daysSinceLastTransaction} يوماً
-                      </span>
-                    </div>
-                  </div>
+                      {/* Status Badge */}
+                      <td className="px-4 py-3.5">
+                        {item.status === 'due_now' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            <span>مستحق الآن</span>
+                          </span>
+                        ) : item.status === 'upcoming' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>استحقاق قريب</span>
+                          </span>
+                        ) : item.status === 'stagnant' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                            <Calendar className="w-3.5 h-3.5" />
+                            <span>راكد بدون سداد</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500">
+                            <span>منتظم</span>
+                          </span>
+                        )}
+                      </td>
 
-                  <div className="flex items-center justify-between text-xs pt-1">
-                    <div className="flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="text-slate-500">آخر حركة:</span>
-                      <span className="font-mono text-slate-700 dark:text-slate-300">{item.lastTransactionDate || '---'}</span>
-                    </div>
-                    {item.hasScheduledAlert && (
-                      <div className="flex items-center gap-1.5 text-teal-600 dark:text-teal-400 font-bold">
-                        <Bell className="w-3.5 h-3.5" />
-                        <span>مجدول</span>
-                      </div>
-                    )}
-                  </div>
+                      {/* Next Scheduled Alert */}
+                      <td className="px-4 py-3.5">
+                        {item.hasScheduledAlert && item.nextScheduledRunAt ? (
+                          <div>
+                            <span className="font-bold text-teal-700 dark:text-teal-300 flex items-center gap-1">
+                              <Bell className="w-3.5 h-3.5" />
+                              <span>{new Date(item.nextScheduledRunAt).toLocaleDateString('ar-YE')}</span>
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
+                              الساعة {new Date(item.nextScheduledRunAt).toLocaleTimeString('ar-YE', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-xs font-semibold">لا يوجد تنبيه مجدول</span>
+                        )}
+                      </td>
 
-                  <div className="grid grid-cols-3 gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => openScheduleModal(targetAcc || null)}
-                      className="flex flex-col items-center justify-center gap-1 p-2 rounded-2xl border border-teal-200 dark:border-teal-800/80 bg-teal-50/40 dark:bg-teal-950/20 text-teal-700 dark:text-teal-300 hover:bg-teal-100 transition min-h-[50px]"
-                    >
-                      <Clock className="w-4 h-4" />
-                      <span className="text-[10px] font-bold">جدولة</span>
-                    </button>
+                      {/* Actions */}
+                      <td className="px-4 py-3.5 text-center">
+                        <div className="inline-flex items-center gap-1.5">
+                          {/* Schedule Alert Button */}
+                          <button
+                            type="button"
+                            onClick={() => openScheduleModal(targetAcc || null)}
+                            className="px-2.5 py-1.5 rounded-xl border border-teal-200 dark:border-teal-800/80 bg-teal-50/60 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 hover:bg-teal-100 font-bold text-xs transition flex items-center gap-1 min-h-[36px]"
+                            title="جدولة تنبيه تحصيل لهذا العميل"
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>جدولة</span>
+                          </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleSendInstantWhatsApp(item)}
-                      className="flex flex-col items-center justify-center gap-1 p-2 rounded-2xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 transition min-h-[50px]"
-                    >
-                      <Smartphone className="w-4 h-4" />
-                      <span className="text-[10px] font-bold">واتساب</span>
-                    </button>
+                          {/* WhatsApp Reminder Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleSendInstantWhatsApp(item)}
+                            className="p-2 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/60 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
+                            title="إرسال تذكير عبر واتساب"
+                          >
+                            <Smartphone className="w-3.5 h-3.5" />
+                          </button>
 
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/accounts/${item.accountId}`)}
-                      className="flex flex-col items-center justify-center gap-1 p-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 transition min-h-[50px]"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      <span className="text-[10px] font-bold">كشف حساب</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                          {/* Account statement */}
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/accounts/${item.accountId}`)}
+                            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
+                            title="فتح كشف الحساب"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

@@ -19,58 +19,25 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   return (
     <div className="space-y-3">
       {/* Preset Pills */}
-      <div className="space-y-2">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {DATE_PRESETS.slice(0, 5).map((p) => {
-            const isSelected = preset === p.id;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => onPresetChange(p.id)}
-                className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 min-h-[40px] ${
-                  isSelected
-                    ? 'bg-teal-600 text-white shadow-xs'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                {isSelected && <Check className="w-3.5 h-3.5" />}
-                {p.labelAr}
-              </button>
-            );
-          })}
-          <button
-            onClick={() => {
-              const el = document.getElementById('date-presets-more');
-              if (el) el.classList.toggle('hidden');
-            }}
-            className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-teal-600 dark:text-teal-400 font-bold text-xs text-center justify-center min-h-[40px]"
-          >
-            عرض المزيد (+)
-          </button>
-        </div>
-
-        {/* Expanded Presets */}
-        <div id="date-presets-more" className="hidden grid grid-cols-2 sm:grid-cols-3 gap-2 animate-in slide-in-from-top-1 duration-200">
-          {DATE_PRESETS.slice(5).map((p) => {
-            const isSelected = preset === p.id;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => onPresetChange(p.id)}
-                className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 min-h-[40px] ${
-                  isSelected
-                    ? 'bg-teal-600 text-white shadow-xs'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                {isSelected && <Check className="w-3.5 h-3.5" />}
-                {p.labelAr}
-              </button>
-            );
-          })}
-        </div>
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 no-scrollbar">
+        {DATE_PRESETS.map((p) => {
+          const isSelected = preset === p.id;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onPresetChange(p.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition flex items-center gap-1 shrink-0 ${
+                isSelected
+                  ? 'bg-teal-600 text-white shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              {isSelected && <Check className="w-3.5 h-3.5" />}
+              {p.labelAr}
+            </button>
+          );
+        })}
       </div>
 
       {/* Custom Range Inputs */}

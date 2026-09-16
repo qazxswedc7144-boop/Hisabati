@@ -1,9 +1,10 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Users, Plus, Wallet2, Database } from 'lucide-react';
+import { Users, Plus, Wallet2 } from 'lucide-react';
 import { useUIStore, useMessagingStore } from '@/shared/stores';
 import { useI18n } from '@/shared/hooks/useI18n';
 import { APPLICATION_NAV_ITEMS } from '@/shared/config/navigation';
+import { UserAuthSection } from './UserAuthSection';
 
 export const Sidebar: React.FC = () => {
   const openQuickAdd = useUIStore((state) => state.openQuickAddTransaction);
@@ -97,16 +98,8 @@ export const Sidebar: React.FC = () => {
         })}
       </nav>
 
-      {/* Footer Info Card */}
-      <div className="pt-4 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 space-y-2">
-        <div className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-800">
-          <Database className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
-          <div className="truncate">
-            <p className="font-bold text-slate-700 dark:text-slate-300">IndexedDB Local</p>
-            <p className="text-[11px] text-slate-400">تخزين آمن ومحلي بالكامل</p>
-          </div>
-        </div>
-      </div>
+      {/* Footer Auth Section */}
+      <UserAuthSection />
     </aside>
   );
 };

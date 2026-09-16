@@ -19,6 +19,7 @@ import { Phase25TombstoneHardeningTestSuite } from './phase25TombstoneHardening.
 import { Phase3SecurityHardeningTestSuite } from './phase3SecurityHardening.test';
 import { NavigationConsistencyTestSuite } from './navigationConsistency.test';
 import { SecurityP0TestSuite } from './securityP0.test';
+import { FirebaseAuthP11TestSuite } from './firebaseAuthP11.test';
 
 async function main() {
   console.log('====================================================');
@@ -421,6 +422,25 @@ async function main() {
     }
   } catch (err: any) {
     console.error('Phase P0 Test Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // 19. Phase P1.1: Firebase Authentication Foundation Tests
+  console.log('\n--- [Phase P1.1] Firebase Authentication Foundation Tests ---');
+  try {
+    const p11 = await FirebaseAuthP11TestSuite.runAll();
+    console.log(`Phase P1.1 Result: Passed ${p11.passed}/${p11.total} (${Math.round(p11.durationMs)}ms)`);
+    totalPassed += p11.passed;
+    totalFailed += p11.failed;
+    totalCount += p11.total;
+    if (p11.failed > 0) {
+      for (const r of p11.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ [${r.id}] ${r.title}: ${r.error}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Phase P1.1 Test Suite crashed:', err);
     totalFailed++;
     totalCount++;
   }

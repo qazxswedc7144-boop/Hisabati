@@ -15,20 +15,23 @@ export class AICommandParser {
     const id = 'cmd_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
     const operationId = `op_ai_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const date = parsed.entities.dateCandidate || new Date().toISOString().split('T')[0];
-    const currency: Currency = parsed.entities.currencyCandidate || 'YER';
+    const currencyCandidate = parsed.entities.currencyCandidate;
+    // Do NOT fallback to 'YER' here. Let the engine resolve it from account or system.
+    // However, for dual-representation calculation during parsing, we need a reference.
+    // If no candidate, we use 'YER' as a temporary conversion baseline, 
+    // but we mark the command currency as undefined to trigger engine resolution.
+    const tempCurrency: CurrencyCode = (currencyCandidate as CurrencyCode) || 'YER';
     const rawAmount = parsed.entities.amount || 0;
-    const { amount: safeDecimal, amountMinor: safeMinor } = toDualRepresentation(rawAmount, currency as CurrencyCode);
-    const amount = safeDecimal;
-    const amountMinor = safeMinor;
     const type = parsed.entities.transactionTypeCandidate || 'debit';
-
+    const { amount: safeDecimal, amountMinor: safeMinor } = toDualRepresentation(rawAmount, tempCurrency);
+    
     const command: StructuredAICommand = {
       id,
       intent: (parsed.intent as StructuredAICommand['intent']) || 'CREATE_TRANSACTION_REQUEST',
-      amount,
-      amountMinor,
-      currency,
-      type,
+      amount: safeDecimal,
+      amountMinor: safeMinor,
+      currency: currencyCandidate as Currency, 
+      type: type as any,
       date,
       note: parsed.entities.noteCandidate || 'عملية مسجلة عبر المساعد الذكي',
       confidence: parsed.confidence,

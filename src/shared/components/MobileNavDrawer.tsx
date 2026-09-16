@@ -14,6 +14,8 @@ import { useUIStore, useMessagingStore, useSettingsStore } from '@/shared/stores
 import { useI18n } from '@/shared/hooks/useI18n';
 import { APPLICATION_NAV_ITEMS } from '@/shared/config/navigation';
 
+import { UserAuthSection } from './UserAuthSection';
+
 export const MobileNavDrawer: React.FC = () => {
   const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
   const setSidebarOpen = useUIStore((state) => state.setSidebarOpen);
@@ -221,6 +223,8 @@ export const MobileNavDrawer: React.FC = () => {
 
             {/* Drawer Footer */}
             <div className="p-3 border-t border-slate-100 dark:border-slate-800 space-y-2 bg-slate-50/50 dark:bg-slate-900/50">
+              <UserAuthSection />
+
               {/* Quick Theme Toggle inside Drawer */}
               <button
                 id="btn-mobile-drawer-theme-toggle"

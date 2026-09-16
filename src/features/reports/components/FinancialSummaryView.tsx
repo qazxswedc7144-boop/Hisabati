@@ -624,7 +624,7 @@ export const FinancialSummaryView: React.FC = () => {
                 </div>
 
                 {/* Desktop & Tablet View: Structured Financial Table */}
-                <div className="hidden sm:block overflow-x-auto scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none]">
+                <div className="hidden sm:block overflow-x-auto">
                   <table className="w-full text-xs text-right">
                     <thead>
                       <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800 text-slate-500 font-bold">

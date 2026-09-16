@@ -1,26 +1,31 @@
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut, User } from 'firebase/auth';
+import { auth } from '@/core/database/firebase';
 import { AuditActor, UserRole } from '@/shared/types';
 
+export type AuthStatus = 'loading' | 'unauthenticated' | 'authenticated' | 'offline';
+
 /**
- * AuthService: Abstracted session management layer.
- * Decouples actor identity and role from direct localStorage manipulation.
- * Provides a secure, observable source of truth for the active session.
+ * AuthService: Manages user identity and session.
+ * Now integrated with Firebase Authentication for SaaS identity.
+ * Respects Offline-First by providing a local fallback when unauthenticated.
  */
 export class AuthService {
   private static instance: AuthService;
   
-  // Default fallback actor (Owner)
+  // Default fallback actor (Owner) - Used for local-only operation when not logged into Cloud
   private readonly DEFAULT_ACTOR: AuditActor = {
-    id: 'user_owner_default',
-    name: 'المدير المالي (المالك)',
+    id: 'user_local_default',
+    name: 'مستخدم محلي',
     role: 'owner',
-    email: 'owner@hisabati.app',
+    email: 'local@hisabati.app',
   };
 
   private currentActor: AuditActor | null = null;
-  private readonly STORAGE_KEY = 'hisabati_active_actor';
+  private authStatus: AuthStatus = 'loading';
+  private firebaseUser: User | null = null;
 
   private constructor() {
-    this.loadSession();
+    this.initializeAuthListener();
   }
 
   public static getInstance(): AuthService {
@@ -31,86 +36,123 @@ export class AuthService {
   }
 
   /**
-   * Load session from storage if available, otherwise use default
+   * Listen to Firebase Auth state changes
    */
-  private loadSession(): void {
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        const stored = localStorage.getItem(this.STORAGE_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (this.isValidActor(parsed)) {
-            this.currentActor = parsed;
-            return;
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('AuthService: Failed to load session from storage', e);
+  private initializeAuthListener(): void {
+    if (!auth) {
+      this.currentActor = { ...this.DEFAULT_ACTOR };
+      this.authStatus = 'unauthenticated';
+      return;
     }
-    this.currentActor = { ...this.DEFAULT_ACTOR };
-  }
+    
+    onAuthStateChanged(auth, (user) => {
+      this.firebaseUser = user;
+      if (user) {
+        this.currentActor = {
+          id: user.uid,
+          name: user.displayName || user.email?.split('@')[0] || 'مستخدم',
+          email: user.email || undefined,
+          role: 'owner', // Default role for now, will be fetched from claims/DB in P1.2
+        };
+        this.authStatus = 'authenticated';
+      } else {
+        this.currentActor = { ...this.DEFAULT_ACTOR };
+        this.authStatus = 'unauthenticated';
+      }
+      
+      // Notify listeners if needed (e.g., via a store)
+      console.log(`AuthService: Status changed to ${this.authStatus}`);
+    });
 
-  /**
-   * Validates the structure of a stored actor
-   */
-  private isValidActor(actor: any): actor is AuditActor {
-    return (
-      actor &&
-      typeof actor.id === 'string' &&
-      typeof actor.role === 'string' &&
-      typeof actor.name === 'string'
-    );
+    // Simple connectivity check for offline status
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', () => {
+        if (!this.firebaseUser) this.authStatus = 'unauthenticated';
+        else this.authStatus = 'authenticated';
+      });
+      window.addEventListener('offline', () => {
+        this.authStatus = 'offline';
+      });
+      if (!navigator.onLine) this.authStatus = 'offline';
+    }
   }
 
   /**
    * Returns the current active actor in the session
    */
   public getActiveActor(): AuditActor {
-    if (!this.currentActor) {
-      this.loadSession();
-    }
     return this.currentActor || { ...this.DEFAULT_ACTOR };
   }
 
   /**
-   * Updates the active session actor and persists it to storage
+   * Returns the current authentication status
    */
-  public async login(actor: AuditActor): Promise<void> {
-    if (!this.isValidActor(actor)) {
-      throw new Error('بيانات المستخدم غير صالحة');
-    }
-    
+  public getStatus(): AuthStatus {
+    return this.authStatus;
+  }
+
+  /**
+   * Updates the active session actor (Local/Testing switching)
+   * This updates the UI state/Cache but doesn't change Firebase Auth.
+   */
+  public async setActiveActor(actor: AuditActor): Promise<void> {
     this.currentActor = { ...actor };
-    
+    console.log(`AuthService: Local actor switched to ${actor.name}`);
+  }
+
+  /**
+   * Firebase Email/Password login
+   */
+  public async login(email: string, password: string): Promise<void> {
+    if (!auth) {
+      throw new Error('نظام المصادقة السحابي غير مفعل حالياً. يرجى إعداد المفاتيح البرمجية.');
+    }
     try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentActor));
-      }
-    } catch (e) {
-      console.warn('AuthService: Failed to persist session', e);
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error: any) {
+      console.error('AuthService: Login failed', error);
+      throw new Error(this.mapAuthError(error.code));
     }
   }
 
   /**
-   * Resets session to default owner
+   * Firebase Logout
    */
   public async logout(): Promise<void> {
-    this.currentActor = { ...this.DEFAULT_ACTOR };
     try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        localStorage.removeItem(this.STORAGE_KEY);
+      if (auth) {
+        await signOut(auth);
       }
-    } catch (e) {
-      console.warn('AuthService: Failed to clear session', e);
+    } catch (error) {
+      console.error('AuthService: Logout failed', error);
+    } finally {
+      // Always reset to default local actor on logout
+      this.currentActor = { ...this.DEFAULT_ACTOR };
+      if (!auth) {
+        this.authStatus = 'unauthenticated';
+      }
+      console.log('AuthService: Session cleared and reset to default actor');
     }
   }
 
   /**
-   * Quick check for role
+   * Check for role
    */
   public isRole(role: UserRole): boolean {
     return this.getActiveActor().role === role;
+  }
+
+  private mapAuthError(code: string): string {
+    switch (code) {
+      case 'auth/user-not-found':
+      case 'auth/wrong-password':
+      case 'auth/invalid-credential':
+        return 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
+      case 'auth/network-request-failed':
+        return 'خطأ في الاتصال بالشبكة، يرجى المحاولة لاحقاً';
+      default:
+        return 'حدث خطأ أثناء تسجيل الدخول';
+    }
   }
 }
 

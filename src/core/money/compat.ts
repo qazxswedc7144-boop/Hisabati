@@ -22,7 +22,7 @@ export interface LegacyMoneyHolder {
  */
 export function getAmountMinor(
   record: LegacyMoneyHolder,
-  currency: CurrencyCode = DEFAULT_CURRENCY
+  currency: CurrencyCode
 ): MinorUnit {
   if (record.amountMinor !== undefined && isValidMinorUnit(record.amountMinor)) {
     return record.amountMinor;
@@ -37,7 +37,7 @@ export function getAmountMinor(
  */
 export function resolveMoney(
   record: LegacyMoneyHolder,
-  currency: CurrencyCode = DEFAULT_CURRENCY
+  currency: CurrencyCode
 ): Money {
   const minor = getAmountMinor(record, currency);
   return createMoney(minor, currency);
@@ -48,7 +48,7 @@ export function resolveMoney(
  */
 export function toDualRepresentation(
   amount: number | string,
-  currency: CurrencyCode = DEFAULT_CURRENCY
+  currency: CurrencyCode
 ): DualMoneyRepresentation {
   const amountMinor = decimalToMinor(amount, currency);
   const decimalVal = minorToDecimal(amountMinor, currency);

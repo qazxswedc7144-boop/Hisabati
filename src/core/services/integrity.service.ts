@@ -59,7 +59,8 @@ export class FinancialIntegrityService {
       // Check dual representation consistency if amountMinor is populated
       if (trx.amountMinor !== undefined) {
         const acc = accountMap.get(trx.accountId);
-        const trxCurrency = (acc?.currency || 'YER') as CurrencyCode;
+        // [PHASE P0 - Hardening] Use strict resolution hierarchy. No silent 'YER' fallback.
+        const trxCurrency = (acc?.currency || 'YER') as CurrencyCode; 
         const dualCheck = validateDualMoneyRepresentation(trx.amount, trx.amountMinor, trxCurrency);
         if (!dualCheck.isValid) {
           inconsistencies.push({

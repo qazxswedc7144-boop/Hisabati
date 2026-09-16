@@ -177,7 +177,7 @@ export class RBACGuardService {
    * Sets the active session actor (Legacy wrapper for AuthService).
    */
   public setActiveActor(actor: AuditActor): void {
-    authService.login(actor);
+    authService.setActiveActor(actor);
   }
 
   /**

@@ -55,7 +55,7 @@ export class SecurityP0TestSuite {
         title: 'AuthService Session Integrity',
         description: 'التحقق من عمل AuthService كمصدر وحيد للهوية وفصله عن التخزين المباشر',
         fn: async () => {
-          await authService.login(ownerActor);
+          await authService.setActiveActor(ownerActor);
           const active = authService.getActiveActor();
           if (active.id !== ownerActor.id) throw new Error('فشل تسجيل الدخول أو استرجاع الهوية');
           
@@ -71,7 +71,7 @@ export class SecurityP0TestSuite {
         title: 'Strict RBAC: AccountService Mutation Block',
         description: 'التحقق من حماية عمليات إنشاء الحسابات من الأدوار غير المصرح لها (Viewer)',
         fn: async () => {
-          await authService.login(viewerActor);
+          await authService.setActiveActor(viewerActor);
           
           let intercepted = false;
           try {
@@ -98,7 +98,7 @@ export class SecurityP0TestSuite {
         title: 'Strict RBAC: BackupService Mutation Block',
         description: 'التحقق من حماية عمليات استعادة البيانات من الأدوار غير المصرح لها',
         fn: async () => {
-          await authService.login(viewerActor);
+          await authService.setActiveActor(viewerActor);
           
           let intercepted = false;
           try {
@@ -150,7 +150,7 @@ export class SecurityP0TestSuite {
         title: 'TransactionEngine: Currency Integrity Check',
         description: 'التحقق من استخدام TransactionEngine لآلية التحقق الصارمة للعملة',
         fn: async () => {
-          await authService.login(ownerActor);
+          await authService.setActiveActor(ownerActor);
           
           // Test with account
           const acc = await accountService.createAccount({

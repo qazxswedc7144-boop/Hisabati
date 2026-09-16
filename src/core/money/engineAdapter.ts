@@ -36,7 +36,7 @@ export class FinancialEngineMoneyAdapter {
    */
   static getTransactionAmountMinor(
     trx: Pick<Transaction, 'amount' | 'amountMinor'>,
-    currency: CurrencyCode = DEFAULT_CURRENCY
+    currency: CurrencyCode
   ): MinorUnit {
     return getAmountMinor(trx, currency);
   }
@@ -47,7 +47,7 @@ export class FinancialEngineMoneyAdapter {
    */
   static computeMetricsMinor(
     transactions: Transaction[],
-    currency: CurrencyCode = DEFAULT_CURRENCY
+    currency: CurrencyCode
   ): MinorMetricsResult {
     let debitUnits = 0;
     let creditUnits = 0;
@@ -80,7 +80,7 @@ export class FinancialEngineMoneyAdapter {
    */
   static computeDualMetrics(
     transactions: Transaction[],
-    currency: CurrencyCode = DEFAULT_CURRENCY
+    currency: CurrencyCode
   ): DualMetricsResult {
     const minorMetrics = this.computeMetricsMinor(transactions, currency);
 

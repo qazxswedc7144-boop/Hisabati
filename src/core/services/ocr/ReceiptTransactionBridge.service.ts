@@ -14,6 +14,8 @@ import { roundMoney } from '../../utils/financial';
 import { toDualRepresentation } from '../../money/compat';
 import { rbacGuard } from '../rbac/RBACGuard.service';
 import { auditTrailService } from '../rbac/AuditTrail.service';
+import { settingsRepository } from '../../repositories/settings.repository';
+import { resolveRequiredCurrency } from '../../money/currency';
 
 export class ReceiptTransactionBridgeService {
   /**
@@ -215,9 +217,15 @@ export class ReceiptTransactionBridgeService {
       throw new Error('الحساب المالي المحدد غير موجود في قاعدة البيانات.');
     }
 
-    // 4. Amount Validation & Dual Representation resolution
+    // 4. Amount Validation & Strict Currency Resolution
+    const freshSettings = await settingsRepository.getSettings();
+    const targetCurrency = resolveRequiredCurrency({
+      transactionCurrency: draft.currency,
+      accountCurrency: account.currency,
+      systemCurrency: freshSettings.currency,
+    });
+
     const rawAmount = overrideAmount !== undefined ? overrideAmount : draft.totalAmount;
-    const targetCurrency = ((draft.currency || account.currency || 'YER') as CurrencyCode);
     const { amount: finalAmount, amountMinor } = toDualRepresentation(rawAmount, targetCurrency);
 
     if (isNaN(finalAmount) || finalAmount <= 0) {

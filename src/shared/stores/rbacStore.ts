@@ -12,8 +12,11 @@ import { rbacGuard } from '@/core/services/rbac/RBACGuard.service';
 import { auditTrailService } from '@/core/services/rbac/AuditTrail.service';
 import { teamManagementService } from '@/core/services/rbac/TeamManagement.service';
 
+import { authService, AuthStatus } from '@/core/services/rbac/AuthService.service';
+
 interface RBACState {
   currentActor: AuditActor;
+  authStatus: AuthStatus;
   team: Team | null;
   members: TeamMember[];
   auditEntries: AuditTrailEntry[];
@@ -24,6 +27,9 @@ interface RBACState {
 
   // Actions
   initialize: () => Promise<void>;
+  updateAuthStatus: (status: AuthStatus, actor: AuditActor) => void;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
   switchActor: (member: TeamMember) => void;
   hasPermission: (permission: Permission) => boolean;
   addMember: (params: { name: string; email: string; phone?: string; role: UserRole }) => Promise<void>;
@@ -35,6 +41,7 @@ interface RBACState {
 
 export const useRBACStore = create<RBACState>((set, get) => ({
   currentActor: rbacGuard.getActiveActor(),
+  authStatus: authService.getStatus(),
   team: null,
   members: [],
   auditEntries: [],
@@ -46,14 +53,17 @@ export const useRBACStore = create<RBACState>((set, get) => ({
   initialize: async () => {
     set({ isLoading: true, error: null });
     try {
+      // Initialize existing local state
       const { team, members } = await teamManagementService.initializeDefaultTeamIfNeeded();
       const currentActor = rbacGuard.getActiveActor();
+      const authStatus = authService.getStatus();
       const auditEntries = await auditTrailService.getRecentEntries(50);
 
       set({
         team,
         members,
         currentActor,
+        authStatus,
         auditEntries,
         isLoading: false,
       });
@@ -62,6 +72,33 @@ export const useRBACStore = create<RBACState>((set, get) => ({
         isLoading: false,
         error: err?.message || 'تعذر تحميل بيانات الفريق والصلاحيات',
       });
+    }
+  },
+
+  updateAuthStatus: (status, actor) => {
+    set({ authStatus: status, currentActor: actor });
+  },
+
+  login: async (email, password) => {
+    set({ isLoading: true, error: null });
+    try {
+      await authService.login(email, password);
+      // Status will be updated by onAuthStateChanged listener in AuthService
+      // which we will connect in App.tsx or a provider
+      set({ isLoading: false });
+    } catch (err: any) {
+      set({ isLoading: false, error: err.message });
+      throw err;
+    }
+  },
+
+  logout: async () => {
+    set({ isLoading: true });
+    try {
+      await authService.logout();
+      set({ isLoading: false });
+    } catch (err) {
+      set({ isLoading: false });
     }
   },
 

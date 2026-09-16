@@ -200,109 +200,65 @@ export const CashFlowTrendView: React.FC<CashFlowTrendViewProps> = ({
             لا توجد حركات مسجلة للفترة المحددة.
           </div>
         ) : (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {dataPoints.slice(0, 6).map((point) => (
-                <div
-                  key={point.period}
-                  className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-3 hover:border-teal-300 transition-colors"
-                >
-                  <div className="flex items-center justify-between border-b border-slate-200/50 dark:border-slate-700 pb-2">
-                    <span className="font-bold text-slate-900 dark:text-slate-100 text-xs">
+          <div className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800">
+            <table className="w-full text-xs text-start">
+              <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 font-bold border-b border-slate-200/80 dark:border-slate-800">
+                <tr>
+                  <th className="p-3 text-start">الفترة</th>
+                  <th className="p-3 text-start">المقبوضات (+)</th>
+                  <th className="p-3 text-start">المسحوبات (-)</th>
+                  <th className="p-3 text-start">صافي الفترة</th>
+                  <th className="p-3 text-start">الرصيد التراكمي</th>
+                  <th className="p-3 text-start">الحركات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {dataPoints.map((point) => (
+                  <tr
+                    key={point.period}
+                    className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition"
+                  >
+                    <td className="p-3 font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
                       {point.periodLabelAr}
-                    </span>
-                    <span className="text-[10px] text-slate-400 tabular-nums">
+                    </td>
+
+                    {/* Inflow */}
+                    <td className="p-3 font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums whitespace-nowrap">
+                      +{formatCurrency(point.inflow, currency)}
+                    </td>
+
+                    {/* Outflow */}
+                    <td className="p-3 font-semibold text-rose-600 dark:text-rose-400 tabular-nums whitespace-nowrap">
+                      -{formatCurrency(point.outflow, currency)}
+                    </td>
+
+                    {/* Net Flow */}
+                    <td className="p-3 tabular-nums font-bold whitespace-nowrap">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded ${
+                          point.netFlow >= 0
+                            ? 'bg-emerald-100/70 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                            : 'bg-rose-100/70 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                        }`}
+                      >
+                        {point.netFlow >= 0 ? '+' : ''}
+                        {formatCurrency(point.netFlow, currency)}
+                      </span>
+                    </td>
+
+                    {/* Cumulative Balance */}
+                    <td className="p-3 font-extrabold text-slate-800 dark:text-slate-200 tabular-nums whitespace-nowrap">
+                      {formatCurrency(point.cumulativeBalance, currency)}
+                    </td>
+
+                    {/* Transaction Count */}
+                    <td className="p-3 text-slate-500 dark:text-slate-400 tabular-nums whitespace-nowrap">
                       {point.transactionCount} عملية
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[11px]">
-                    <div>
-                      <span className="text-slate-400 block mb-0.5">المقبوضات:</span>
-                      <span className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                        +{formatCurrency(point.inflow, currency)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block mb-0.5">المسحوبات:</span>
-                      <span className="font-bold text-rose-600 dark:text-rose-400 tabular-nums">
-                        -{formatCurrency(point.outflow, currency)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block mb-0.5">صافي الفترة:</span>
-                      <span className={`font-bold tabular-nums ${point.netFlow >= 0 ? 'text-teal-600' : 'text-amber-600'}`}>
-                        {point.netFlow >= 0 ? '+' : ''}{formatCurrency(point.netFlow, currency)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block mb-0.5">الرصيد التراكمي:</span>
-                      <span className="font-black text-slate-800 dark:text-slate-200 tabular-nums">
-                        {formatCurrency(point.cumulativeBalance, currency)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {dataPoints.length > 6 && (
-              <button
-                onClick={() => {
-                  const el = document.getElementById('cashflow-grid-more');
-                  if (el) el.classList.toggle('hidden');
-                }}
-                className="w-full py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-teal-600 dark:text-teal-400 font-bold text-xs shadow-xs"
-              >
-                عرض الفترات السابقة (+)
-              </button>
-            )}
-
-            {/* Expanded List */}
-            <div id="cashflow-grid-more" className="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 animate-in slide-in-from-top-1 duration-200">
-              {dataPoints.slice(6).map((point) => (
-                <div
-                  key={point.period}
-                  className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-3 hover:border-teal-300 transition-colors"
-                >
-                  <div className="flex items-center justify-between border-b border-slate-200/50 dark:border-slate-700 pb-2">
-                    <span className="font-bold text-slate-900 dark:text-slate-100 text-xs">
-                      {point.periodLabelAr}
-                    </span>
-                    <span className="text-[10px] text-slate-400 tabular-nums">
-                      {point.transactionCount} عملية
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[11px]">
-                    <div>
-                      <span className="text-slate-400 block mb-0.5">المقبوضات:</span>
-                      <span className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                        +{formatCurrency(point.inflow, currency)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block mb-0.5">المسحوبات:</span>
-                      <span className="font-bold text-rose-600 dark:text-rose-400 tabular-nums">
-                        -{formatCurrency(point.outflow, currency)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block mb-0.5">صافي الفترة:</span>
-                      <span className={`font-bold tabular-nums ${point.netFlow >= 0 ? 'text-teal-600' : 'text-amber-600'}`}>
-                        {point.netFlow >= 0 ? '+' : ''}{formatCurrency(point.netFlow, currency)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block mb-0.5">الرصيد التراكمي:</span>
-                      <span className="font-black text-slate-800 dark:text-slate-200 tabular-nums">
-                        {formatCurrency(point.cumulativeBalance, currency)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
