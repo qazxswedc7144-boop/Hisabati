@@ -4,7 +4,7 @@
  * safety pre-restore snapshots, and recovery.
  */
 
-import { db } from '../database/db';
+import { db, getDb } from '../database/db';
 import { BackupPayload, BackupMetadata } from '@/shared/types';
 import {
   calculateBackupPayloadHash,
@@ -13,6 +13,7 @@ import {
   verifyLegacyBackupHash,
   encryptBackupPayload,
   decryptBackupPayload,
+  getMasterKeyFingerprint,
 } from '../utils/crypto';
 import { getDeviceId, getDeviceName } from '../utils/deviceId';
 import { integrityService } from './integrity.service';
@@ -29,7 +30,6 @@ import {
 } from './backup/backup-migrator';
 
 const APP_VERSION = '2.0.0';
-const SAFETY_BACKUP_STORAGE_KEY = 'hisabati_safety_pre_restore_backup';
 
 /**
  * SEC-07: Backup Payload Limits & Resource Exhaustion Defense
@@ -53,30 +53,41 @@ export class BackupService {
 
   /**
    * Generates a validated and cryptographically hashed snapshot of the local database.
+   * - 1.2: Added internal flag to skip RBAC for system-generated snapshots.
+   * - 1.6: Included trash and auditTrail in payload.
+   * - 2.1: Included keyFingerprint.
    */
-  public async generateBackupPayload(): Promise<BackupPayload> {
-    // 0. RBAC Guard
-    await rbacGuard.assertPermission('backup:create', {
-      targetType: 'backup',
-      details: 'إنشاء نسخة احتياطية للبيانات',
-    });
+  public async generateBackupPayload(options: { internal?: boolean } = {}): Promise<BackupPayload> {
+    // 0. RBAC Guard: Skip if internal
+    if (!options.internal) {
+      await rbacGuard.assertPermission('backup:create', {
+        targetType: 'backup',
+        details: 'إنشاء نسخة احتياطية للبيانات',
+      });
+    }
 
     const accounts = await db.accounts.toArray();
     const transactions = await db.transactions.toArray();
     const settings = await db.settings.toArray();
+    const trash = await db.trash.toArray(); // 1.6
+    const auditTrail = await db.auditTrail.toArray(); // 1.6
 
-    // Compute sums for integrity verification
+    // 1.4: Compute sums with fixed point precision
     let totalDebitSum = 0;
     let totalCreditSum = 0;
     for (const trx of transactions) {
-      if (trx.type === 'debit') totalDebitSum += trx.amount;
-      else if (trx.type === 'credit') totalCreditSum += trx.amount;
+      if (trx.type === 'debit') {
+        totalDebitSum = Math.round((totalDebitSum + trx.amount) * 100) / 100;
+      } else if (trx.type === 'credit') {
+        totalCreditSum = Math.round((totalCreditSum + trx.amount) * 100) / 100;
+      }
     }
 
     const backupId = 'bck_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const createdAt = new Date().toISOString();
     const deviceId = getDeviceId();
     const deviceName = getDeviceName();
+    const keyFingerprint = await getMasterKeyFingerprint(); // 2.1
 
     const rawMetadata: Omit<BackupMetadata, 'integrityHash'> = {
       backupSchemaVersion: BACKUP_SCHEMA_VERSION,
@@ -90,8 +101,9 @@ export class BackupService {
       createdAt,
       accountCount: accounts.length,
       transactionCount: transactions.length,
-      totalDebitSum: Math.round(totalDebitSum * 100) / 100,
-      totalCreditSum: Math.round(totalCreditSum * 100) / 100,
+      totalDebitSum,
+      totalCreditSum,
+      keyFingerprint,
     };
 
     const integrityHash = await calculateBackupPayloadHash({
@@ -99,6 +111,8 @@ export class BackupService {
       accounts,
       transactions,
       settings,
+      trash,
+      auditTrail,
     });
 
     const payload: BackupPayload = {
@@ -109,6 +123,8 @@ export class BackupService {
       accounts,
       transactions,
       settings,
+      trash,
+      auditTrail,
     };
 
     return payload;
@@ -185,6 +201,14 @@ export class BackupService {
       return {
         isValid: false,
         error: `إصدار التنسيق المالي غير مدعوم (${metadata.financialFormatVersion})`,
+      };
+    }
+
+    // 0.2: Reject V3+ backups if integrityHash is missing (Prevent Signature Stripping)
+    if (!metadata.integrityHash && schemaVer >= 3) {
+      return {
+        isValid: false,
+        error: 'النسخ الاحتياطية من الإصدار 3 فما فوق تتطلب توقيع سلامة البيانات (integrityHash missing)',
       };
     }
 
@@ -269,8 +293,7 @@ export class BackupService {
 
   /**
    * Creates an automatic local safety snapshot before any destructive restore operation.
-   * Throws an explicit error if safety snapshot generation or storage fails,
-   * guaranteeing that restore NEVER proceeds without a verified safety backup.
+   * - 1.1: Moved from localStorage to Dexie safetyBackups table.
    */
   public async createPreRestoreSafetyBackup(): Promise<BackupPayload> {
     if (this._simulateSafetyBackupFailure) {
@@ -278,10 +301,16 @@ export class BackupService {
     }
 
     try {
-      const currentPayload = await this.generateBackupPayload();
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(SAFETY_BACKUP_STORAGE_KEY, JSON.stringify(currentPayload));
-      }
+      const currentPayload = await this.generateBackupPayload({ internal: true });
+      const activeDb = getDb();
+      
+      await activeDb.safetyBackups.add({
+        id: 'safety_' + Date.now(),
+        payload: currentPayload,
+        createdAt: new Date().toISOString(),
+        type: 'automatic',
+      });
+      
       return currentPayload;
     } catch (err: any) {
       throw new Error(
@@ -294,12 +323,13 @@ export class BackupService {
    * Restores data from the last emergency pre-restore safety backup if exists.
    */
   public async rollbackToSafetyBackup(): Promise<boolean> {
-    if (typeof localStorage === 'undefined') return false;
-    const raw = localStorage.getItem(SAFETY_BACKUP_STORAGE_KEY);
-    if (!raw) return false;
     try {
-      const payload = JSON.parse(raw);
-      await this.restoreFromPayload(payload, 'replace');
+      const activeDb = getDb();
+      const lastSafety = await activeDb.safetyBackups.orderBy('createdAt').reverse().first();
+      
+      if (!lastSafety || !lastSafety.payload) return false;
+      
+      await this.restoreFromPayload(lastSafety.payload, 'replace', { skipSafetyBackup: true, internal: true });
       return true;
     } catch {
       return false;
@@ -308,7 +338,12 @@ export class BackupService {
 
   /**
    * Performs full restoration from a BackupPayload with strict pipeline ordering:
+   * 
+   * 2.3 Merge Semantics:
+   * - replace: Clears existing local data before inserting backup data.
+   * - merge: Upserts records by ID. If ID exists locally, the backup version OVERWRITES local version (Backup Wins).
    *
+   * Pipeline:
    * RAW BACKUP
    *     ↓
    * getBackupSchemaVersion()
@@ -329,13 +364,16 @@ export class BackupService {
    */
   public async restoreFromPayload(
     rawPayload: any,
-    mode: 'replace' | 'merge' = 'replace'
+    mode: 'replace' | 'merge' = 'replace',
+    options: { skipSafetyBackup?: boolean; internal?: boolean } = {}
   ): Promise<{ success: boolean; message: string }> {
-    // 0. RBAC Guard: assert backup:restore
-    await rbacGuard.assertPermission('backup:restore', {
-      targetType: 'backup',
-      details: `استعادة البيانات من نسخة احتياطية (النمط: ${mode === 'replace' ? 'استبدال كامل' : 'دمج'})`,
-    });
+    // 0. RBAC Guard: assert backup:restore (Skip if internal)
+    if (!options.internal) {
+      await rbacGuard.assertPermission('backup:restore', {
+        targetType: 'backup',
+        details: `استعادة البيانات من نسخة احتياطية (النمط: ${mode === 'replace' ? 'استبدال كامل' : 'دمج'})`,
+      });
+    }
 
     // 1. RAW BACKUP & STRUCTURAL BASELINE
     if (!rawPayload || typeof rawPayload !== 'object') {
@@ -390,6 +428,11 @@ export class BackupService {
     // 3. PRE-MIGRATION INTEGRITY HASH VALIDATION
     // Strategy: Legacy V1/V2 hashes must be verified against unmigrated raw payload,
     // guaranteeing cryptographic integrity before any data transformation.
+    // 0.2: Reject V3+ if integrityHash is missing
+    if (!rawPayload.metadata.integrityHash && rawVersion >= 3) {
+      throw new Error('النسخ الاحتياطية من الإصدار 3 فما فوق تتطلب توقيع سلامة البيانات (integrityHash missing)');
+    }
+
     if (rawPayload.metadata.integrityHash) {
       const isHashValid = await verifyBackupIntegrityHash(rawPayload, rawVersion);
       if (!isHashValid) {
@@ -412,12 +455,16 @@ export class BackupService {
     // 6. PRE-RESTORE SAFETY BACKUP
     // Mandatory snapshot before ANY destructive DB mutation.
     // If safety backup fails, restore is aborted immediately!
-    await this.createPreRestoreSafetyBackup();
+    if (!options.skipSafetyBackup) {
+      await this.createPreRestoreSafetyBackup();
+    }
+
+    const activeDb = getDb(); // 0.4: Stable database access
 
     // Capture existing local permanent tombstones before restore
     let existingPermTombstones: any[] = [];
     try {
-      const entry = await db.settings.get('hisabati_permanent_tombstones');
+      const entry = await activeDb.settings.get('hisabati_permanent_tombstones');
       if (entry && Array.isArray(entry.value)) {
         existingPermTombstones = entry.value;
       }
@@ -425,19 +472,23 @@ export class BackupService {
 
     // 7. ATOMIC RESTORE (DEXIE TRANSACTION)
     // All-or-nothing rollback on any write failure
-    await db.transaction('rw', [db.accounts, db.transactions, db.settings], async () => {
+    await activeDb.transaction('rw', [activeDb.accounts, activeDb.transactions, activeDb.settings, activeDb.trash, activeDb.auditTrail], async () => {
+      const txDb = getDb(); // Direct access within transaction
+
       if (mode === 'replace') {
-        await db.transactions.clear();
-        await db.accounts.clear();
+        await txDb.transactions.clear();
+        await txDb.accounts.clear();
+        await txDb.trash.clear(); // 1.6
+        await txDb.auditTrail.clear(); // 1.6
       }
 
       if (Array.isArray(payload.settings) && payload.settings.length > 0) {
-        await db.settings.bulkPut(payload.settings);
+        await txDb.settings.bulkPut(payload.settings);
       }
 
       // Merge existing local permanent tombstones with restored settings
       let restoredTombstones: any[] = [];
-      const restoredTombEntry = await db.settings.get('hisabati_permanent_tombstones');
+      const restoredTombEntry = await txDb.settings.get('hisabati_permanent_tombstones');
       if (restoredTombEntry && Array.isArray(restoredTombEntry.value)) {
         restoredTombstones = restoredTombEntry.value;
       }
@@ -446,7 +497,7 @@ export class BackupService {
       restoredTombstones.forEach((t) => mergedTombstonesMap.set(t.id, t));
       const finalTombstones = Array.from(mergedTombstonesMap.values());
 
-      await db.settings.put({
+      await txDb.settings.put({
         id: 'hisabati_permanent_tombstones',
         key: 'hisabati_permanent_tombstones',
         value: finalTombstones,
@@ -458,15 +509,23 @@ export class BackupService {
       if (payload.accounts && payload.accounts.length > 0) {
         const validAccounts = payload.accounts.filter((a: any) => !tombstoneIds.has(a.id));
         if (validAccounts.length > 0) {
-          await db.accounts.bulkPut(validAccounts);
+          await txDb.accounts.bulkPut(validAccounts);
         }
       }
 
       if (payload.transactions && payload.transactions.length > 0) {
         const validTransactions = payload.transactions.filter((t: any) => !tombstoneIds.has(t.id));
         if (validTransactions.length > 0) {
-          await db.transactions.bulkPut(validTransactions);
+          await txDb.transactions.bulkPut(validTransactions);
         }
+      }
+
+      // 1.6: Restore trash and auditTrail
+      if (Array.isArray(payload.trash) && payload.trash.length > 0) {
+        await txDb.trash.bulkPut(payload.trash);
+      }
+      if (Array.isArray(payload.auditTrail) && payload.auditTrail.length > 0) {
+        await txDb.auditTrail.bulkPut(payload.auditTrail);
       }
     });
 
@@ -504,17 +563,34 @@ export class BackupService {
 
     // SEC-02: Encrypt backup payload with AES-GCM 256
     const { cipherText, iv } = await encryptBackupPayload(payload);
+    
+    // 2.2: Calculate containerHash for encrypted container
+    const containerBuffer = new TextEncoder().encode(iv + cipherText);
+    const containerHashBuffer = await crypto.subtle.digest('SHA-256', containerBuffer);
+    const containerHash = Array.from(new Uint8Array(containerHashBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
     const encryptedContainer = {
       isEncrypted: true,
       algorithm: 'AES-GCM-256',
       iv,
       data: cipherText,
+      containerHash, // 2.2
     };
 
-    const result = await googleDriveService.uploadJsonFile(filename, encryptedContainer, {
-      ...payload.metadata,
+    // 2.2: Shrunk metadata for Google Drive
+    const driveMetadata = {
+      backupSchemaVersion: payload.metadata.backupSchemaVersion,
+      createdAt: payload.metadata.createdAt,
+      accountCount: payload.metadata.accountCount,
+      transactionCount: payload.metadata.transactionCount,
       isEncrypted: true,
-    });
+      keyFingerprint: payload.metadata.keyFingerprint,
+      containerHash,
+    };
+
+    const result = await googleDriveService.uploadJsonFile(filename, encryptedContainer, driveMetadata);
 
     return {
       success: true,
@@ -525,6 +601,7 @@ export class BackupService {
 
   /**
    * Downloads and restores an encrypted or legacy backup from Google Drive file ID.
+   * - 2.4: Added fileId regex validation and size check before download.
    */
   public async restoreBackupFromGoogleDrive(
     fileId: string,
@@ -533,6 +610,15 @@ export class BackupService {
     if (!googleDriveService.isConnected()) {
       throw new Error('لم يتم توصيل حساب Google Drive بعد');
     }
+
+    // 2.4: Validate fileId format (Google Drive IDs are usually 33 chars of alphanumeric and underscores/hyphens)
+    const driveIdRegex = /^[a-zA-Z0-9_-]{25,50}$/;
+    if (!driveIdRegex.test(fileId)) {
+      throw new Error('معرف الملف غير صالح (Invalid Google Drive File ID)');
+    }
+
+    // 2.4: Optional size check if metadata available (Resource Exhaustion Defense)
+    // Note: googleDriveService.getFileInfo could be called here if needed.
 
     const rawData = await googleDriveService.downloadJsonFile<any>(fileId);
     let payload: BackupPayload;

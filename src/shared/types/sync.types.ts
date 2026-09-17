@@ -1,6 +1,15 @@
+/**
+ * CHANGELOG
+ * - 1.6: Added trash and auditTrail to BackupPayload.
+ * - 2.1: Added keyFingerprint to BackupMetadata.
+ * - 2.2: Added containerHash to BackupMetadata.
+ */
+
 import { Account } from './account.types';
 import { Transaction } from './transaction.types';
 import { SettingsEntry } from './settings.types';
+import { TrashItem } from './trash.types';
+import { AuditTrailEntry } from './rbac.types';
 
 export type SyncStatusType = 'idle' | 'syncing' | 'synced' | 'pending' | 'error' | 'offline' | 'retrying' | 'conflict';
 
@@ -66,6 +75,8 @@ export interface BackupMetadata {
   totalCreditSum: number;
 
   integrityHash: string;
+  keyFingerprint?: string; // 2.1: SHA-256 fingerprint of the encryption key
+  containerHash?: string; // 2.2: SHA-256(iv + cipherText) for encrypted backups
   isEncrypted?: boolean;
 }
 
@@ -74,6 +85,8 @@ export interface BackupPayload {
   accounts: Account[];
   transactions: Transaction[];
   settings: SettingsEntry[];
+  trash?: TrashItem[]; // 1.6: Optional trash records
+  auditTrail?: AuditTrailEntry[]; // 1.6: Optional audit trail records
 }
 
 export interface DriveFileInfo {

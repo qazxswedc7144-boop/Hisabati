@@ -343,14 +343,14 @@ export class FinancialIntegrationTestSuite {
       }
     });
 
-    // FIN-15: Backup Snapshot Integrity and Schema Version 3 Preservation
-    await run('FIN-15', 'النسخ الاحتياطي يحفظ amountMinor وثبات BACKUP_SCHEMA_VERSION=3', async () => {
-      if (BACKUP_SCHEMA_VERSION !== 3) {
-        throw new Error(`إصدار النسخ الاحتياطي غير مطابق: المتوقع 3 الفعلي ${BACKUP_SCHEMA_VERSION}`);
+    // FIN-15: Backup Snapshot Integrity and Schema Version 4 Preservation
+    await run('FIN-15', 'النسخ الاحتياطي يحفظ amountMinor وثبات BACKUP_SCHEMA_VERSION=4', async () => {
+      if (BACKUP_SCHEMA_VERSION !== 4) {
+        throw new Error(`إصدار النسخ الاحتياطي غير مطابق: المتوقع 4 الفعلي ${BACKUP_SCHEMA_VERSION}`);
       }
       const payload = await backupService.generateBackupPayload();
-      if (payload.metadata.backupSchemaVersion !== 3) {
-        throw new Error('لقطة النسخ الاحتياطي لم تستخدم BACKUP_SCHEMA_VERSION=3');
+      if (payload.metadata.backupSchemaVersion !== 4) {
+        throw new Error('لقطة النسخ الاحتياطي لم تستخدم BACKUP_SCHEMA_VERSION=4');
       }
       if (!Array.isArray(payload.transactions)) {
         throw new Error('بيانات المعاملات في النسخة الاحتياطية غير صالحة');
@@ -413,15 +413,15 @@ export class FinancialIntegrationTestSuite {
     });
 
     // FIN-20: Database Schema Version Invariant Rule
-    await run('FIN-20', 'ثبات DATABASE_SCHEMA_VERSION=6 و FINANCIAL_FORMAT_VERSION=1 ومنع Version 7', async () => {
-      if (DATABASE_SCHEMA_VERSION !== 6) {
-        throw new Error(`DATABASE_SCHEMA_VERSION يجب أن يكون 6 حصرياً، وجد: ${DATABASE_SCHEMA_VERSION}`);
+    await run('FIN-20', 'ثبات DATABASE_SCHEMA_VERSION=8 و FINANCIAL_FORMAT_VERSION=1', async () => {
+      if (DATABASE_SCHEMA_VERSION !== 8) {
+        throw new Error(`DATABASE_SCHEMA_VERSION يجب أن يكون 8 حصرياً، وجد: ${DATABASE_SCHEMA_VERSION}`);
       }
       if (FINANCIAL_FORMAT_VERSION !== 1) {
         throw new Error(`FINANCIAL_FORMAT_VERSION يجب أن يكون 1 حصرياً، وجد: ${FINANCIAL_FORMAT_VERSION}`);
       }
-      if (db.verno !== 6) {
-        throw new Error(`إصدار Dexie الحالي يجب أن يكون 6 حصرياً، وجد: ${db.verno}`);
+      if (db.verno !== 8) {
+        throw new Error(`إصدار Dexie الحالي يجب أن يكون 8 حصرياً، وجد: ${db.verno}`);
       }
     });
 

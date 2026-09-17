@@ -483,13 +483,13 @@ export class RestoreHardeningTestSuite {
     await this.runTest(
       results,
       'RST-11',
-      'عزل قاعدة البيانات: ثبات إصدارات Dexie 1-6 وعدم إنشاء Version 7 وثبات FINANCIAL_FORMAT_VERSION=1',
+      'عزل قاعدة البيانات: ثبات إصدارات Dexie 1-8 وثبات FINANCIAL_FORMAT_VERSION=1',
       async () => {
-        if (DATABASE_SCHEMA_VERSION !== 6) {
-          throw new Error(`DATABASE_SCHEMA_VERSION must remain 6, got ${DATABASE_SCHEMA_VERSION}`);
+        if (DATABASE_SCHEMA_VERSION !== 8) {
+          throw new Error(`DATABASE_SCHEMA_VERSION must remain 8, got ${DATABASE_SCHEMA_VERSION}`);
         }
-        if (BACKUP_SCHEMA_VERSION !== 3) {
-          throw new Error(`BACKUP_SCHEMA_VERSION must remain 3, got ${BACKUP_SCHEMA_VERSION}`);
+        if (BACKUP_SCHEMA_VERSION !== 4) {
+          throw new Error(`BACKUP_SCHEMA_VERSION must remain 4, got ${BACKUP_SCHEMA_VERSION}`);
         }
         if (FINANCIAL_FORMAT_VERSION !== 1) {
           throw new Error(`FINANCIAL_FORMAT_VERSION must remain 1, got ${FINANCIAL_FORMAT_VERSION}`);
@@ -497,8 +497,8 @@ export class RestoreHardeningTestSuite {
 
         // Check db versions max
         const versions = (db as any).verno;
-        if (versions && versions > 6) {
-          throw new Error(`Dexie version is ${versions}, which exceeds maximum version 6! Version 7 must NOT be created.`);
+        if (versions && versions > 8) {
+          throw new Error(`Dexie version is ${versions}, which exceeds maximum version 8!`);
         }
       }
     );

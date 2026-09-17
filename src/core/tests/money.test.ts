@@ -280,16 +280,16 @@ export class MoneyTestSuite {
     await runTest('MONEY_14', 'Database & Schema Safety', 'الحفاظ الصارم على إصدارات المخطط وقاعدة البيانات', () => {
       // 1. Dexie versions inspection
       const version = (db as any).verno;
-      if (version !== 6) {
-        throw new Error(`Dexie version must be exactly 6, found ${version}`);
+      if (version !== 8) {
+        throw new Error(`Dexie version must be exactly 8, found ${version}`);
       }
 
       // 2. Constants checks
-      if (DATABASE_SCHEMA_VERSION !== 6) {
-        throw new Error(`DATABASE_SCHEMA_VERSION must remain 6, found ${DATABASE_SCHEMA_VERSION}`);
+      if (DATABASE_SCHEMA_VERSION !== 8) {
+        throw new Error(`DATABASE_SCHEMA_VERSION must remain 8, found ${DATABASE_SCHEMA_VERSION}`);
       }
-      if (BACKUP_SCHEMA_VERSION !== 3) {
-        throw new Error(`BACKUP_SCHEMA_VERSION must remain 3, found ${BACKUP_SCHEMA_VERSION}`);
+      if (BACKUP_SCHEMA_VERSION !== 4) {
+        throw new Error(`BACKUP_SCHEMA_VERSION must remain 4, found ${BACKUP_SCHEMA_VERSION}`);
       }
       if (FINANCIAL_FORMAT_VERSION !== 1) {
         throw new Error(`FINANCIAL_FORMAT_VERSION must remain 1, found ${FINANCIAL_FORMAT_VERSION}`);

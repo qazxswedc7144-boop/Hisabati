@@ -1,4 +1,4 @@
-import { db } from '../database/db';
+import { db, getDb } from '../database/db';
 import { Account, CreateAccountDTO, UpdateAccountDTO, AccountFilterType, CurrencyCode } from '@/shared/types';
 import { validateAccountForm } from '../utils/validators';
 import { transactionEngine } from './transactionEngine.service';
@@ -174,29 +174,33 @@ export class AccountService {
     const childTrx = await db.transactions.where('accountId').equals(id).toArray();
 
     await db.transaction('rw', db.accounts, db.transactions, db.settings, db.trash, async () => {
+      const activeDb = getDb(); // 0.4: Direct stable access
+
       if (moveToTrash) {
-        // Move to trash
+        // 0.3: Redesigned trash snapshot (Account only, no transactions)
         const now = new Date();
         const expiresAt = new Date(now);
-        expiresAt.setDate(now.getDate() + 30); // 30 days default
+        expiresAt.setDate(now.getDate() + 60); // TRASH_RETENTION_DAYS = 60
 
-        await db.trash.add({
-          id,
+        await activeDb.trash.add({
+          id: `trash_${Date.now()}_${id}`,
           entityType: 'account',
-          data: {
+          entityId: id,
+          snapshot: {
             account: existing,
-            transactions: childTrx,
           },
+          status: 'deleted',
           deletedAt: now.toISOString(),
           expiresAt: expiresAt.toISOString(),
         });
       }
 
-      await db.transactions.where('accountId').equals(id).delete();
-      await db.accounts.delete(id);
+      // 0.6: Permanent deletion of transactions if user confirmed (Permanent Delete)
+      await activeDb.transactions.where('accountId').equals(id).delete();
+      await activeDb.accounts.delete(id);
 
-      // Phase 2.5: Record Permanent Delete Marker (Permanent Tombstone)
-      const existingTombstones = await db.settings.get('hisabati_permanent_tombstones');
+      // 0.5: Record Permanent Delete Marker inside transaction to prevent TOCTOU
+      const existingTombstones = await activeDb.settings.get('hisabati_permanent_tombstones');
       const list = existingTombstones && Array.isArray(existingTombstones.value) ? existingTombstones.value : [];
       let updated = false;
 
@@ -212,7 +216,7 @@ export class AccountService {
       }
 
       if (updated) {
-        await db.settings.put({
+        await activeDb.settings.put({
           id: 'hisabati_permanent_tombstones',
           key: 'hisabati_permanent_tombstones',
           value: list,
@@ -243,27 +247,26 @@ export class AccountService {
     const trashItem = await db.trash.get(trashId);
     if (!trashItem) throw new Error('البند غير موجود في سلة المهملات');
 
-    const { account, transactions } = trashItem.data;
+    // 0.3: New snapshot structure
+    const account = trashItem.snapshot.account;
+    if (!account) throw new Error('بيانات الحساب غير موجودة في هذه اللقطة');
 
     await db.transaction('rw', db.accounts, db.transactions, db.trash, db.settings, async () => {
+      const activeDb = getDb(); // 0.4: Direct stable access
+
       // 1. Re-insert account
-      await db.accounts.add(account);
+      await activeDb.accounts.add(account);
 
-      // 2. Re-insert transactions
-      if (transactions.length > 0) {
-        await db.transactions.bulkAdd(transactions);
-      }
+      // 2. Remove from trash
+      await activeDb.trash.delete(trashId);
 
-      // 3. Remove from trash
-      await db.trash.delete(trashId);
-
-      // 4. Remove from tombstones
-      const existingTombstones = await db.settings.get('hisabati_permanent_tombstones');
+      // 3. Remove from tombstones
+      const existingTombstones = await activeDb.settings.get('hisabati_permanent_tombstones');
       if (existingTombstones && Array.isArray(existingTombstones.value)) {
         const newList = existingTombstones.value.filter(
-          (t: any) => t.id !== account.id && !transactions.some((trx) => trx.id === t.id)
+          (t: any) => t.id !== account.id
         );
-        await db.settings.put({
+        await activeDb.settings.put({
           ...existingTombstones,
           value: newList,
           updatedAt: new Date().toISOString(),
@@ -273,9 +276,6 @@ export class AccountService {
 
     // Enqueue sync (CREATE)
     await this.enqueueSyncMutation('account', account.id, 'CREATE', account, account.id);
-    for (const trx of transactions) {
-      await this.enqueueSyncMutation('transaction', trx.id, 'CREATE', trx, trx.id);
-    }
 
     return true;
   }

@@ -88,7 +88,7 @@ export const RecycleBinPage: React.FC = () => {
                 </div>
                 <div className="min-w-0">
                   <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 truncate">
-                    {item.data.account.name}
+                    {item.snapshot.account?.name || 'حساب غير معروف'}
                   </h3>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-[11px] font-semibold text-slate-400">
                     <span className="flex items-center gap-1">
@@ -101,14 +101,14 @@ export const RecycleBinPage: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-2">
-                    يحتوي على <span className="font-bold text-slate-700 dark:text-slate-300">{item.data.transactions.length}</span> عملية مالية مرتبطة.
+                    {item.entityType === 'account' ? 'سيتم استعادة الحساب ومعلوماته الأساسية.' : 'استعادة هذا البند.'}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 sm:self-center">
                 <button
-                  onClick={() => handleRestore(item.id, item.data.account.name)}
+                  onClick={() => handleRestore(item.id, item.snapshot.account?.name || 'البند')}
                   className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800/60 text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/60 transition text-xs font-bold min-h-[44px]"
                 >
                   <RotateCcw className="w-4 h-4" />

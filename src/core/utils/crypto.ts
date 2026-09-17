@@ -1,4 +1,14 @@
 /**
+ * CHANGELOG
+ * - 0.1: Added settings, trash, and auditTrail support to buildCanonicalContent for Schema V4+.
+ * - 0.2: Enforced integrityHash check for V3+ backups to prevent signature stripping.
+ * - 2.1: Added getMasterKeyFingerprint utility.
+ * 
+ * تحذير: تغيير buildCanonicalContent يؤثر على توافق التجزئة (Integrity Hash). 
+ * تم الحفاظ على التوافق مع V1/V2/V3 عبر استخدام Guard بالنسخة.
+ */
+
+/**
  * Cryptographic checksum & SHA-256 integrity hash generator using native Web Crypto API.
  */
 
@@ -26,8 +36,11 @@ function buildCanonicalContent(payload: {
   totalCreditSum: number;
   accounts: any[];
   transactions: any[];
+  settings?: any[];
+  trash?: any[];
+  auditTrail?: any[];
 }): string {
-  return JSON.stringify({
+  const base: any = {
     schemaVersion: payload.schemaVersion,
     appVersion: payload.appVersion,
     backupId: payload.backupId,
@@ -52,11 +65,34 @@ function buildCanonicalContent(payload: {
       operationId: t.operationId,
       updatedAt: t.updatedAt,
     })),
-  });
+  };
+
+  // 0.1: Support for settings, trash, and auditTrail in V4+
+  if (payload.schemaVersion >= 4) {
+    base.settings = (payload.settings || []).map(s => ({
+      id: s.id,
+      key: s.key,
+      updatedAt: s.updatedAt
+    }));
+    base.trash = (payload.trash || []).map(t => ({
+      id: t.id,
+      entityType: t.entityType,
+      deletedAt: t.deletedAt,
+      expiresAt: t.expiresAt
+    }));
+    base.auditTrail = (payload.auditTrail || []).map(a => ({
+      id: a.id,
+      action: a.action,
+      timestamp: a.timestamp,
+      sequenceNumber: a.sequenceNumber
+    }));
+  }
+
+  return JSON.stringify(base);
 }
 
 /**
- * Calculates current V3 backup payload SHA-256 hash.
+ * Calculates current V3/V4 backup payload SHA-256 hash.
  */
 export async function calculateBackupPayloadHash(payloadWithoutHash: {
   metadata: {
@@ -78,6 +114,8 @@ export async function calculateBackupPayloadHash(payloadWithoutHash: {
   accounts: any[];
   transactions: any[];
   settings?: any[];
+  trash?: any[];
+  auditTrail?: any[];
 }): Promise<string> {
   const schemaVer =
     payloadWithoutHash.metadata.schemaVersion ??
@@ -96,6 +134,9 @@ export async function calculateBackupPayloadHash(payloadWithoutHash: {
     totalCreditSum: payloadWithoutHash.metadata.totalCreditSum,
     accounts: payloadWithoutHash.accounts,
     transactions: payloadWithoutHash.transactions,
+    settings: payloadWithoutHash.settings,
+    trash: payloadWithoutHash.trash,
+    auditTrail: payloadWithoutHash.auditTrail,
   });
 
   return await calculateSHA256(contentToHash);
@@ -110,6 +151,8 @@ export async function calculateLegacyBackupPayloadHash(
     accounts: any[];
     transactions: any[];
     settings?: any[];
+    trash?: any[];
+    auditTrail?: any[];
   },
   legacyVersion: number = 1
 ): Promise<string> {
@@ -125,13 +168,16 @@ export async function calculateLegacyBackupPayloadHash(
     totalCreditSum: payloadWithoutHash.metadata.totalCreditSum,
     accounts: payloadWithoutHash.accounts,
     transactions: payloadWithoutHash.transactions,
+    settings: payloadWithoutHash.settings,
+    trash: payloadWithoutHash.trash,
+    auditTrail: payloadWithoutHash.auditTrail,
   });
 
   return await calculateSHA256(contentToHash);
 }
 
 /**
- * Verifies if payload matches current V3 hash format.
+ * Verifies if payload matches current V3/V4 hash format.
  */
 export async function verifyCurrentBackupHash(payload: any): Promise<boolean> {
   if (!payload?.metadata?.integrityHash) return false;
@@ -140,6 +186,8 @@ export async function verifyCurrentBackupHash(payload: any): Promise<boolean> {
     accounts: payload.accounts || [],
     transactions: payload.transactions || [],
     settings: payload.settings || [],
+    trash: payload.trash || [],
+    auditTrail: payload.auditTrail || [],
   });
   return expected === payload.metadata.integrityHash;
 }
@@ -155,6 +203,8 @@ export async function verifyLegacyBackupHash(payload: any, legacyVersion: number
       accounts: payload.accounts || [],
       transactions: payload.transactions || [],
       settings: payload.settings || [],
+      trash: payload.trash || [],
+      auditTrail: payload.auditTrail || [],
     },
     legacyVersion
   );
@@ -162,12 +212,17 @@ export async function verifyLegacyBackupHash(payload: any, legacyVersion: number
 }
 
 /**
- * Dual verification helper: checks current V3 or legacy V1/V2 hash.
+ * Dual verification helper: checks current V3/V4 or legacy V1/V2 hash.
  */
 export async function verifyBackupIntegrityHash(payload: any, version?: number): Promise<boolean> {
-  if (!payload?.metadata?.integrityHash) return true;
-
   const ver = version ?? payload.metadata.backupSchemaVersion ?? payload.metadata.schemaVersion ?? 1;
+
+  // 0.2: Reject V3+ backups if integrityHash is missing (Prevent Signature Stripping)
+  if (ver >= 3 && !payload?.metadata?.integrityHash) {
+    return false;
+  }
+
+  if (!payload?.metadata?.integrityHash) return true;
 
   // 1. If explicit legacy version (1 or 2), verify legacy format
   if (ver === 1 || ver === 2) {
@@ -175,7 +230,7 @@ export async function verifyBackupIntegrityHash(payload: any, version?: number):
     if (isLegacyValid) return true;
   }
 
-  // 2. Try current V3 verification
+  // 2. Try current verification
   const isCurrentValid = await verifyCurrentBackupHash(payload);
   if (isCurrentValid) return true;
 
@@ -291,6 +346,17 @@ export async function deleteMasterEncryptionKey(): Promise<void> {
   }
 }
 
+/**
+ * 2.1: Returns a SHA-256 fingerprint of the master encryption key for identification.
+ */
+export async function getMasterKeyFingerprint(): Promise<string> {
+  const key = await getOrCreateMasterEncryptionKey();
+  const raw = await crypto.subtle.exportKey('raw', key);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', raw);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function getOrCreateMasterEncryptionKey(): Promise<CryptoKey> {
   let keyBytes: Uint8Array | null = null;
 
@@ -388,5 +454,6 @@ export async function decryptBackupPayload(cipherText: string, ivHex: string): P
   const jsonString = decoder.decode(plainBuffer);
   return JSON.parse(jsonString);
 }
+
 
 

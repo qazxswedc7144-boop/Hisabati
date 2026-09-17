@@ -1,3 +1,9 @@
+/**
+ * CHANGELOG
+ * - 1.7: Added migrateBackupV3ToV4 for Schema V4 support.
+ * - 1.7: Updated migrateBackupPayload to include V3 -> V4 step.
+ */
+
 import {
   DATABASE_SCHEMA_VERSION,
   BACKUP_SCHEMA_VERSION,
@@ -76,7 +82,7 @@ export function migrateBackupV2ToV3(payload: any): any {
     typeof migrated.metadata.databaseSchemaVersion === 'number' &&
     Number.isInteger(migrated.metadata.databaseSchemaVersion)
       ? migrated.metadata.databaseSchemaVersion
-      : DATABASE_SCHEMA_VERSION;
+      : 6; // V3 used DB V6
 
   migrated.metadata.financialFormatVersion =
     typeof migrated.metadata.financialFormatVersion === 'number' &&
@@ -85,6 +91,31 @@ export function migrateBackupV2ToV3(payload: any): any {
       : FINANCIAL_FORMAT_VERSION;
 
   migrated.metadata.schemaVersion = 3;
+
+  return migrated;
+}
+
+/**
+ * Migrates a V3 backup payload to V4 format in memory.
+ * Pure metadata-only migration. Sets current schema versions.
+ */
+export function migrateBackupV3ToV4(payload: any): any {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('هيكل ملف النسخة الاحتياطية غير صالح (Invalid Payload)');
+  }
+
+  if (!payload.metadata || typeof payload.metadata !== 'object') {
+    throw new Error('بيانات النسخة الاحتياطية الوصفية غير موجودة (Metadata Missing)');
+  }
+
+  const migrated = structuredClone(payload);
+
+  migrated.metadata.backupSchemaVersion = 4;
+  migrated.metadata.schemaVersion = 4;
+  
+  if (migrated.metadata.databaseSchemaVersion === undefined || migrated.metadata.databaseSchemaVersion < 8) {
+    migrated.metadata.databaseSchemaVersion = DATABASE_SCHEMA_VERSION;
+  }
 
   return migrated;
 }
@@ -122,18 +153,21 @@ export async function migrateBackupPayload(payload: any): Promise<any> {
     migrated.metadata.originalSchemaVersion = version;
   }
 
-  // 6. If Version === 1: V1 -> V2
+  // 6. Sequential Migration Path
   if (version === 1) {
     migrated = migrateBackupV1ToV2(migrated);
   }
 
-  // 7. If Version <= 2: V2 -> V3
-  if (version <= 2) {
+  if (getBackupSchemaVersion(migrated.metadata) === 2) {
     migrated = migrateBackupV2ToV3(migrated);
   }
 
-  // If already Version 3, ensure default fields exist
-  if (version === 3) {
+  if (getBackupSchemaVersion(migrated.metadata) === 3) {
+    migrated = migrateBackupV3ToV4(migrated);
+  }
+
+  // Ensure default fields exist if already at current version
+  if (getBackupSchemaVersion(migrated.metadata) === BACKUP_SCHEMA_VERSION) {
     migrated.metadata.backupSchemaVersion = BACKUP_SCHEMA_VERSION;
     migrated.metadata.databaseSchemaVersion =
       typeof migrated.metadata.databaseSchemaVersion === 'number' &&
@@ -156,3 +190,4 @@ export async function migrateBackupPayload(payload: any): Promise<any> {
   // 9. Return migrated payload
   return migrated;
 }
+

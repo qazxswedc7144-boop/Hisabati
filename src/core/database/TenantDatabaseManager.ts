@@ -12,6 +12,10 @@ export class TenantDatabaseManager {
   private switchingPromise: Promise<HisabatiDatabase> | null = null;
   private switchingOrgId: string | null = null;
 
+  public getIsSwitching(): boolean {
+    return this.isSwitching;
+  }
+
   private constructor() {}
 
   public static getInstance(): TenantDatabaseManager {
