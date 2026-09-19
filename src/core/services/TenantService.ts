@@ -115,7 +115,7 @@ export class TenantService {
         activeOrganization: org,
         currentMembership: membership,
         isLocalMode: false,
-        authMembershipStatus: 'online_verified', // Should be verified via API in reality
+        authMembershipStatus: 'pending_server_verification', // Temporary status in Part 1; pending real backend verification in Part 2
       });
 
       // 3. Cleanup other stores (optional, but good practice)

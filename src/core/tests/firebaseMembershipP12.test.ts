@@ -84,8 +84,8 @@ export class FirebaseMembershipP12TestSuite {
       // C) authenticated_no_membership -> must NOT open user_<uid> Tenant DB
       {
         id: 'P1.2-C',
-        title: 'No Tenant DB for No-Membership User',
-        description: 'عدم فتح قاعدة بيانات يدوية أو وهمية user_<uid> عند غياب العضوية',
+        title: 'No Tenant DB for No-Membership User (Strict Assertion)',
+        description: 'التحقق الصارم من أن tenantDbManager لم يقم بإنشاء أو فتح أي قاعدة بيانات تخص المستخدم غير المصرح له',
         fn: async () => {
           const firebaseUserActor: AuditActor = {
             id: 'firebase_user_789',
@@ -96,13 +96,20 @@ export class FirebaseMembershipP12TestSuite {
           await authService.setActiveActor(firebaseUserActor);
           await tenantService.initialize();
 
+          // Strict Assertion: tenantDbManager.getActiveDatabase() must throw because no tenant DB is initialized
+          let threwUninitializedError = false;
           try {
-            const db = tenantDbManager.getActiveDatabase();
-            if (db && db.name.includes('firebase_user_789')) {
-              throw new Error('خطأ أمني: تم فتح قاعدة بيانات تخص user_<uid> مباشرة!');
-            }
+            tenantDbManager.getActiveDatabase();
           } catch (e: any) {
-            // Expected
+            if (e.message.includes('لم يتم تهيئة قاعدة بيانات المؤسسة بعد')) {
+              threwUninitializedError = true;
+            } else {
+              throw new Error(`خطأ غير متوقع عند فحص قاعدة البيانات: ${e.message}`);
+            }
+          }
+
+          if (!threwUninitializedError) {
+            throw new Error('خطأ أمني خطير: تم فتح قاعدة بيانات للمستخدم بدون عضوية دون إطلاق استثناء عدم التهيئة!');
           }
         },
       },
