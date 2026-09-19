@@ -20,11 +20,19 @@ import { Phase3SecurityHardeningTestSuite } from './phase3SecurityHardening.test
 import { NavigationConsistencyTestSuite } from './navigationConsistency.test';
 import { SecurityP0TestSuite } from './securityP0.test';
 import { FirebaseAuthP11TestSuite } from './firebaseAuthP11.test';
+import { FirebaseMembershipP12TestSuite } from './firebaseMembershipP12.test';
+import { tenantService } from '../services/TenantService';
 
 async function main() {
   console.log('====================================================');
   console.log('🚀 Running Complete Hisabati Multi-Phase Test Suites');
   console.log('====================================================\n');
+
+  try {
+    await tenantService.switchToLocalMode();
+  } catch (e) {
+    console.warn('Failed to initialize local tenant mode', e);
+  }
 
   // P0 Fix: Initialize default system currency to prevent regressions in legacy tests
   // that rely on silent fallbacks (which we have now removed for security).
@@ -441,6 +449,25 @@ async function main() {
     }
   } catch (err: any) {
     console.error('Phase P1.1 Test Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // 20. Phase P1.2-B-H: Firebase Identity & Membership Isolation Tests
+  console.log('\n--- [Phase P1.2-B-H] Firebase Identity & Membership Isolation Tests ---');
+  try {
+    const p12 = await FirebaseMembershipP12TestSuite.runAll();
+    console.log(`Phase P1.2-B-H Result: Passed ${p12.passed}/${p12.total} (${Math.round(p12.durationMs)}ms)`);
+    totalPassed += p12.passed;
+    totalFailed += p12.failed;
+    totalCount += p12.total;
+    if (p12.failed > 0) {
+      for (const r of p12.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ [${r.id}] ${r.title}: ${r.error}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Phase P1.2-B-H Test Suite crashed:', err);
     totalFailed++;
     totalCount++;
   }

@@ -60,7 +60,7 @@ export default function App() {
                 id: user.uid,
                 name: user.displayName || user.email?.split('@')[0] || 'مستخدم',
                 email: user.email || undefined,
-                role: 'owner', // Default role for now
+                role: 'pending_membership', // P1.2-B-H: Firebase auth != owner
               };
               updateAuthStatus('authenticated', actor);
             } else {

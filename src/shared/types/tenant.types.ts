@@ -15,7 +15,8 @@ export type AuthMembershipStatus =
   | 'offline_cached' 
   | 'offline_expired' 
   | 'membership_unknown' 
-  | 'membership_suspended';
+  | 'membership_suspended'
+  | 'authenticated_no_membership';
 
 export interface OrganizationSettings {
   currency: string;

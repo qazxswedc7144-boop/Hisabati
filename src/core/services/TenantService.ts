@@ -32,16 +32,23 @@ export class TenantService {
         // Local Mode
         await this.switchToLocalMode();
       } else {
-        // Cloud Mode - In P1.2-B we might not have real memberships yet
-        // For now, we simulate finding the first membership or staying in 'no membership' state
-        // This will be expanded in P1.2-C
+        // Cloud Mode - P1.2-B-H: Firebase Authenticated without membership
+        const storeState = useTenantStore.getState();
+        if (storeState.activeOrganization && storeState.currentMembership && !storeState.isLocalMode) {
+          // Preserve existing valid membership & organization context (Requirement F)
+          return;
+        }
+
+        // Authenticated without membership: No organization context, no tenant DB
         store.setContext({
+          activeOrganization: null,
+          currentMembership: null,
           isLocalMode: false,
-          authMembershipStatus: 'membership_unknown',
+          authMembershipStatus: 'authenticated_no_membership',
         });
         
-        // Default to a temporary local DB for the user until org is selected
-        await tenantDbManager.openTenantDatabase(`user_${actor.id}`);
+        // CRITICAL: Do NOT open user_<uid> Tenant DB! Close any current database.
+        await tenantDbManager.closeCurrentDatabase();
       }
     } catch (error: any) {
       store.setError(error.message);
@@ -56,6 +63,14 @@ export class TenantService {
   public async switchToLocalMode(): Promise<void> {
     const store = useTenantStore.getState();
     
+    // 0. Reset auth service actor to default local actor
+    await authService.setActiveActor({
+      id: 'user_local_default',
+      name: 'مستخدم محلي',
+      role: 'owner',
+      email: 'local@hisabati.app',
+    });
+
     // 1. Open local database
     await tenantDbManager.openTenantDatabase('local');
     

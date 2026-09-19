@@ -123,6 +123,10 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
     'receipts:read',
     'reports:read',
   ]),
+
+  unknown: new Set<Permission>(),
+  pending_membership: new Set<Permission>(),
+  authenticated_no_membership: new Set<Permission>(),
 };
 
 const PERMISSION_LABELS_AR: Record<Permission, string> = {
@@ -159,6 +163,9 @@ const ROLE_LABELS_AR: Record<UserRole, string> = {
   accountant: 'محاسب (Accountant)',
   employee: 'موظف (Employee)',
   viewer: 'مشاهد (Viewer)',
+  unknown: 'غير معروف (Unknown)',
+  pending_membership: 'بانتظار العضوية (Pending Membership)',
+  authenticated_no_membership: 'مصادق بدون عضوية (Authenticated No Membership)',
 };
 
 import { authService } from './AuthService.service';

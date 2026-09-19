@@ -59,7 +59,7 @@ export class AuthService {
           id: user.uid,
           name: user.displayName || user.email?.split('@')[0] || 'مستخدم',
           email: user.email || undefined,
-          role: 'owner', // Default role for now, will be fetched from claims/DB in P1.2
+          role: 'pending_membership', // P1.2-B-H: Firebase auth != owner. Default to pending_membership until validated.
         };
         this.authStatus = 'authenticated';
       } else {

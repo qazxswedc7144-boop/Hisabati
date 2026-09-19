@@ -5,7 +5,7 @@
 import { AuditRiskLevel } from './ocr.types';
 export type { AuditRiskLevel };
 
-export type UserRole = 'owner' | 'admin' | 'accountant' | 'employee' | 'viewer';
+export type UserRole = 'owner' | 'admin' | 'accountant' | 'employee' | 'viewer' | 'unknown' | 'pending_membership' | 'authenticated_no_membership';
 
 export type Permission =
   // Accounts
