@@ -3,6 +3,8 @@ import {
   Transaction,
   CreateTransactionDTO,
   UpdateTransactionDTO,
+  CreateDoubleEntryDTO,
+  JournalEntryLeg,
   TransactionSummary,
   Account,
   AuditActor,
@@ -25,6 +27,7 @@ import { useSettingsStore } from '@/shared/stores/settingsStore';
 import { decimalToMinor } from '../money/converter';
 import { getCurrencyDecimals, resolveRequiredCurrency } from '../money/currency';
 import { assertDualMoneyRepresentation } from '../money/validator';
+import { validateAndResolveFinancialAmount } from '../money/financialSafety';
 
 export class FinancialTransactionEngine {
   // In-memory mutex/deduplication registry for rapid in-flight double submission prevention
@@ -44,10 +47,16 @@ export class FinancialTransactionEngine {
       details: `تسجيل عملية مالية بمبلغ ${dto.amount} على الحساب ${dto.accountId}`,
     });
 
-    // 1. Validation
+    // 1. Validation & Financial Normalization
+    const account = await db.accounts.get(dto.accountId);
+    if (!account) {
+      throw new Error('الحساب المحدد غير موجود في قاعدة البيانات');
+    }
+
     const validation = validateTransactionForm({
       accountId: dto.accountId,
       amount: dto.amount,
+      amountMinor: dto.amountMinor,
       date: dto.date,
     });
 
@@ -56,157 +65,207 @@ export class FinancialTransactionEngine {
       throw new Error(firstError);
     }
 
-    // 2. Verify account existence
-    const account = await db.accounts.get(dto.accountId);
-    if (!account) {
-      throw new Error('الحساب المحدد غير موجود في قاعدة البيانات');
-    }
+    // 2. Resolve Financial Amount (Source of Truth: amountMinor)
+    const freshSettings = await settingsRepository.getSettings();
+    const activeCurrency = resolveRequiredCurrency({
+      transactionCurrency: dto.currency,
+      accountCurrency: account.currency,
+      systemCurrency: freshSettings.currency,
+    });
 
-    // 3. Idempotency Key Handling
-    const idempotencyKey = dto.operationId || `op_${dto.accountId}_${dto.type}_${dto.amount}_${dto.date}_${dto.note || ''}`;
+    const financialAmount = validateAndResolveFinancialAmount(dto.amount, dto.amountMinor, activeCurrency);
+    const safeAmount = financialAmount.amount;
+    const safeAmountMinor = financialAmount.amountMinor;
+
+    // 3. Idempotency Key Handling (DB-Backed Uniqueness)
+    // We use operationId as the definitive idempotency key.
+    const idempotencyKey = dto.operationId || `op_${dto.accountId}_${dto.type}_${safeAmountMinor}_${dto.date}_${dto.note?.trim() || ''}`;
     
+    // Memory lock (pre-emptive)
     if (this.inFlightSubmissions.has(idempotencyKey)) {
-      // In-flight duplicate detected: wait or return existing transaction if already registered
-      const existing = await db.transactions
-        .where('operationId')
-        .equals(idempotencyKey)
-        .first();
+      const existing = await db.transactions.where('operationId').equals(idempotencyKey).first();
       if (existing) return existing;
     }
-
     this.inFlightSubmissions.add(idempotencyKey);
 
     try {
-      // Check if a transaction with the same operationId already exists in IndexedDB
-      if (dto.operationId) {
-        const existingTrx = await db.transactions
-          .where('operationId')
-          .equals(dto.operationId)
-          .first();
-        if (existingTrx) {
-          return existingTrx;
-        }
-      }
-
       const now = new Date().toISOString();
       const id = 'trx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
-      const safeAmount = roundMoney(Math.abs(dto.amount));
 
-      const account = await db.accounts.get(dto.accountId);
-      if (!account) throw new Error(`الحساب رقم ${dto.accountId} غير موجود`);
-
-      const newTransaction: Transaction = {
-        id,
-        accountId: dto.accountId,
-        type: dto.type,
-        amount: safeAmount,
-        amountMinor: 0, // Will be set inside transaction
-        date: dto.date || now.split('T')[0],
-        note: dto.note?.trim() || undefined,
-        receiptNumber: dto.receiptNumber?.trim() || undefined,
-        operationId: dto.operationId || idempotencyKey,
-        receiptId: dto.receiptId?.trim() || undefined,
-        documentRef: dto.documentRef || undefined,
-        documentMetadata: dto.documentMetadata || undefined,
-        createdAt: now,
-        updatedAt: now,
-      };
+      let createdTransaction: Transaction | null = null;
 
       // Atomic write transaction
       await db.transaction('rw', db.transactions, db.accounts, db.settings, async () => {
         // Fetch FRESH settings inside the transaction to prevent race conditions
-        const freshSettings = await settingsRepository.getSettings();
-        
-        // PRODUCTION SECURITY: Resolve currency strictly without silent fallbacks
-        const activeCurrency = resolveRequiredCurrency({
-          transactionCurrency: dto.currency,
-          accountCurrency: account.currency,
-          systemCurrency: freshSettings.currency,
-        });
+        const freshSettingsInside = await settingsRepository.getSettings();
 
-        let amountMinor: number;
-        // Recalculate amountMinor if not provided, or validate if provided
-        if (dto.amountMinor !== undefined) {
-          assertDualMoneyRepresentation(safeAmount, dto.amountMinor, activeCurrency);
-          amountMinor = dto.amountMinor;
-        } else {
-          amountMinor = decimalToMinor(safeAmount, activeCurrency, 'HALF_UP');
+        // Double-check idempotency inside DB transaction to prevent race conditions
+        const existingTrx = await db.transactions.where('operationId').equals(idempotencyKey).first();
+        if (existingTrx) {
+          createdTransaction = existingTrx;
+          return;
         }
 
-        // Apply updated amountMinor and invoice number to the transaction object
-        newTransaction.amountMinor = amountMinor;
-        newTransaction.amount = safeAmount;
-        newTransaction.currency = activeCurrency;
+        const newTransaction: Transaction = {
+          id,
+          accountId: dto.accountId,
+          type: dto.type,
+          amount: safeAmount,
+          amountMinor: safeAmountMinor,
+          currency: activeCurrency,
+          date: dto.date || now.split('T')[0],
+          note: dto.note?.trim() || undefined,
+          receiptNumber: dto.receiptNumber?.trim() || undefined,
+          operationId: idempotencyKey,
+          receiptId: dto.receiptId?.trim() || undefined,
+          documentRef: dto.documentRef || undefined,
+          documentMetadata: dto.documentMetadata || undefined,
+          createdAt: now,
+          updatedAt: now,
+        };
 
-        // Auto-generate invoice number if needed inside the transaction
-        if (!newTransaction.receiptNumber && freshSettings.invoiceNumberingFormat !== 'manual') {
+        // Auto-generate invoice number if needed
+        if (!newTransaction.receiptNumber && freshSettingsInside.invoiceNumberingFormat !== 'manual') {
+          const nextVal = (freshSettingsInside.nextInvoiceNumber || 1);
           const generated = formatInvoiceNumber(
-            freshSettings.invoicePrefix || 'INV-',
-            freshSettings.nextInvoiceNumber || 1,
-            freshSettings.invoiceNumberingFormat || 'sequential',
+            freshSettingsInside.invoicePrefix || 'INV-',
+            nextVal,
+            freshSettingsInside.invoiceNumberingFormat || 'sequential',
             newTransaction.date
           );
           
           if (generated) {
             newTransaction.receiptNumber = generated;
-            
-            // Increment next sequence number in database directly
-            const nextVal = (freshSettings.nextInvoiceNumber || 1) + 1;
             await db.settings.put({
               id: 'nextInvoiceNumber',
               key: 'nextInvoiceNumber',
-              value: nextVal,
+              value: nextVal + 1,
               updatedAt: now,
             });
-            
-            // Also update the store to keep UI in sync
-            useSettingsStore.getState().updateSettings({
-              nextInvoiceNumber: nextVal,
-            });
+            // Sync settings store
+            useSettingsStore.getState().updateSettings({ nextInvoiceNumber: nextVal + 1 });
           }
         }
 
         await db.transactions.add(newTransaction);
         await this.recalculateAccountBalance(dto.accountId, activeCurrency);
+        createdTransaction = newTransaction;
       });
 
-      // Log in immutable tamper-resistant audit trail
-      try {
-        await auditTrailService.log({
-          actor: currentActor,
-          action: 'TRANSACTION_CREATE',
-          targetType: 'transaction',
-          targetId: newTransaction.id,
-          riskLevel: 'LOW',
-          detailsAr: `تسجيل قيد مالي (${newTransaction.type === 'debit' ? 'مدين/له' : 'دائن/عليه'}) بمبلغ ${safeAmount} على حساب "${account.name}".`,
-          afterState: { ...newTransaction },
-          metadata: {
-            accountId: account.id,
-            accountName: account.name,
-            amount: safeAmount,
-            operationId: newTransaction.operationId,
-          },
-        });
-      } catch (logErr) {
-        console.warn('Audit trail write warning:', logErr);
+      if (!createdTransaction) throw new Error('فشل إنشاء العملية المالية');
+
+      // Audit & Sync side effects (Post-transaction)
+      await this.postProcessTransaction(createdTransaction, 'CREATE', currentActor, account);
+
+      return createdTransaction;
+    } finally {
+      setTimeout(() => this.inFlightSubmissions.delete(idempotencyKey), 2000);
+    }
+  }
+
+  /**
+   * Helper for side-effects after transaction persistence
+   */
+  private async postProcessTransaction(trx: Transaction, action: 'CREATE' | 'UPDATE', actor: AuditActor, account: Account) {
+    try {
+      await auditTrailService.log({
+        actor,
+        action: action === 'CREATE' ? 'TRANSACTION_CREATE' : 'TRANSACTION_UPDATE',
+        targetType: 'transaction',
+        targetId: trx.id,
+        riskLevel: action === 'CREATE' ? 'LOW' : 'MEDIUM',
+        detailsAr: `${action === 'CREATE' ? 'تسجيل' : 'تعديل'} قيد مالي (${trx.type === 'debit' ? 'مدين' : 'دائن'}) بمبلغ ${trx.amount} على حساب "${account.name}".`,
+        afterState: { ...trx },
+        metadata: {
+          accountId: account.id,
+          amount: trx.amount,
+          operationId: trx.operationId,
+        },
+      });
+    } catch (e) { console.warn('Audit log failed', e); }
+
+    await this.enqueueSyncMutation('transaction', trx.id, action, trx, trx.operationId);
+  }
+
+  /**
+   * CREATE DOUBLE ENTRY (Journal Entry)
+   * Enforces Double-Entry Invariant: SUM(DEBITS) = SUM(CREDITS)
+   */
+  async createDoubleEntry(dto: CreateDoubleEntryDTO, actor?: AuditActor): Promise<Transaction[]> {
+    const currentActor = actor || rbacGuard.getActiveActor();
+    const freshSettings = await settingsRepository.getSettings();
+    const currency = dto.currency || freshSettings.currency || 'YER';
+    const date = dto.date || new Date().toISOString().split('T')[0];
+    const operationId = dto.operationId || `journal_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+    if (dto.entries.length < 2) {
+      throw new Error('القيد المزدوج يجب أن يحتوي على طرفين على الأقل');
+    }
+
+    // Resolve and validate all legs
+    let totalDebitMinor = 0;
+    let totalCreditMinor = 0;
+    const validatedLegs: (JournalEntryLeg & { resolvedAmountMinor: number; resolvedAmount: number })[] = [];
+
+    for (const leg of dto.entries) {
+      const { amountMinor, amount } = validateAndResolveFinancialAmount(leg.amount, leg.amountMinor, currency);
+      validatedLegs.push({
+        ...leg,
+        resolvedAmountMinor: amountMinor,
+        resolvedAmount: amount
+      });
+
+      if (leg.type === 'debit') totalDebitMinor += amountMinor;
+      else totalCreditMinor += amountMinor;
+    }
+
+    // ENFORCE INVARIANT: SUM(DEBITS) = SUM(CREDITS)
+    if (totalDebitMinor !== totalCreditMinor) {
+      throw new Error(`القيد غير متوازن: إجمالي المدين (${totalDebitMinor}) لا يساوي إجمالي الدائن (${totalCreditMinor})`);
+    }
+
+    const createdTransactions: Transaction[] = [];
+
+    await db.transaction('rw', db.transactions, db.accounts, async () => {
+      // Check idempotency
+      const existing = await db.transactions.where('operationId').equals(operationId).first();
+      if (existing) {
+        // Find all siblings
+        const allSiblings = await db.transactions.where('operationId').equals(operationId).toArray();
+        createdTransactions.push(...allSiblings);
+        return;
       }
 
-      // Safe offline-first sync mutation enqueueing
-      await this.enqueueSyncMutation(
-        'transaction',
-        newTransaction.id,
-        'CREATE',
-        newTransaction,
-        newTransaction.operationId
-      );
+      for (const leg of validatedLegs) {
+        const id = 'trx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+        const trx: Transaction = {
+          id,
+          accountId: leg.accountId,
+          type: leg.type,
+          amount: leg.resolvedAmount,
+          amountMinor: leg.resolvedAmountMinor,
+          currency,
+          date,
+          note: leg.note || dto.note,
+          receiptNumber: leg.receiptNumber || dto.receiptNumber,
+          operationId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
 
-      return newTransaction;
-    } finally {
-      // Release in-flight lock after short timeout or immediately
-      setTimeout(() => {
-        this.inFlightSubmissions.delete(idempotencyKey);
-      }, 1000);
+        await db.transactions.add(trx);
+        await this.recalculateAccountBalance(leg.accountId, currency);
+        createdTransactions.push(trx);
+      }
+    });
+
+    // Side effects for each leg
+    for (const trx of createdTransactions) {
+      const acc = await db.accounts.get(trx.accountId);
+      if (acc) await this.postProcessTransaction(trx, 'CREATE', currentActor, acc);
     }
+
+    return createdTransactions;
   }
 
   /**
@@ -215,7 +274,6 @@ export class FinancialTransactionEngine {
   async updateTransaction(id: string, dto: UpdateTransactionDTO, actor?: AuditActor): Promise<Transaction> {
     const currentActor = actor || rbacGuard.getActiveActor();
 
-    // Strict RBAC Guard: assert transactions:update permission
     await rbacGuard.assertPermission('transactions:update', {
       actor: currentActor,
       targetType: 'transaction',
@@ -224,14 +282,11 @@ export class FinancialTransactionEngine {
     });
 
     const existing = await db.transactions.get(id);
-    if (!existing) {
-      throw new Error(`العملية رقم ${id} غير موجودة`);
-    }
+    if (!existing) throw new Error(`العملية رقم ${id} غير موجودة`);
 
     const oldAccountId = existing.accountId;
     const targetAccountId = dto.accountId || oldAccountId;
 
-    // Fetch account and settings for currency resolution
     const [account, freshSettings] = await Promise.all([
       db.accounts.get(targetAccountId),
       settingsRepository.getSettings()
@@ -239,78 +294,41 @@ export class FinancialTransactionEngine {
 
     if (!account) throw new Error('الحساب المرتبط غير موجود');
 
-    // PRODUCTION SECURITY: Resolve currency strictly without silent fallbacks
     const activeCurrency = resolveRequiredCurrency({
       transactionCurrency: dto.currency,
       accountCurrency: account.currency,
       systemCurrency: freshSettings.currency,
     });
 
-    const safeAmount = dto.amount !== undefined ? roundMoney(Math.abs(dto.amount)) : existing.amount;
-    const now = new Date().toISOString();
-    let amountMinor: number;
-
-    if (dto.amountMinor !== undefined) {
-      assertDualMoneyRepresentation(safeAmount, dto.amountMinor, activeCurrency);
-      amountMinor = dto.amountMinor;
-    } else if (dto.amount !== undefined || dto.currency !== undefined) {
-      amountMinor = decimalToMinor(safeAmount, activeCurrency, 'HALF_UP');
-      assertDualMoneyRepresentation(safeAmount, amountMinor, activeCurrency);
-    } else {
-      amountMinor = existing.amountMinor !== undefined
-        ? existing.amountMinor
-        : decimalToMinor(existing.amount, activeCurrency, 'HALF_UP');
-    }
+    // Validate and resolve amount (authoritative amountMinor)
+    const financial = validateAndResolveFinancialAmount(
+      dto.amount !== undefined ? dto.amount : existing.amount,
+      dto.amountMinor !== undefined ? dto.amountMinor : (dto.amount !== undefined ? undefined : existing.amountMinor),
+      activeCurrency
+    );
 
     const updatedTrx: Transaction = {
       ...existing,
       accountId: targetAccountId,
       type: dto.type || existing.type,
-      amount: safeAmount,
-      amountMinor,
+      amount: financial.amount,
+      amountMinor: financial.amountMinor,
       currency: activeCurrency,
       date: dto.date || existing.date,
       note: dto.note !== undefined ? (dto.note.trim() || undefined) : existing.note,
       receiptNumber: dto.receiptNumber !== undefined ? (dto.receiptNumber.trim() || undefined) : existing.receiptNumber,
-      updatedAt: now,
+      updatedAt: new Date().toISOString(),
     };
 
     await db.transaction('rw', db.transactions, db.accounts, async () => {
       await db.transactions.put(updatedTrx);
-      
-      // Recalculate old account balance
       await this.recalculateAccountBalance(oldAccountId, activeCurrency);
-
-      // If account changed, recalculate new account balance as well
       if (targetAccountId !== oldAccountId) {
         await this.recalculateAccountBalance(targetAccountId, activeCurrency);
       }
     });
 
-    // Record update in audit trail
-    try {
-      await auditTrailService.log({
-        actor: currentActor,
-        action: 'TRANSACTION_UPDATE',
-        targetType: 'transaction',
-        targetId: updatedTrx.id,
-        riskLevel: 'MEDIUM',
-        detailsAr: `تعديل قيد مالي رقم ${updatedTrx.id} على حساب ID ${targetAccountId}.`,
-        beforeState: { ...existing },
-        afterState: { ...updatedTrx },
-      });
-    } catch (logErr) {
-      console.warn('Audit trail update write warning:', logErr);
-    }
-
-    // Safe offline-first sync mutation enqueueing
-    await this.enqueueSyncMutation(
-      'transaction',
-      updatedTrx.id,
-      'UPDATE',
-      updatedTrx,
-      updatedTrx.operationId || updatedTrx.id
-    );
+    await this.postProcessTransaction(updatedTrx, 'UPDATE', currentActor, account);
 
     return updatedTrx;
   }

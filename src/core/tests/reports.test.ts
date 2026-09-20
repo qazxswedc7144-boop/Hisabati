@@ -36,6 +36,7 @@ export class ReportsTestSuite {
       const testAccount = await accountRepository.create({
         name: testAccountName,
         phone: '0501234567',
+        currency: 'SAR', // Use SAR for precision (2 decimals)
       });
       testAccountId = testAccount.id;
 
@@ -43,6 +44,7 @@ export class ReportsTestSuite {
       const payableAccount = await accountRepository.create({
         name: payableAccountName,
         phone: '0509876543',
+        currency: 'SAR', // Use SAR for precision (2 decimals)
       });
       payableAccountId = payableAccount.id;
 

@@ -22,6 +22,7 @@ import { SecurityP0TestSuite } from './securityP0.test';
 import { FirebaseAuthP11TestSuite } from './firebaseAuthP11.test';
 import { FirebaseMembershipP12TestSuite } from './firebaseMembershipP12.test';
 import { runPhaseP13Tests } from './mobileUxP13.test';
+import { FinancialCoreHardeningTestSuite } from './financialCoreHardening.test';
 import { tenantService } from '../services/TenantService';
 
 async function main() {
@@ -488,6 +489,25 @@ async function main() {
     }
   } catch (err: any) {
     console.error('Phase P1.3 Test Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // 22. Phase Financial Core Hardening: Integrity & Amount Safety
+  console.log('\n--- [Phase Financial Core Hardening] Integrity & Amount Safety Tests ---');
+  try {
+    const fch = await FinancialCoreHardeningTestSuite.runAll();
+    console.log(`Financial Core Hardening Result: Passed ${fch.passed}/${fch.total}`);
+    totalPassed += fch.passed;
+    totalFailed += fch.failed;
+    totalCount += fch.total;
+    if (fch.failed > 0) {
+      for (const r of fch.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ ${r.title}: ${r.error}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Financial Core Hardening Suite crashed:', err);
     totalFailed++;
     totalCount++;
   }

@@ -28,6 +28,7 @@ export function validateAccountForm(data: { name?: string; phone?: string }): Va
 export function validateTransactionForm(data: {
   accountId?: string;
   amount?: number;
+  amountMinor?: number;
   date?: string;
 }): ValidationResult {
   const errors: Record<string, string> = {};
@@ -36,7 +37,10 @@ export function validateTransactionForm(data: {
     errors.accountId = 'يرجى اختيار الحساب المراد تسجيل العملية له';
   }
 
-  if (data.amount === undefined || data.amount === null || isNaN(data.amount) || data.amount <= 0) {
+  const hasAmount = data.amount !== undefined && data.amount !== null && !isNaN(data.amount) && data.amount > 0;
+  const hasAmountMinor = data.amountMinor !== undefined && data.amountMinor !== null && !isNaN(data.amountMinor) && data.amountMinor > 0;
+
+  if (!hasAmount && !hasAmountMinor) {
     errors.amount = 'يرجى إدخال مبلغ صحيح أكبر من الصفر';
   }
 

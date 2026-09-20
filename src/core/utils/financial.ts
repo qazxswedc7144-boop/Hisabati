@@ -78,9 +78,9 @@ export function computeAccountMetricsFromTransactions(
   const currencyDecimals = getCurrencyDecimals(effectiveCurrency);
   
   // Decide on decimal representation for the final summary (decimal fields)
-  // If any transaction has fractions, we might need decimals in the display fields even for YER
-  const hasFractions = transactions.some((t) => t.amount % 1 !== 0);
-  const displayDecimals = (hasFractions || currencyDecimals === 2) ? 2 : currencyDecimals;
+  // We strictly follow currency decimals unless it's a zero-decimal currency (like YER) with fractional legacy transactions
+  const hasFractions = transactions.some((t) => t.amount !== undefined && !Number.isInteger(t.amount));
+  const displayDecimals = Math.max(currencyDecimals, hasFractions ? 2 : 0);
 
   for (const trx of transactions) {
     let amountUnits: number;
@@ -91,7 +91,7 @@ export function computeAccountMetricsFromTransactions(
     } 
     // 2. Secondary Source: Fallback to currency-based conversion from legacy amount
     else {
-      // Use displayDecimals to ensure all transactions in this calculation are on the same scale
+      // Use displayDecimals to ensure legacy fractional transactions are scaled correctly (e.g. 1000.15 YER -> 100015 units)
       amountUnits = toMinorUnits(Math.abs(trx.amount), displayDecimals);
     }
 
@@ -112,6 +112,8 @@ export function computeAccountMetricsFromTransactions(
   let totalCredit: number;
   let currentBalance: number;
 
+  // [PHASE B - Hardening] Final balance fields calculation
+  // We use displayDecimals to ensure consistency with the units used during the scan
   totalDebit = fromMinorUnits(debitUnits, displayDecimals);
   totalCredit = fromMinorUnits(creditUnits, displayDecimals);
   currentBalance = fromMinorUnits(currentBalanceUnits, displayDecimals);

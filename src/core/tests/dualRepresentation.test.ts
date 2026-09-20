@@ -22,8 +22,12 @@ export class DualRepresentationTestSuite {
     totalCount: number;
     results: DualRepTestResult[];
   }> {
-    await db.delete();
-    await db.open();
+    // [HARDENING] Strict isolation: clear all financial tables to prevent leakage from previous suites
+    await Promise.all([
+      db.accounts.clear(),
+      db.transactions.clear(),
+      db.settings.clear()
+    ]);
 
     // P0 Fix: Re-initialize default system currency after wiping DB for tests
     await db.settings.put({
@@ -151,6 +155,7 @@ export class DualRepresentationTestSuite {
         name: 'حساب اختبار الانحراف العشري',
         phone: '770000003',
         category: 'customer',
+        currency: 'SAR', // Explicitly set currency to SAR to match the test scenario
       });
 
       // Insert multiple transactions with potential floating point drift (0.1 + 0.2)

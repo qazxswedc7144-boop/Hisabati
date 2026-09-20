@@ -48,8 +48,8 @@ export interface Transaction {
 export interface CreateTransactionDTO {
   accountId: string;
   type: TransactionType;
-  amount: number;
-  amountMinor?: number; // Optional Phase B pre-calculated integer minor units
+  amount?: number;
+  amountMinor?: number; // Phase Financial Core: Canonical integer minor units (Primary source)
   currency?: CurrencyCode;
   date: string;
   note?: string;
@@ -58,6 +58,24 @@ export interface CreateTransactionDTO {
   receiptId?: string;
   documentRef?: string;
   documentMetadata?: Transaction['documentMetadata'];
+}
+
+export interface JournalEntryLeg {
+  accountId: string;
+  type: TransactionType; // 'debit' | 'credit'
+  amount?: number;
+  amountMinor?: number;
+  note?: string;
+  receiptNumber?: string;
+}
+
+export interface CreateDoubleEntryDTO {
+  operationId?: string;
+  date?: string;
+  currency?: CurrencyCode;
+  note?: string;
+  receiptNumber?: string;
+  entries: JournalEntryLeg[];
 }
 
 export interface UpdateTransactionDTO {

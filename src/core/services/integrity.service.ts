@@ -27,7 +27,7 @@ export class FinancialIntegrityService {
   async verifyFinancialIntegrity(): Promise<IntegrityReport> {
     const allAccounts = await db.accounts.toArray();
     const inconsistencies: IntegrityInconsistency[] = [];
-    const operationIdSet = new Set<string>();
+    const operationIdMap = new Map<string, { total: number; count: number; legs: any[] }>();
     let transactionsChecked = 0;
 
     const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
@@ -35,6 +35,16 @@ export class FinancialIntegrityService {
     // [PERF-FIX]: Use .each() cursor to avoid loading all transactions into memory at once
     await db.transactions.each((trx) => {
       transactionsChecked++;
+
+      // Collect operation groups for balanced journal check
+      if (trx.operationId) {
+        const group = operationIdMap.get(trx.operationId) || { total: 0, count: 0, legs: [] };
+        const val = trx.type === 'debit' ? (trx.amountMinor || 0) : -(trx.amountMinor || 0);
+        group.total += val;
+        group.count++;
+        group.legs.push(trx.id);
+        operationIdMap.set(trx.operationId, group);
+      }
 
       // Check orphan transaction
       if (!accountMap.has(trx.accountId)) {
@@ -93,19 +103,21 @@ export class FinancialIntegrityService {
         });
       }
 
-      // Check duplicate operationId if present
-      if (trx.operationId) {
-        if (operationIdSet.has(trx.operationId)) {
-          inconsistencies.push({
-            type: 'duplicate_operation_id',
-            entityId: trx.id,
-            details: `تكرار في معرف العملية (operationId: ${trx.operationId})`,
-          });
-        } else {
-          operationIdSet.add(trx.operationId);
-        }
-      }
+      // Check duplicate operationId if present - handled later by group validation
     });
+
+    // Post-scan: Verify balanced operationId groups
+    for (const [opId, group] of operationIdMap.entries()) {
+      if (group.count > 1 && group.total !== 0) {
+        inconsistencies.push({
+          type: 'duplicate_operation_id',
+          entityId: group.legs[0],
+          details: `قيد مركب غير متوازن (operationId: ${opId}). الفرق: ${group.total}`,
+          expected: 0,
+          actual: group.total,
+        });
+      }
+    }
 
     // 2. Check derived balance consistency for each account
     for (const account of allAccounts) {
