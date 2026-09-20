@@ -26,6 +26,7 @@ import { reportService, excelGenerator } from '@/core/services';
 import { FinancialSummaryReport, DatePreset, DateRange } from '@/shared/types';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
 import { formatISODate } from '@/core/utils/dateRange';
+import { DateRangePicker } from './DateRangePicker';
 
 export const FinancialSummaryView: React.FC = () => {
   const currency = useSettingsStore((state) => state.settings.currency);
@@ -93,109 +94,54 @@ export const FinancialSummaryView: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      {/* Redesigned Header: Title, Search, Export & More Menu */}
-      <div className="flex items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs sticky top-0 z-10">
-        {/* Right: Title */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <div className="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200/60 dark:border-teal-800/60 text-teal-600 flex items-center justify-center">
-            <Activity className="w-5 h-5" />
-          </div>
-          <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">تحليل حركة الفترة</h3>
-        </div>
-
-        {/* Middle: Search Bar */}
-        <div className="flex-1 max-w-[120px] sm:max-w-xs relative">
-          <div className="absolute inset-y-0 start-0 ps-2.5 flex items-center pointer-events-none">
-            <Search className="w-3 h-3 text-slate-400" />
-          </div>
-          <input
-            type="text"
-            placeholder="بحث..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 rounded-xl py-1.5 ps-8 pe-3 text-[10px] font-bold text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500/50 outline-none transition-all"
-          />
-        </div>
-
-        {/* Left: Export Merged & More Menu */}
-        <div className="flex items-center gap-1">
-          {/* Merged Export Icon (PDF + Excel) */}
-          <button
-            type="button"
-            onClick={() => setIsExportModalOpen(true)}
-            className="relative w-10 h-10 flex items-center justify-center rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition group"
-            title="تصدير (PDF / Excel)"
-          >
-            <div className="relative flex items-center justify-center">
-              <FileText className="w-5 h-5 text-rose-600 transition-transform group-hover:-translate-x-1" />
-              <div className="absolute -bottom-1 -end-1 p-0.5 rounded-md bg-white dark:bg-slate-800 shadow-xs border border-slate-100 dark:border-slate-700">
-                <TableIcon className="w-3 h-3 text-emerald-600 transition-transform group-hover:translate-x-1" />
-              </div>
+      {/* Date Range Chips Selector (Sticky Header Bar) */}
+      <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs sticky top-0 z-10 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200/60 dark:border-teal-800/60 text-teal-600 flex items-center justify-center">
+              <Activity className="w-5 h-5" />
             </div>
-          </button>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">تحليل حركة الفترة</h3>
+          </div>
 
-          <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-0.5" />
+          <div className="flex-1 max-w-[120px] sm:max-w-xs relative">
+            <div className="absolute inset-y-0 start-0 ps-2.5 flex items-center pointer-events-none">
+              <Search className="w-3 h-3 text-slate-400" />
+            </div>
+            <input
+              type="text"
+              placeholder="بحث..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 rounded-xl py-1.5 ps-8 pe-3 text-[10px] font-bold text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500/50 outline-none transition-all"
+            />
+          </div>
 
-          {/* More Menu Dropdown */}
-          <div className="relative">
+          <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className={`w-10 h-10 flex items-center justify-center rounded-2xl transition shadow-sm ${
-                isMenuOpen 
-                  ? 'bg-teal-600 text-white' 
-                  : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
-              }`}
+              onClick={() => setIsExportModalOpen(true)}
+              className="relative w-10 h-10 flex items-center justify-center rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition group"
+              title="تصدير (PDF / Excel)"
             >
-              <MoreVertical className="w-5 h-5" />
-            </button>
-
-            {isMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setIsMenuOpen(false)} />
-                <div className="absolute top-full mt-2 end-0 w-64 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 py-2 z-50 animate-in fade-in zoom-in-95 duration-200">
-                  <div className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50 dark:border-slate-800 mb-1">
-                    ترتيب العرض
-                  </div>
-                  {[
-                    { id: 'sort-balance', label: 'ترتيب حسب الرصيد', icon: Scale, active: sortBy === 'balance' },
-                    { id: 'sort-name', label: 'ترتيب أبجدي (أ-ي)', icon: Users, active: sortBy === 'name' },
-                  ].map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => {
-                        if (item.id === 'sort-balance') setSortBy('balance');
-                        else if (item.id === 'sort-name') setSortBy('name');
-                        setIsMenuOpen(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-4 py-2.5 text-xs font-bold transition text-right ${
-                        item.active 
-                          ? 'text-teal-600 bg-teal-50/50 dark:bg-teal-900/20' 
-                          : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        {item.icon && <item.icon className={`w-4 h-4 ${item.active ? 'text-teal-600' : 'text-slate-400'}`} />}
-                        <span>{item.label}</span>
-                      </div>
-                      {item.active && <CheckCircle2 className="w-4 h-4 text-teal-600" />}
-                    </button>
-                  ))}
-                  <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
-                  <button
-                    onClick={() => {
-                      showToast('جاري مشاركة التطبيق...', 'info');
-                      setIsMenuOpen(false);
-                    }}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-right"
-                  >
-                    <Share2 className="w-4 h-4 text-teal-600" />
-                    <span>شارك التطبيق</span>
-                  </button>
+              <div className="relative flex items-center justify-center">
+                <FileText className="w-5 h-5 text-rose-600 transition-transform group-hover:-translate-x-1" />
+                <div className="absolute -bottom-1 -end-1 p-0.5 rounded-md bg-white dark:bg-slate-800 shadow-xs border border-slate-100 dark:border-slate-700">
+                  <TableIcon className="w-3 h-3 text-emerald-600 transition-transform group-hover:translate-x-1" />
                 </div>
-              </>
-            )}
+              </div>
+            </button>
           </div>
+        </div>
+
+        {/* DateRangePicker component integration */}
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80">
+          <DateRangePicker
+            preset={preset}
+            customRange={customRange}
+            onPresetChange={setPreset}
+            onCustomRangeChange={setCustomRange}
+          />
         </div>
       </div>
 
@@ -390,7 +336,7 @@ export const FinancialSummaryView: React.FC = () => {
             <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  صافي السيولة وحركة الفترة
+                  صافي حركة الفترة
                 </span>
                 <Scale className="w-5 h-5 text-teal-600" />
               </div>
@@ -551,6 +497,55 @@ export const FinancialSummaryView: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* SVG Trend & Net Movement Chart */}
+          {report.dailyBreakdown.length > 0 && (
+            <div className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-xs space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-teal-600" />
+                  رسم بياني لحركة الفترة اليومية
+                </h4>
+                <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg">
+                  صافي التدفق اليومي
+                </span>
+              </div>
+
+              {/* Pure SVG Bar/Line Chart */}
+              <div className="w-full overflow-x-auto py-2">
+                <div className="min-w-[500px] h-48 relative flex items-end gap-2 px-2 pt-6 pb-2">
+                  {(() => {
+                    const values = report.dailyBreakdown.map(d => d.netMinor !== undefined ? d.netMinor : d.net * 100);
+                    const maxVal = Math.max(...values.map(v => Math.abs(v)), 1);
+                    return report.dailyBreakdown.map((day, idx) => {
+                      const netVal = day.netMinor !== undefined ? day.netMinor : day.net * 100;
+                      const isPositive = netVal >= 0;
+                      const heightPercent = Math.min(100, Math.max(12, Math.round((Math.abs(netVal) / maxVal) * 75)));
+                      
+                      return (
+                        <div key={day.date} className="flex-1 flex flex-col items-center h-full justify-end group relative">
+                          {/* Tooltip on hover */}
+                          <div className="absolute -top-8 bg-slate-900 text-white text-[10px] font-mono px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition whitespace-nowrap z-20 pointer-events-none shadow-md">
+                            {formatDate(day.date, 'short')}: {formatCurrency(day.net, currency)}
+                          </div>
+
+                          <div 
+                            className={`w-full rounded-t-lg transition-all duration-300 group-hover:opacity-80 ${
+                              isPositive ? 'bg-emerald-500 dark:bg-emerald-400' : 'bg-rose-500 dark:bg-rose-400'
+                            }`}
+                            style={{ height: `${heightPercent}%` }}
+                          />
+                          <span className="text-[9px] font-mono text-slate-400 mt-2 truncate w-full text-center">
+                            {formatDate(day.date, 'short').split(' ')[0]}
+                          </span>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Daily Breakdown Timeline */}
           <div className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs">

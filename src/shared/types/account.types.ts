@@ -38,6 +38,7 @@ export interface CreateAccountDTO {
   initialBalance?: number;
   initialBalanceMinor?: number;
   initialBalanceType?: 'owed_to_me' | 'owed_by_me';
+  operationId?: string;
 }
 
 export interface UpdateAccountDTO {

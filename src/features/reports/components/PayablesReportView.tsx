@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
-  FileSpreadsheet,
   ArrowUpRight,
   Phone,
   CheckCircle2,
@@ -29,7 +28,7 @@ import { formatCurrency, formatDate } from '@/core/utils/formatters';
 export const PayablesReportView: React.FC = () => {
   const navigate = useNavigate();
   const currency = useSettingsStore((state) => state.settings.currency);
-  const { showToast: uiShowToast } = useUIStore();
+  const showToast = useUIStore((state) => state.showToast);
 
   const [search, setSearch] = useState('');
   const [minBalance, setMinBalance] = useState<number>(0);
@@ -39,10 +38,22 @@ export const PayablesReportView: React.FC = () => {
   const [report, setReport] = useState<PayablesReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [exporting, setExporting] = useState(false);
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+
+  const handleExportExcel = async () => {
+    if (!report) return;
+    try {
+      const blob = await excelGenerator.generatePayablesExcel(report, currency);
+      const filename = `الديون_عليك_${new Date().toISOString().split('T')[0]}.xlsx`;
+      excelGenerator.downloadBlob(blob, filename);
+      showToast('تم تصدير تقرير الديون بصيغة Excel بنجاح', 'success');
+    } catch (err) {
+      console.error('Export failed:', err);
+      showToast('حدث خطأ أثناء تصدير الملف', 'error');
+    }
+  };
 
   const loadReport = useCallback(() => {
     let isMounted = true;
@@ -101,22 +112,6 @@ export const PayablesReportView: React.FC = () => {
   }, [report, sortBy, sortOrder]);
 
   const hasActiveFilters = Boolean(search.trim() || minBalance > 0 || includeArchived);
-
-  const handleExportExcel = async () => {
-    if (!report || exporting) return;
-    try {
-      setExporting(true);
-      const blob = await excelGenerator.generatePayablesExcel(report, currency);
-      const filename = `تقرير_الديون_عليك_${new Date().toISOString().split('T')[0]}.xlsx`;
-      excelGenerator.downloadBlob(blob, filename);
-      uiShowToast('تم تصدير تقرير الديون والالتزامات بصيغة Excel', 'success');
-    } catch (err) {
-      console.error('Export failed:', err);
-      uiShowToast('حدث خطأ أثناء تصدير الملف', 'error');
-    } finally {
-      setExporting(false);
-    }
-  };
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -221,7 +216,7 @@ export const PayablesReportView: React.FC = () => {
                   <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
                   <button
                     onClick={() => {
-                      uiShowToast('جاري مشاركة التطبيق...', 'info');
+                      showToast('جاري مشاركة التطبيق...', 'info');
                       setIsMenuOpen(false);
                     }}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-right"
@@ -296,7 +291,7 @@ export const PayablesReportView: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
-                  onClick={() => uiShowToast('قريباً: تصدير PDF', 'info')}
+                  onClick={() => showToast('قريباً: تصدير PDF', 'info')}
                   className="flex flex-col items-center justify-center gap-2 p-4 rounded-3xl bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40 text-rose-600 hover:bg-rose-100 transition"
                 >
                   <FileText className="w-6 h-6" />
@@ -365,16 +360,6 @@ export const PayablesReportView: React.FC = () => {
                 </div>
               )}
             </div>
-
-            <button
-              type="button"
-              onClick={handleExportExcel}
-              disabled={exporting || report.items.length === 0}
-              className="px-4 py-2.5 min-h-[44px] rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 text-xs font-bold transition flex items-center justify-center gap-2 self-stretch sm:self-auto shadow-xs select-none"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>{exporting ? 'جاري التصدير...' : 'تصدير التقرير (Excel .xlsx)'}</span>
-            </button>
           </div>
 
           {/* Empty State when items array is empty */}
