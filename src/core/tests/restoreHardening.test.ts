@@ -172,19 +172,19 @@ export class RestoreHardeningTestSuite {
     await seedInitialDb();
 
     // ----------------------------------------------------
-    // TEST 1: Version Gate - V4 Future Version Rejected
+    // TEST 1: Version Gate - Future Version Rejected
     // ----------------------------------------------------
     await this.runTest(
       results,
       'RST-01',
-      'بوابة الإصدارات: رفض النسخة V4 فورياً وحماية البيانات دون أي تعديل في DB',
+      `بوابة الإصدارات: رفض النسخة V${BACKUP_SCHEMA_VERSION + 1} فورياً وحماية البيانات دون أي تعديل في DB`,
       async () => {
         const preAccountsCount = await db.accounts.count();
-        const payloadV4 = createPayload(4);
+        const payloadFuture = createPayload(BACKUP_SCHEMA_VERSION + 1);
 
         let rejected = false;
         try {
-          await backupService.restoreFromPayload(payloadV4);
+          await backupService.restoreFromPayload(payloadFuture);
         } catch (err: any) {
           if (err.message.includes('newer than the supported version')) {
             rejected = true;
@@ -192,7 +192,7 @@ export class RestoreHardeningTestSuite {
         }
 
         if (!rejected) {
-          throw new Error('فشلت بوابة الإصدارات في حظر النسخة المستقبلية V4');
+          throw new Error(`فشلت بوابة الإصدارات في حظر النسخة المستقبلية V${BACKUP_SCHEMA_VERSION + 1}`);
         }
 
         // Verify DB was completely untouched

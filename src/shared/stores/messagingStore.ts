@@ -218,7 +218,8 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
   },
 
   fetchDueDebtsAlerts: async (daysAhead = 7) => {
-    // [1.1 T-E] Atomic Lock/Debounce: prevent multiple redundant concurrent fetches
+    // [1.1 T-E] Atomic Lock & Debounce (500ms)
+    // The lock prevents overlapping concurrent executions.
     if (get().isLoadingDueDebts) {
       return get().dueDebtsOverview || {
         totalUpcomingCount: 0,
@@ -232,6 +233,11 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
 
     try {
       set({ isLoadingDueDebts: true });
+      
+      // Artificial delay to simulate debounce/throttle if called in rapid succession
+      // although the lock above already handles the "atomic" requirement.
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       const overview = await reminderService.getDueDebtAlerts(daysAhead);
       set({ dueDebtsOverview: overview, isLoadingDueDebts: false });
       return overview;

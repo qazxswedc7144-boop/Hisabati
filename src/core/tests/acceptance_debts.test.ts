@@ -47,8 +47,8 @@ describe('Debt Acceptance Tests (T-A to T-H)', () => {
 
     console.log(`T-A Performance: ${end - start}ms`);
     expect(alerts.alerts.filter(a => a.accountId === accId).length).toBe(2);
-    expect(alerts.alerts.some(a => a.id === 'debt_debt_1')).toBe(true);
-    expect(alerts.alerts.some(a => a.id === 'debt_debt_2')).toBe(true);
+    expect(alerts.alerts.some(a => a.id === `debt_${accId}_debt_1`)).toBe(true);
+    expect(alerts.alerts.some(a => a.id === `debt_${accId}_debt_2`)).toBe(true);
   });
 
   it('T-B: Multi-debt separation and data integrity', async () => {
