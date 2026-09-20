@@ -1,10 +1,11 @@
-// CHANGELOG (visual-only, scope-narrow):
-// - [1] due badge now handles negative balances
-// - [2] chevron separation improved
+// CHANGELOG (visual-only):
+// - [1] removed empty state CTA button
+// - [2] header add button now text-only inline
+// - [3] filter & sort consolidated into kebab menu popup
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Plus, ArrowUpDown, Filter, ChevronDown, Check, Phone, Clock, ChevronLeft, PlusCircle, Calendar, Coins, SortAsc, AlertCircle } from 'lucide-react';
+import { Search, MoreVertical, Check, Phone, Clock, ChevronLeft, PlusCircle, Calendar, Coins, SortAsc, AlertCircle } from 'lucide-react';
 import { useAccountStore, useSettingsStore, useUIStore } from '@/shared/stores';
 import { BalanceBadge, EmptyState } from '@/shared/components';
 import { formatCurrency } from '@/core/utils/formatters';
@@ -28,8 +29,7 @@ export const AccountsPage: React.FC = () => {
   const openQuickAdd = useUIStore((state) => state.openQuickAddTransaction);
   const openAddAccount = useUIStore((state) => state.openAddAccount);
 
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [isSortOpen, setIsSortOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const filteredAccounts = getFilteredAccounts();
 
@@ -96,8 +96,6 @@ export const AccountsPage: React.FC = () => {
     { id: 'archived', label: 'المؤرشفة' },
   ];
 
-  const activeFilterLabel = filterTabs.find(tab => tab.id === filterType)?.label || 'الكل';
-
   const sortOptions: { id: AccountSortField; label: string; icon: any }[] = [
     { id: 'recent', label: 'الأحدث حركة', icon: Clock },
     { id: 'balance', label: 'الأعلى رصيداً', icon: Coins },
@@ -105,35 +103,29 @@ export const AccountsPage: React.FC = () => {
     { id: 'createdAt', label: 'تاريخ الإنشاء', icon: Calendar },
   ];
 
-  const activeSortLabel = sortOptions.find(opt => opt.id === sortField)?.label || 'الأحدث حركة';
-
   return (
     <div id="accounts-page" className="space-y-4 sm:space-y-5 animate-in fade-in duration-200">
       {/* Header & Main Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          {/* [1] Header title kept intact */}
+      <div>
+        <div className="flex items-center justify-between">
           <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
             {t('accounts.title')}
           </h2>
-          {/* [2] Account count directly under title with 12px small gray text */}
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            {filteredAccounts.length} حساب
-          </p>
+          <button
+            id="btn-add-account-main"
+            onClick={() => openAddAccount()}
+            className="text-teal-600 dark:text-teal-400 text-sm font-bold hover:underline min-h-[44px] px-2 flex items-center"
+          >
+            + إضافة حساب جديد
+          </button>
         </div>
-
-        <button
-          id="btn-add-account-main"
-          onClick={() => openAddAccount()}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs sm:text-sm font-bold shadow-sm shadow-teal-700/20 active:scale-[0.98] transition min-h-[44px]"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-          <span>{t('accounts.addNew')}</span>
-        </button>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+          {filteredAccounts.length} حساب
+        </p>
       </div>
 
-      {/* Search, Filter & Sort Controls */}
-      <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center">
+      {/* Search & Menu Controls */}
+      <div className="flex items-center gap-2">
         {/* Search Input */}
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-slate-400 absolute start-3.5 top-1/2 -translate-y-1/2" />
@@ -155,32 +147,31 @@ export const AccountsPage: React.FC = () => {
           )}
         </div>
 
-        {/* Filter & Sort Controls Row */}
-        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-          {/* Filter Dropdown Button */}
-          <div className="relative">
-            <button
-              id="btn-filter-dropdown"
-              onClick={() => setIsFilterOpen(!isFilterOpen)}
-              className="px-3.5 py-2 rounded-xl border border-slate-300/80 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-teal-500 transition min-h-[44px] flex items-center gap-2 cursor-pointer shadow-xs"
-            >
-              <Filter className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
-              <span>التصنيف: {activeFilterLabel}</span>
-              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform ${isFilterOpen ? 'rotate-180' : ''}`} />
-            </button>
+        {/* Kebab Menu Button & Popover */}
+        <div className="relative shrink-0">
+          <button
+            id="btn-accounts-menu"
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            aria-label="خيارات التصفية والفرز"
+            className="p-2.5 rounded-xl border border-slate-300/80 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 min-w-[44px] min-h-[44px] flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-800/60 transition shadow-xs cursor-pointer"
+          >
+            <MoreVertical className="w-4 h-4" />
+          </button>
 
-            {isFilterOpen && (
-              <>
-                {/* Backdrop */}
-                <div 
-                  className="fixed inset-0 z-30" 
-                  onClick={() => setIsFilterOpen(false)} 
-                />
-                {/* Popover Menu */}
-                <div className="absolute start-0 sm:end-0 sm:start-auto mt-1.5 w-52 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl z-40 py-1.5 animate-in fade-in zoom-in-95 duration-150">
-                  <div className="px-3 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">
-                    فلترة حسب التصنيف
-                  </div>
+          {isMenuOpen && (
+            <>
+              {/* Backdrop */}
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setIsMenuOpen(false)}
+              />
+              {/* Popover Menu */}
+              <div className="absolute end-0 mt-1.5 w-60 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl z-50 py-2 animate-in fade-in zoom-in-95 duration-150 max-h-[85vh] overflow-y-auto">
+                {/* القسم الأول: التصنيف */}
+                <div className="px-3.5 py-1.5 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  التصنيف
+                </div>
+                <div className="space-y-0.5 mb-2">
                   {filterTabs.map((tab) => {
                     const isActive = filterType === tab.id;
                     return (
@@ -189,11 +180,11 @@ export const AccountsPage: React.FC = () => {
                         id={`filter-option-${tab.id}`}
                         onClick={() => {
                           handleFilterChange(tab.id);
-                          setIsFilterOpen(false);
+                          setIsMenuOpen(false);
                         }}
-                        className={`w-full text-start px-3.5 py-2.5 text-xs font-medium flex items-center justify-between transition-colors ${
-                          isActive 
-                            ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 font-bold' 
+                        className={`w-full text-start px-3.5 py-2 text-xs font-medium flex items-center justify-between transition-colors cursor-pointer ${
+                          isActive
+                            ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 font-bold'
                             : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60'
                         }`}
                       >
@@ -203,34 +194,15 @@ export const AccountsPage: React.FC = () => {
                     );
                   })}
                 </div>
-              </>
-            )}
-          </div>
 
-          {/* Sort Dropdown */}
-          <div className="relative">
-            <button
-              id="btn-sort-dropdown"
-              onClick={() => setIsSortOpen(!isSortOpen)}
-              className="px-3.5 py-2 rounded-xl border border-slate-300/80 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-teal-500 transition min-h-[44px] flex items-center gap-2 cursor-pointer shadow-xs"
-            >
-              <ArrowUpDown className="w-4 h-4 text-slate-400 shrink-0" />
-              <span>{activeSortLabel}</span>
-              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform ${isSortOpen ? 'rotate-180' : ''}`} />
-            </button>
+                {/* فاصل بصري بين القسمين */}
+                <div className="border-t border-slate-100 dark:border-slate-800 my-1" />
 
-            {isSortOpen && (
-              <>
-                {/* Backdrop */}
-                <div 
-                  className="fixed inset-0 z-30" 
-                  onClick={() => setIsSortOpen(false)} 
-                />
-                {/* Popover Menu */}
-                <div className="absolute end-0 mt-1.5 w-52 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl z-40 py-1.5 animate-in fade-in zoom-in-95 duration-150">
-                  <div className="px-3 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">
-                    خيارات الترتيب
-                  </div>
+                {/* القسم الثاني: الترتيب */}
+                <div className="px-3.5 py-1.5 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  الترتيب
+                </div>
+                <div className="space-y-0.5">
                   {sortOptions.map((opt) => {
                     const isActive = sortField === opt.id;
                     const Icon = opt.icon;
@@ -240,11 +212,11 @@ export const AccountsPage: React.FC = () => {
                         id={`sort-option-${opt.id}`}
                         onClick={() => {
                           setSortField(opt.id);
-                          setIsSortOpen(false);
+                          setIsMenuOpen(false);
                         }}
-                        className={`w-full text-start px-3.5 py-2.5 text-xs font-medium flex items-center justify-between transition-colors ${
-                          isActive 
-                            ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 font-bold' 
+                        className={`w-full text-start px-3.5 py-2 text-xs font-medium flex items-center justify-between transition-colors cursor-pointer ${
+                          isActive
+                            ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 font-bold'
                             : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60'
                         }`}
                       >
@@ -257,9 +229,9 @@ export const AccountsPage: React.FC = () => {
                     );
                   })}
                 </div>
-              </>
-            )}
-          </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -281,8 +253,6 @@ export const AccountsPage: React.FC = () => {
             id="empty-accounts-list"
             title={t('accounts.emptyTitle')}
             description={t('accounts.emptyDesc')}
-            actionLabel="+ إضافة أول حساب"
-            onAction={() => openAddAccount()}
           />
         )
       ) : (
