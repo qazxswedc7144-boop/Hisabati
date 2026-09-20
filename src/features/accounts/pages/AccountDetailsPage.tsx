@@ -167,7 +167,10 @@ export const AccountDetailsPage: React.FC = () => {
   return (
     <div id="account-details-page" className="space-y-6 animate-in fade-in duration-200">
       {/* Top Breadcrumb & Action Bar */}
-      <div className="flex items-center justify-between gap-2">
+      <div
+        className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-none flex-nowrap"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
         <button
           id="btn-back-to-accounts"
           onClick={() => navigate('/accounts')}
@@ -177,16 +180,17 @@ export const AccountDetailsPage: React.FC = () => {
           <ArrowRight className="w-4 h-4" />
         </button>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-nowrap shrink-0">
           {/* Statement Button */}
           <button
             id="btn-open-account-statement"
             onClick={() => setShowStatementModal(true)}
-            className="px-3 py-2 rounded-xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800/60 text-teal-700 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-900/50 transition min-h-[40px] flex items-center justify-center text-xs font-bold gap-1.5"
+            aria-label="كشف الحساب المالي"
+            className="p-2 sm:px-3 sm:py-2 rounded-xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800/60 text-teal-700 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-900/50 transition min-w-[40px] min-h-[40px] flex items-center justify-center text-xs font-bold gap-1.5 shrink-0"
             title="كشف الحساب المالي"
           >
             <FileText className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-            <span>كشف الحساب</span>
+            <span className="hidden sm:inline">كشف الحساب</span>
           </button>
 
           {/* Schedule Debt Collection Alert Button */}
@@ -194,18 +198,20 @@ export const AccountDetailsPage: React.FC = () => {
             <button
               id="btn-account-schedule-alert"
               onClick={() => openScheduleModal(account)}
-              className="px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition min-h-[40px] flex items-center justify-center text-xs font-bold gap-1.5"
+              aria-label="جدولة تنبيه تحصيل دين لهذا الحساب"
+              className="p-2 sm:px-3 sm:py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition min-w-[40px] min-h-[40px] flex items-center justify-center text-xs font-bold gap-1.5 shrink-0"
               title="جدولة تنبيه تحصيل دين لهذا الحساب"
             >
               <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-              <span>جدولة تحصيل</span>
+              <span className="hidden sm:inline">جدولة تحصيل</span>
             </button>
           )}
 
           {/* Archive / Unarchive Button */}
           <button
             onClick={handleToggleArchive}
-            className={`p-2 rounded-xl border transition min-w-[40px] min-h-[40px] flex items-center justify-center text-xs font-bold gap-1.5 ${
+            aria-label={account.archived === 1 ? 'استعادة من الأرشيف' : 'أرشفة الحساب'}
+            className={`p-2 rounded-xl border transition min-w-[40px] min-h-[40px] flex items-center justify-center text-xs font-bold gap-1.5 shrink-0 ${
               account.archived === 1
                 ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 text-amber-700 dark:text-amber-400'
                 : 'border-slate-200/80 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -219,7 +225,8 @@ export const AccountDetailsPage: React.FC = () => {
           {/* Edit Account */}
           <button
             onClick={() => setIsEditing(true)}
-            className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[40px] min-h-[40px] flex items-center justify-center border border-slate-200/80 dark:border-slate-800"
+            aria-label="تعديل الحساب"
+            className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[40px] min-h-[40px] flex items-center justify-center border border-slate-200/80 dark:border-slate-800 shrink-0"
             title="تعديل الحساب"
           >
             <Edit className="w-4 h-4" />
@@ -231,7 +238,8 @@ export const AccountDetailsPage: React.FC = () => {
               setDeleteErrorMessage(null);
               setShowDeleteConfirm(true);
             }}
-            className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition min-w-[40px] min-h-[40px] flex items-center justify-center border border-rose-200/80 dark:border-rose-900/40"
+            aria-label="حذف الحساب"
+            className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition min-w-[40px] min-h-[40px] flex items-center justify-center border border-rose-200/80 dark:border-rose-900/40 shrink-0"
             title="حذف الحساب"
           >
             <Trash2 className="w-4 h-4" />
