@@ -2,7 +2,7 @@ import React from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   BarChart3,
-  FileText,
+  FileSpreadsheet,
   Activity,
   TrendingUp,
   TrendingDown,
@@ -68,7 +68,7 @@ export const ReportsPage: React.FC = () => {
               : 'border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40'
           }`}
         >
-          <FileText className="w-4 h-4 shrink-0" />
+          <FileSpreadsheet className="w-4 h-4 shrink-0" />
           <span className="truncate">كشف الحساب</span>
         </button>
 

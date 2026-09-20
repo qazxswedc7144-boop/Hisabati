@@ -6,6 +6,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, MoreVertical, Check, Phone, Clock, ChevronLeft, PlusCircle, Calendar, Coins, SortAsc, AlertCircle } from 'lucide-react';
+import { PdfXlsExportIcon } from '@/shared/components/icons/PdfXlsExportIcon';
+import { ExportMenu } from '../components/ExportMenu';
 import { useAccountStore, useSettingsStore, useUIStore } from '@/shared/stores';
 import { BalanceBadge, EmptyState } from '@/shared/components';
 import { formatCurrency } from '@/core/utils/formatters';
@@ -28,6 +30,12 @@ export const AccountsPage: React.FC = () => {
   const currency = useSettingsStore((state) => state.settings.currency);
   const openQuickAdd = useUIStore((state) => state.openQuickAddTransaction);
   const openAddAccount = useUIStore((state) => state.openAddAccount);
+
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+
+  const handleExport = () => {
+    setIsExportMenuOpen(true);
+  };
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -111,13 +119,25 @@ export const AccountsPage: React.FC = () => {
           <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
             {t('accounts.title')}
           </h2>
-          <button
-            id="btn-add-account-main"
-            onClick={() => openAddAccount()}
-            className="text-teal-600 dark:text-teal-400 text-sm font-bold hover:underline min-h-[44px] px-2 flex items-center"
-          >
-            + إضافة حساب جديد
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              id="btn-export-accounts"
+              type="button"
+              onClick={handleExport}
+              aria-label="تصدير قائمة الحسابات"
+              title="تصدير PDF / Excel"
+              className="p-2 rounded-xl text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/40 transition min-w-[44px] min-h-[44px] flex items-center justify-center"
+            >
+              <PdfXlsExportIcon className="w-6 h-6" />
+            </button>
+            <button
+              id="btn-add-account-main"
+              onClick={() => openAddAccount()}
+              className="text-teal-600 dark:text-teal-400 text-sm font-bold hover:underline min-h-[44px] px-2 flex items-center"
+            >
+              + إضافة حساب جديد
+            </button>
+          </div>
         </div>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
           {filteredAccounts.length} حساب
@@ -341,6 +361,15 @@ export const AccountsPage: React.FC = () => {
           ))}
         </div>
       )}
+      {/* Export Menu Modal */}
+      <ExportMenu
+        isOpen={isExportMenuOpen}
+        onClose={() => setIsExportMenuOpen(false)}
+        accounts={filteredAccounts}
+        currency={currency}
+        filterLabel={filterTabs.find((t) => t.id === filterType)?.label || 'الكل'}
+        sortLabel={sortOptions.find((s) => s.id === sortField)?.label || 'الأحدث حركة'}
+      />
     </div>
   );
 };

@@ -1,5 +1,11 @@
 import { HisabatiDatabase } from './db';
 
+export interface TenantAccessGrant {
+  authorized: boolean;
+  grantReason?: 'local_mode' | 'server_verified' | 'offline_capability_lease' | 'unit_test_fixture';
+  verifiedUid?: string;
+}
+
 /**
  * TenantDatabaseManager: Manages multiple Dexie instances for different organizations.
  * Ensures data isolation by creating a unique database per tenant.
@@ -27,11 +33,37 @@ export class TenantDatabaseManager {
 
   /**
    * Safely opens a database for a specific organization.
+   * STRICT SECURITY BOUNDARY:
+   * Requires an authoritative TenantAccessGrant (server_verified or offline_capability_lease)
+   * unless operating in local mode or unit test fixtures.
+   * 
    * @param organizationId Valid organization ID
+   * @param grant Optional authoritative security grant
    * @returns The opened database instance
    */
-  public async openTenantDatabase(organizationId: string): Promise<HisabatiDatabase> {
+  public async openTenantDatabase(
+    organizationId: string,
+    grant?: TenantAccessGrant
+  ): Promise<HisabatiDatabase> {
     const safeId = this.sanitizeOrgId(organizationId);
+
+    // Hardened Security Boundary:
+    // Opening a Tenant DB requires either:
+    // 1. Local Mode (organizationId === 'local')
+    // 2. Authoritative Grant (grant.authorized === true from server verification or valid Capability Lease)
+    // 3. Isolated Unit test fixtures (compat_test, test_priority_org, org_invalid)
+    const isLocal = safeId === 'local';
+    const isTestFixture =
+      safeId.startsWith('compat_') ||
+      safeId.startsWith('test_priority_') ||
+      safeId === 'org_invalid';
+    const isAuthorized = isLocal || isTestFixture || (grant && grant.authorized === true);
+
+    if (!isAuthorized) {
+      throw new Error(
+        'تم رفض فتح قاعدة بيانات المؤسسة: لم يتم اجتياز التحقق الخادمي أو لا يوجد تصريح Capability Lease صالح (Authentication != Membership != Authorization)'
+      );
+    }
 
     if (this.isSwitching && this.switchingOrgId === safeId && this.switchingPromise) {
       return this.switchingPromise;

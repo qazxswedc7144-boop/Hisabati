@@ -19,6 +19,35 @@ export type AuthMembershipStatus =
   | 'authenticated_no_membership'
   | 'pending_server_verification';
 
+export interface CapabilityLease {
+  leaseId: string;
+  organizationId: string;
+  verifiedUid: string;
+  verifiedRole: OrganizationRole;
+  verifiedPermissions: string[];
+  issuedAt: number;     // Unix timestamp ms
+  expiresAt: number;    // Unix timestamp ms
+  verificationRevision: number;
+  integrityHash: string; // Cryptographic HMAC / SHA-256 digest of canonical fields
+  isRevoked?: boolean;
+}
+
+export type LeaseErrorCode =
+  | 'LEASE_NOT_FOUND'
+  | 'LEASE_REVOKED'
+  | 'LEASE_EXPIRED'
+  | 'LEASE_UID_MISMATCH'
+  | 'LEASE_ORG_MISMATCH'
+  | 'LEASE_INTEGRITY_FAILED'
+  | 'LEASE_ROLE_TAMPERED'
+  | 'LEASE_PERMISSIONS_TAMPERED'
+  | 'LEASE_REVISION_MISMATCH'
+  | 'LEASE_MALFORMED';
+
+export type LeaseValidationResult =
+  | { valid: true; lease: CapabilityLease }
+  | { valid: false; code: LeaseErrorCode; messageAr: string };
+
 export interface OrganizationSettings {
   currency: string;
   language: string;

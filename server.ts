@@ -2,6 +2,7 @@ import express from 'express';
 import http from 'http';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
+import { ServerMembershipVerifier } from './src/core/services/tenant/ServerMembershipVerifier';
 
 const PORT = 3000;
 
@@ -516,6 +517,79 @@ ${JSON.stringify(accountContext || {}).slice(0, 5000)}
       return res.json({ audit: parsedData, provider: 'gemini-ai' });
     } catch (err: any) {
       return handleApiError(res, err, 'حدث خطأ أثناء تدقيق الفاتورة بالذكاء الاصطناعي.');
+    }
+  });
+
+  // ============================================================================
+  // 4. Server-side Firebase Membership Verification (Phase P1.2-B-H Part 2)
+  // Decouples Auth from Authorization. Never trusts client role/uid claims.
+  // ============================================================================
+  const tenantLimiter = createRouteRateLimiter(60, 'tenant');
+
+  app.post('/api/tenant/verify-membership', tenantLimiter, async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const bearerToken =
+        typeof authHeader === 'string' && authHeader.toLowerCase().startsWith('bearer ')
+          ? authHeader.slice(7).trim()
+          : undefined;
+
+      const idToken = (req.body?.idToken || bearerToken) as string | undefined;
+      const organizationId = req.body?.organizationId as string | undefined;
+      const clientClaimedUid = req.body?.clientClaimedUid as string | undefined;
+      const clientClaimedRole = req.body?.clientClaimedRole as string | undefined;
+
+      // SEC-04 Input Validation
+      if (!idToken || typeof idToken !== 'string' || idToken.length > 8192) {
+        return res.status(400).json({
+          success: false,
+          verified: false,
+          authMembershipStatus: 'authenticated_no_membership',
+          code: 'TOKEN_MISSING_OR_INVALID',
+          error: 'رمز الدخول (ID Token) مفقود أو غير صالح.',
+        });
+      }
+
+      if (!organizationId || typeof organizationId !== 'string' || organizationId.length > 128) {
+        return res.status(400).json({
+          success: false,
+          verified: false,
+          authMembershipStatus: 'authenticated_no_membership',
+          code: 'ORGANIZATION_ID_INVALID',
+          error: 'معرف المؤسسة غير صالح أو مفقود.',
+        });
+      }
+
+      const result = await ServerMembershipVerifier.verifyMembership({
+        idToken,
+        organizationId,
+        clientClaimedUid,
+        clientClaimedRole,
+      });
+
+      if (!result.success) {
+        return res.status(403).json({
+          success: false,
+          verified: false,
+          authMembershipStatus: result.authMembershipStatus,
+          code: result.error?.code || 'MEMBERSHIP_VERIFICATION_FAILED',
+          error: result.error?.messageAr || 'فشل التحقق من عضوية المؤسسة.',
+          ...(process.env.NODE_ENV !== 'production' && result.error?.details
+            ? { details: result.error.details }
+            : {}),
+        });
+      }
+
+      return res.json({
+        success: true,
+        verified: true,
+        authMembershipStatus: result.authMembershipStatus,
+        verifiedUid: result.verifiedUid,
+        organization: result.organization,
+        membership: result.membership,
+      });
+    } catch (err: any) {
+      return handleApiError(res, err, 'حدث خطأ غير متوقع أثناء التحقق الخادمي من العضوية.');
     }
   });
 

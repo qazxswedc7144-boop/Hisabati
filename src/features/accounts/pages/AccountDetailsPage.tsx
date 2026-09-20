@@ -9,6 +9,7 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   FileText,
+  FileSpreadsheet,
   Calendar,
   AlertTriangle,
   X,
@@ -189,7 +190,7 @@ export const AccountDetailsPage: React.FC = () => {
             className="p-2 sm:px-3 sm:py-2 rounded-xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800/60 text-teal-700 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-900/50 transition min-w-[40px] min-h-[40px] flex items-center justify-center text-xs font-bold gap-1.5 shrink-0"
             title="كشف الحساب المالي"
           >
-            <FileText className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+            <FileSpreadsheet className="w-4 h-4 text-teal-600 dark:text-teal-400" />
             <span className="hidden sm:inline">كشف الحساب</span>
           </button>
 
