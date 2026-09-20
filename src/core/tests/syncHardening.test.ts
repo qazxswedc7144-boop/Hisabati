@@ -3,6 +3,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { db } from '../database/db';
 import { syncEngine, SyncEngine } from '../services/syncEngine.service';
 import { accountService } from '../services/account.service';
+import { tenantService } from '../services/TenantService';
+import { useTenantStore } from '@/shared/stores/tenantStore';
 
 vi.mock('../services/googleDrive.service', () => {
   return {
@@ -22,6 +24,12 @@ vi.mock('../services/googleDrive.service', () => {
 
 describe('Phase 4 - Sync Hardening & Safety Tests', () => {
   beforeEach(async () => {
+    await tenantService.initialize();
+    useTenantStore.getState().setContext({
+      activeOrganization: { id: 'local', name: 'Local Org' } as any,
+      activeBranch: { id: 'main', name: 'Main Branch' } as any
+    });
+
     await db.accounts.clear();
     await db.transactions.clear();
     await db.syncQueue.clear();

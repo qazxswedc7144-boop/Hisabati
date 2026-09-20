@@ -14,6 +14,9 @@ import { financialHealthEngine } from './FinancialHealthEngine.service';
 import { cashFlowAnalyzer } from './CashFlowAnalyzer.service';
 import { financialRiskDetector } from './FinancialRiskDetector.service';
 import { toMinorUnits, fromMinorUnits } from '@/core/utils/financial';
+import { getCurrencyDecimals } from '@/core/money/currency';
+import { settingsRepository } from '@/core/repositories/settings.repository';
+import { CurrencyCode } from '@/shared/types';
 
 /**
  * FinancialIntelligenceEngine
@@ -224,7 +227,8 @@ export class FinancialIntelligenceEngine {
   public generateForecast(
     cashFlow: CashFlowAnalysis,
     summary: FinancialHealthSummary,
-    periodsToProject: number = 3
+    periodsToProject: number = 3,
+    decimals: number = 2
   ): CashFlowForecast {
     const historicalPoints = cashFlow.dataPoints;
     const interval = cashFlow.interval;
@@ -310,13 +314,13 @@ export class FinancialIntelligenceEngine {
       periods.push({
         periodIndex: i,
         periodLabelAr,
-        projectedInflow: fromMinorUnits(projectedInflowMinor),
+        projectedInflow: fromMinorUnits(projectedInflowMinor, decimals),
         projectedInflowMinor,
-        projectedOutflow: fromMinorUnits(projectedOutflowMinor),
+        projectedOutflow: fromMinorUnits(projectedOutflowMinor, decimals),
         projectedOutflowMinor,
-        projectedNetFlow: fromMinorUnits(projectedNetFlowMinor),
+        projectedNetFlow: fromMinorUnits(projectedNetFlowMinor, decimals),
         projectedNetFlowMinor,
-        projectedCumulativeBalance: fromMinorUnits(runningCumulativeBalanceMinor),
+        projectedCumulativeBalance: fromMinorUnits(runningCumulativeBalanceMinor, decimals),
         projectedCumulativeBalanceMinor: runningCumulativeBalanceMinor,
         confidenceScore,
       });
@@ -328,9 +332,9 @@ export class FinancialIntelligenceEngine {
       disclaimerAr,
       forecastInterval: interval,
       periods,
-      totalProjectedInflow: fromMinorUnits(totalProjectedInflowMinor),
-      totalProjectedOutflow: fromMinorUnits(totalProjectedOutflowMinor),
-      totalProjectedNet: fromMinorUnits(totalProjectedNetMinor),
+      totalProjectedInflow: fromMinorUnits(totalProjectedInflowMinor, decimals),
+      totalProjectedOutflow: fromMinorUnits(totalProjectedOutflowMinor, decimals),
+      totalProjectedNet: fromMinorUnits(totalProjectedNetMinor, decimals),
       historicalPeriodsAnalyzed: count,
       assumptionsAr,
     };
@@ -345,6 +349,9 @@ export class FinancialIntelligenceEngine {
     customTransactions?: Transaction[],
     customAccounts?: Account[]
   ): Promise<FinancialIntelligenceReport> {
+    const activeCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER') || 'YER';
+    const decimals = getCurrencyDecimals(activeCurrency);
+
     // If custom data is provided, we use it (e.g. for testing). 
     // Otherwise, sub-engines will fetch their own optimized slices.
     const [healthSummary, cashFlow, risks] = await Promise.all([
@@ -354,7 +361,7 @@ export class FinancialIntelligenceEngine {
     ]);
 
     const insights = this.generateInsights(healthSummary, cashFlow, risks);
-    const forecast = this.generateForecast(cashFlow, healthSummary, 3);
+    const forecast = this.generateForecast(cashFlow, healthSummary, 3, decimals);
 
     return {
       healthSummary,

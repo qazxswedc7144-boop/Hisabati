@@ -14,6 +14,9 @@ import {
 } from '@/core/utils/financial';
 import { getCurrencyDecimals } from '@/core/money/currency';
 
+import { settingsRepository } from '@/core/repositories/settings.repository';
+import { CurrencyCode } from '@/shared/types';
+
 /**
  * FinancialHealthEngine
  * An independent, strictly READ-ONLY engine for computing financial health indicators,
@@ -44,6 +47,10 @@ export class FinancialHealthEngine {
   ): Promise<FinancialHealthSummary> {
     const accounts = customAccounts ?? (await db.accounts.toArray());
     
+    // [FIX]: Resolve active currency decimals to prevent 100x inflation/deflation in totals
+    const activeCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER') || 'YER';
+    const decimals = getCurrencyDecimals(activeCurrency);
+
     // If we have custom transactions (e.g. from a filtered view or test), use them.
     // Otherwise, we'll fetch only what we need to avoid OOM/performance hits.
     let transactions: Transaction[];
@@ -136,11 +143,17 @@ export class FinancialHealthEngine {
       }
     }
 
+    // [FIX]: Determine consistent decimal scale for reporting totals
+    // If the currency has 0 decimals (like YER) but we have fractional legacy data, 
+    // we use 2 decimals to accurately represent the decimal fields.
+    const hasFractionsInSet = transactions.some(t => t.amount !== undefined && !Number.isInteger(t.amount));
+    const displayDecimals = Math.max(decimals, hasFractionsInSet ? 2 : 0);
+
     // Net Financial Position
     const netPositionMinor = totalReceivablesMinor - totalPayablesMinor;
-    const totalReceivables = fromMinorUnits(totalReceivablesMinor);
-    const totalPayables = fromMinorUnits(totalPayablesMinor);
-    const netPosition = fromMinorUnits(netPositionMinor);
+    const totalReceivables = fromMinorUnits(totalReceivablesMinor, displayDecimals);
+    const totalPayables = fromMinorUnits(totalPayablesMinor, displayDecimals);
+    const netPosition = fromMinorUnits(netPositionMinor, displayDecimals);
 
     // 3. Collection Rate
     let collectionRate = 100;
@@ -152,7 +165,7 @@ export class FinancialHealthEngine {
     }
 
     // 4. Aging Schedule (FIFO matching of active debts)
-    const agingBreakdown = this.computeAgingBreakdown(debtorAccountBalances, totalReceivablesMinor);
+    const agingBreakdown = this.computeAgingBreakdown(debtorAccountBalances, totalReceivablesMinor, decimals);
 
     // Overdue debt ratio (> 30 days)
     const overdueMinor =
@@ -211,7 +224,8 @@ export class FinancialHealthEngine {
       balanceMinor: number;
       transactions: Transaction[];
     }>,
-    totalReceivablesMinor: number
+    totalReceivablesMinor: number,
+    decimals: number = 2
   ): Record<AgingBucketKey, AgingBucket> {
     const buckets: Record<AgingBucketKey, { minor: number; accounts: Set<string> }> = {
       '0_30': { minor: 0, accounts: new Set() },
@@ -225,8 +239,7 @@ export class FinancialHealthEngine {
     // [BI-FIX]: Determine consistent decimal scale for this set of accounts
     const allTxs = debtorAccounts.flatMap(d => d.transactions);
     const hasFractions = allTxs.some((t) => t.amount % 1 !== 0);
-    const currencyDecimals = getCurrencyDecimals(allTxs[0]?.currency || 'YER');
-    const displayDecimals = (hasFractions || currencyDecimals === 2) ? 2 : currencyDecimals;
+    const displayDecimals = (hasFractions || decimals === 2) ? 2 : decimals;
 
     for (const { accountId, balanceMinor, transactions: accTxs } of debtorAccounts) {
       // Sort debit transactions newest first to apply FIFO to active remaining balance

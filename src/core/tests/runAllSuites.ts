@@ -24,6 +24,8 @@ import { FirebaseMembershipP12TestSuite } from './firebaseMembershipP12.test';
 import { runPhaseP13Tests } from './mobileUxP13.test';
 import { FinancialCoreHardeningTestSuite } from './financialCoreHardening.test';
 import { FinancialAuditPart2TestSuite } from './financialAuditPart2.test';
+import { FinancialHardeningPart3TestSuite } from './financialHardeningPart3.test';
+import { SyncHardeningPart1TestSuite } from './syncHardeningPart1.test';
 import { tenantService } from '../services/TenantService';
 
 async function main() {
@@ -528,6 +530,44 @@ async function main() {
     }
   } catch (err: any) {
     console.error('Financial Audit Part 2 Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // 24. Phase Financial Core Hardening Part 3: Concurrency, Failure & Recovery
+  console.log('\n--- [Phase Financial Core Hardening Part 3] Concurrency, Failure & Recovery Tests ---');
+  try {
+    const fch3 = await FinancialHardeningPart3TestSuite.runAll();
+    console.log(`Financial Core Hardening Part 3 Result: Passed ${fch3.passed}/${fch3.total}`);
+    totalPassed += fch3.passed;
+    totalFailed += fch3.failed;
+    totalCount += fch3.total;
+    if (fch3.failed > 0) {
+      for (const r of fch3.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ ${r.title}: ${r.error}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Financial Core Hardening Part 3 Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // 25. SYNC ENGINE HARDENING — PART 1/3
+  console.log('\n--- [SYNC ENGINE HARDENING — PART 1/3] Audit + State Machine + Revision Safety ---');
+  try {
+    const sync1 = await SyncHardeningPart1TestSuite.runAll();
+    console.log(`Sync Hardening Part 1 Result: Passed ${sync1.passed}/${sync1.total}`);
+    totalPassed += sync1.passed;
+    totalFailed += sync1.total - sync1.passed;
+    totalCount += sync1.total;
+    if (sync1.total - sync1.passed > 0) {
+      for (const r of sync1.results.filter((x: any) => !x.passed)) {
+        console.error(`  ❌ ${r.title}: ${r.error}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Sync Hardening Part 1 Suite crashed:', err);
     totalFailed++;
     totalCount++;
   }

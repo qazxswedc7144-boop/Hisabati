@@ -8,6 +8,10 @@ import {
 } from '@/shared/types/bi.types';
 import { toMinorUnits, fromMinorUnits } from '@/core/utils/financial';
 
+import { getCurrencyDecimals } from '@/core/money/currency';
+import { settingsRepository } from '@/core/repositories/settings.repository';
+import { CurrencyCode } from '@/shared/types';
+
 /**
  * CashFlowAnalyzer
  * Analyzes cash flow velocity, inflows, outflows, and net balances by Day, Week, or Month.
@@ -31,6 +35,9 @@ export class CashFlowAnalyzer {
     customTransactions?: Transaction[],
     limitPeriods: number = 12
   ): Promise<CashFlowAnalysis> {
+    const activeCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER') || 'YER';
+    const decimals = getCurrencyDecimals(activeCurrency);
+
     let transactions: Transaction[];
     
     if (customTransactions) {
@@ -91,7 +98,7 @@ export class CashFlowAnalyzer {
       let periodOutflowMinor = 0;
 
       for (const tx of group.txs) {
-        const units = toMinorUnits(Math.abs(tx.amount));
+        const units = toMinorUnits(Math.abs(tx.amount), decimals);
         if (tx.type === 'credit') {
           periodInflowMinor += units;
         } else {
@@ -107,13 +114,13 @@ export class CashFlowAnalyzer {
       dataPoints.push({
         period: key,
         periodLabelAr: group.labelAr,
-        inflow: fromMinorUnits(periodInflowMinor),
+        inflow: fromMinorUnits(periodInflowMinor, decimals),
         inflowMinor: periodInflowMinor,
-        outflow: fromMinorUnits(periodOutflowMinor),
+        outflow: fromMinorUnits(periodOutflowMinor, decimals),
         outflowMinor: periodOutflowMinor,
-        netFlow: fromMinorUnits(periodNetMinor),
+        netFlow: fromMinorUnits(periodNetMinor, decimals),
         netFlowMinor: periodNetMinor,
-        cumulativeBalance: fromMinorUnits(cumulativeMinor),
+        cumulativeBalance: fromMinorUnits(cumulativeMinor, decimals),
         cumulativeBalanceMinor: cumulativeMinor,
         transactionCount: group.txs.length,
       });
@@ -121,8 +128,8 @@ export class CashFlowAnalyzer {
 
     const netCashFlowMinor = totalInflowMinor - totalOutflowMinor;
     const count = dataPoints.length || 1;
-    const averageInflow = fromMinorUnits(Math.round(totalInflowMinor / count));
-    const averageOutflow = fromMinorUnits(Math.round(totalOutflowMinor / count));
+    const averageInflow = fromMinorUnits(Math.round(totalInflowMinor / count), decimals);
+    const averageOutflow = fromMinorUnits(Math.round(totalOutflowMinor / count), decimals);
 
     // Calculate overall trend
     const trend = this.calculateTrend(dataPoints);
@@ -130,11 +137,11 @@ export class CashFlowAnalyzer {
     return {
       interval,
       dataPoints,
-      totalInflow: fromMinorUnits(totalInflowMinor),
+      totalInflow: fromMinorUnits(totalInflowMinor, decimals),
       totalInflowMinor,
-      totalOutflow: fromMinorUnits(totalOutflowMinor),
+      totalOutflow: fromMinorUnits(totalOutflowMinor, decimals),
       totalOutflowMinor,
-      netCashFlow: fromMinorUnits(netCashFlowMinor),
+      netCashFlow: fromMinorUnits(netCashFlowMinor, decimals),
       netCashFlowMinor,
       averageInflow,
       averageOutflow,

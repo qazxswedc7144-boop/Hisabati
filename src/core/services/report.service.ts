@@ -83,7 +83,7 @@ const resolveReportDecimals = async (
  * Primary source of truth: `transaction.amountMinor`.
  * Fallback (for legacy un-migrated records only): `toMinorUnits(Math.abs(transaction.amount))`.
  */
-const getTransactionMinorUnits = (transaction: Transaction): number => {
+const getTransactionMinorUnits = (transaction: Transaction, decimals: number = 2): number => {
   const item = transaction as TransactionFinancial;
 
   if (
@@ -96,7 +96,7 @@ const getTransactionMinorUnits = (transaction: Transaction): number => {
 
   // Safe fallback for legacy records missing amountMinor
   if (typeof transaction.amount === 'number' && Number.isFinite(transaction.amount)) {
-    return toMinorUnits(Math.abs(transaction.amount));
+    return toMinorUnits(Math.abs(transaction.amount), decimals);
   }
 
   return 0;
@@ -107,7 +107,7 @@ const getTransactionMinorUnits = (transaction: Transaction): number => {
  * Primary source of truth: `account.initialBalanceMinor`.
  * Fallback: `toMinorUnits(account.initialBalance)`.
  */
-const getAccountInitialBalanceMinor = (account: Account): number => {
+const getAccountInitialBalanceMinor = (account: Account, decimals: number = 2): number => {
   const item = account as AccountFinancial;
 
   if (
@@ -122,7 +122,7 @@ const getAccountInitialBalanceMinor = (account: Account): number => {
     typeof item.initialBalance === 'number' &&
     Number.isFinite(item.initialBalance)
   ) {
-    return toMinorUnits(item.initialBalance);
+    return toMinorUnits(item.initialBalance, decimals);
   }
 
   return 0;
@@ -133,7 +133,7 @@ const getAccountInitialBalanceMinor = (account: Account): number => {
  * Primary source of truth: `account.currentBalanceMinor`.
  * Fallback: `toMinorUnits(account.currentBalance)`.
  */
-const getAccountCurrentBalanceMinor = (account: Account): number => {
+const getAccountCurrentBalanceMinor = (account: Account, decimals: number = 2): number => {
   const item = account as AccountFinancial;
 
   if (
@@ -148,7 +148,7 @@ const getAccountCurrentBalanceMinor = (account: Account): number => {
     typeof account.currentBalance === 'number' &&
     Number.isFinite(account.currentBalance)
   ) {
-    return toMinorUnits(account.currentBalance);
+    return toMinorUnits(account.currentBalance, decimals);
   }
 
   return 0;
@@ -226,11 +226,11 @@ export class ReportService {
         }
         return toMinorUnits(Math.abs(trx.amount), 2);
       }
-      return getTransactionMinorUnits(trx);
+      return getTransactionMinorUnits(trx, decimals);
     };
 
     // Initial balance from account metadata (if present)
-    let initialBalanceMinor = getAccountInitialBalanceMinor(account);
+    let initialBalanceMinor = getAccountInitialBalanceMinor(account, decimals);
     const accFinancial = account as AccountFinancial;
     if (decimals === 2 && allTransactions.some((t) => t.amount % 1 !== 0)) {
       if (typeof accFinancial.initialBalance === 'number' && Number.isFinite(accFinancial.initialBalance)) {
@@ -365,7 +365,7 @@ export class ReportService {
     >();
 
     for (const trx of periodTransactions) {
-      const trxAmountMinor = getTransactionMinorUnits(trx);
+      const trxAmountMinor = getTransactionMinorUnits(trx, decimals);
 
       if (trx.type === 'debit') {
         periodDebitMinor += trxAmountMinor;
@@ -415,7 +415,7 @@ export class ReportService {
     for (const acc of accounts) {
       if (acc.archived === 0) activeAccountsCount++;
 
-      const balanceMinor = getAccountCurrentBalanceMinor(acc);
+      const balanceMinor = getAccountCurrentBalanceMinor(acc, decimals);
 
       if (balanceMinor > 0) {
         owedToMeTotalMinor += balanceMinor;
@@ -470,12 +470,12 @@ export class ReportService {
 
     // All active/eligible receivable accounts (balance > 0)
     const allReceivableAccounts = accounts.filter(
-      (account) => getAccountCurrentBalanceMinor(account) > 0
+      (account) => getAccountCurrentBalanceMinor(account, decimals) > 0
     );
 
     let overallTotalAmountMinor = 0;
     for (const account of allReceivableAccounts) {
-      overallTotalAmountMinor += getAccountCurrentBalanceMinor(account);
+      overallTotalAmountMinor += getAccountCurrentBalanceMinor(account, decimals);
     }
     const overallAccountsCount = allReceivableAccounts.length;
     const overallTotalAmount = fromMinorUnits(overallTotalAmountMinor, decimals);
@@ -487,7 +487,7 @@ export class ReportService {
 
       filtered = filtered.filter(
         (account) =>
-          getAccountCurrentBalanceMinor(account) >= minMinor
+          getAccountCurrentBalanceMinor(account, decimals) >= minMinor
       );
     }
 
@@ -504,15 +504,15 @@ export class ReportService {
     // Sort descending by current balance minor with deterministic tie-breaker
     filtered.sort((a, b) => {
       const diff =
-        getAccountCurrentBalanceMinor(b) -
-        getAccountCurrentBalanceMinor(a);
+        getAccountCurrentBalanceMinor(b, decimals) -
+        getAccountCurrentBalanceMinor(a, decimals);
       if (diff !== 0) return diff;
       return a.name.localeCompare(b.name, 'ar') || a.id.localeCompare(b.id);
     });
 
     let totalAmountMinor = 0;
     for (const account of filtered) {
-      totalAmountMinor += getAccountCurrentBalanceMinor(account);
+      totalAmountMinor += getAccountCurrentBalanceMinor(account, decimals);
     }
 
     const totalAmount = fromMinorUnits(totalAmountMinor, decimals);
@@ -522,7 +522,7 @@ export class ReportService {
       overallTotalAmountMinor > 0 ? overallTotalAmountMinor : totalAmountMinor;
 
     const items: ReceivablesReportItem[] = filtered.map((account) => {
-      const balanceMinor = getAccountCurrentBalanceMinor(account);
+      const balanceMinor = getAccountCurrentBalanceMinor(account, decimals);
       const balance =
         typeof account.currentBalance === 'number' && Number.isFinite(account.currentBalance)
           ? Math.abs(account.currentBalance)
@@ -569,12 +569,12 @@ export class ReportService {
 
     // All active/eligible payable accounts (balance < 0)
     const allPayableAccounts = accounts.filter(
-      (account) => getAccountCurrentBalanceMinor(account) < 0
+      (account) => getAccountCurrentBalanceMinor(account, decimals) < 0
     );
 
     let overallTotalAmountMinor = 0;
     for (const account of allPayableAccounts) {
-      overallTotalAmountMinor += Math.abs(getAccountCurrentBalanceMinor(account));
+      overallTotalAmountMinor += Math.abs(getAccountCurrentBalanceMinor(account, decimals));
     }
     const overallAccountsCount = allPayableAccounts.length;
     const overallTotalAmount = fromMinorUnits(overallTotalAmountMinor, decimals);
@@ -586,7 +586,7 @@ export class ReportService {
 
       filtered = filtered.filter(
         (account) =>
-          Math.abs(getAccountCurrentBalanceMinor(account)) >= minMinor
+          Math.abs(getAccountCurrentBalanceMinor(account, decimals)) >= minMinor
       );
     }
 
@@ -603,15 +603,15 @@ export class ReportService {
     // Sort descending by absolute debt magnitude minor with deterministic tie-breaker
     filtered.sort((a, b) => {
       const diff =
-        Math.abs(getAccountCurrentBalanceMinor(b)) -
-        Math.abs(getAccountCurrentBalanceMinor(a));
+        Math.abs(getAccountCurrentBalanceMinor(b, decimals)) -
+        Math.abs(getAccountCurrentBalanceMinor(a, decimals));
       if (diff !== 0) return diff;
       return a.name.localeCompare(b.name, 'ar') || a.id.localeCompare(b.id);
     });
 
     let totalAmountMinor = 0;
     for (const account of filtered) {
-      totalAmountMinor += Math.abs(getAccountCurrentBalanceMinor(account));
+      totalAmountMinor += Math.abs(getAccountCurrentBalanceMinor(account, decimals));
     }
 
     const totalAmount = fromMinorUnits(totalAmountMinor, decimals);
@@ -622,7 +622,7 @@ export class ReportService {
 
     const items: PayablesReportItem[] = filtered.map((account) => {
       const magnitudeMinor = Math.abs(
-        getAccountCurrentBalanceMinor(account)
+        getAccountCurrentBalanceMinor(account, decimals)
       );
       const balance =
         typeof account.currentBalance === 'number' && Number.isFinite(account.currentBalance)

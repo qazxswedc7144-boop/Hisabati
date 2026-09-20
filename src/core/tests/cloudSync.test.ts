@@ -372,7 +372,7 @@ export class CloudSyncTestSuite {
           }
 
           // Verify conflict is persisted in memory/localStorage
-          const persisted = syncEngine.getPersistedConflicts();
+          const persisted = await syncEngine.getPersistedConflicts();
           if (!persisted.some((c) => c.entityId === conflictTrxId)) {
             throw new Error('لم يتم حفظ التعارض في التخزين الدائم للرجوع إليه');
           }

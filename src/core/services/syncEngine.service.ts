@@ -6,6 +6,7 @@
  */
 
 import { db } from '../database/db';
+import { tenantDbManager } from '../database/TenantDatabaseManager';
 const SETTINGS_WHITELIST = ["currency", "appLanguage", "themeMode", "dateFormat", "invoiceDefaultNotes", "businessName", "businessPhone", "businessAddress", "businessTaxId"];
 
 import {
@@ -25,7 +26,9 @@ import { decimalToMinor } from '../money/converter';
 
 const TAB_INSTANCE_ID = 'tab_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 const SYNC_STATE_FILE = 'hisabati_sync_state.json';
-const CONFLICTS_STORAGE_KEY = 'hisabati_active_conflicts';
+const SETTINGS_SYNC_LOCK = 'hisabati_sync_lock';
+const SETTINGS_SYNC_CONFLICTS = 'hisabati_active_conflicts';
+const SETTINGS_SYNC_METADATA = 'hisabati_sync_metadata';
 const MAX_RETRIES = 5;
 const TOMBSTONE_RETENTION_DAYS = 60;
 
@@ -40,6 +43,24 @@ export class SyncEngine {
 
   constructor() {
     this.setupNetworkListeners();
+    // Initialize status from DB on next tick
+    setTimeout(() => this.refreshSyncStatusFromDb(), 0);
+  }
+
+  private async refreshSyncStatusFromDb(): Promise<void> {
+    if (tenantDbManager.getIsSwitching()) {
+      // Retry in 100ms if still switching
+      setTimeout(() => this.refreshSyncStatusFromDb(), 100);
+      return;
+    }
+    try {
+      const meta = await db.settings.get(SETTINGS_SYNC_METADATA);
+      if (meta && meta.value?.status) {
+        this.notifyStatus(meta.value.status as SyncStatusType);
+      }
+    } catch {
+      // Safely ignore if DB not ready
+    }
   }
 
   public getStatus(): SyncStatusType {
@@ -122,24 +143,29 @@ export class SyncEngine {
 
   private inMemoryConflicts: SyncConflictItem[] = [];
 
-  public getPersistedConflicts(): SyncConflictItem[] {
+  public async getPersistedConflicts(): Promise<SyncConflictItem[]> {
     try {
-      if (typeof localStorage === 'undefined') return this.inMemoryConflicts;
-      const raw = localStorage.getItem(CONFLICTS_STORAGE_KEY);
-      return raw ? JSON.parse(raw) : this.inMemoryConflicts;
+      const entry = await db.settings.get(SETTINGS_SYNC_CONFLICTS);
+      if (entry && Array.isArray(entry.value)) {
+        return entry.value;
+      }
+      return this.inMemoryConflicts;
     } catch {
       return this.inMemoryConflicts;
     }
   }
 
-  private savePersistedConflicts(conflicts: SyncConflictItem[]): void {
+  private async savePersistedConflicts(conflicts: SyncConflictItem[]): Promise<void> {
     this.inMemoryConflicts = conflicts;
     try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(CONFLICTS_STORAGE_KEY, JSON.stringify(conflicts));
-      }
+      await db.settings.put({
+        id: SETTINGS_SYNC_CONFLICTS,
+        key: SETTINGS_SYNC_CONFLICTS,
+        value: conflicts,
+        updatedAt: new Date().toISOString(),
+      });
     } catch {
-      // Storage quota or unavailable safeguard
+      // Non-blocking
     }
   }
 
@@ -228,48 +254,44 @@ export class SyncEngine {
     }
   }
 
-  private acquireDistributedLock(): boolean {
-    if (typeof localStorage === 'undefined') return true;
-    const lockKey = 'hisabati_sync_distributed_lock';
-    const leaseTimeMs = 30000; // 30 second lease
+  private async acquireDistributedLock(): Promise<boolean> {
+    const leaseTimeMs = 45000; // 45 second lease
     const now = Date.now();
     const deviceId = getDeviceId();
 
-    try {
-      const existingRaw = localStorage.getItem(lockKey);
-      if (existingRaw) {
-        const lock = JSON.parse(existingRaw);
+    return await db.transaction('rw', db.settings, async () => {
+      const existing = await db.settings.get(SETTINGS_SYNC_LOCK);
+      
+      if (existing && existing.value) {
+        const lock = existing.value;
+        // If lock is still valid and owned by someone else
         if (lock.expiresAt > now && lock.tabId !== TAB_INSTANCE_ID) {
           return false;
         }
       }
 
-      const newLock = {
-        deviceId,
-        tabId: TAB_INSTANCE_ID,
-        expiresAt: now + leaseTimeMs,
-      };
-      localStorage.setItem(lockKey, JSON.stringify(newLock));
+      // Acquire or renew lock
+      await db.settings.put({
+        id: SETTINGS_SYNC_LOCK,
+        key: SETTINGS_SYNC_LOCK,
+        value: {
+          deviceId,
+          tabId: TAB_INSTANCE_ID,
+          expiresAt: now + leaseTimeMs,
+        },
+        updatedAt: new Date().toISOString(),
+      });
       return true;
-    } catch {
-      return true;
-    }
+    });
   }
 
-  private releaseDistributedLock(): void {
-    if (typeof localStorage === 'undefined') return;
-    const lockKey = 'hisabati_sync_distributed_lock';
-    try {
-      const existingRaw = localStorage.getItem(lockKey);
-      if (existingRaw) {
-        const lock = JSON.parse(existingRaw);
-        if (lock.tabId === TAB_INSTANCE_ID) {
-          localStorage.removeItem(lockKey);
-        }
+  private async releaseDistributedLock(): Promise<void> {
+    await db.transaction('rw', db.settings, async () => {
+      const existing = await db.settings.get(SETTINGS_SYNC_LOCK);
+      if (existing && existing.value && existing.value.tabId === TAB_INSTANCE_ID) {
+        await db.settings.delete(SETTINGS_SYNC_LOCK);
       }
-    } catch {
-      // ignore
-    }
+    });
   }
 
   /**
@@ -296,34 +318,45 @@ export class SyncEngine {
       details: 'بدء عملية المزامنة اليدوية',
     });
 
+    const currentConflicts = await this.getPersistedConflicts();
     if (this.isSyncing) {
-      return { success: false, conflicts: this.getPersistedConflicts(), message: 'عملية مزامنة أخرى جارية حالياً', pulledCount: 0, pushedCount: 0 };
+      return { success: false, conflicts: currentConflicts, message: 'عملية مزامنة أخرى جارية حالياً', pulledCount: 0, pushedCount: 0 };
     }
 
     const lockedMsg = 'قفل المزامنة الموزع نشط على جهاز أو تبويب آخر. يرجى الانتظار قليلاً.';
 
     if (typeof navigator !== 'undefined' && navigator.locks) {
-      let lockAcquired = false;
       let result: any = null;
+      let lockAcquired = false;
       await navigator.locks.request('hisabati_sync_distributed_lock', { ifAvailable: true }, async (lock) => {
         if (!lock) return;
         lockAcquired = true;
-        result = await this._performFullSyncInternal();
+        // Even with Web Locks, we still check DB lock for cross-device/persistent safety
+        const dbLock = await this.acquireDistributedLock();
+        if (!dbLock) {
+          lockAcquired = false;
+          return;
+        }
+        try {
+          result = await this._performFullSyncInternal();
+        } finally {
+          await this.releaseDistributedLock();
+        }
       });
       if (!lockAcquired) {
-        return { success: false, conflicts: this.getPersistedConflicts(), message: lockedMsg, pulledCount: 0, pushedCount: 0 };
+        return { success: false, conflicts: currentConflicts, message: lockedMsg, pulledCount: 0, pushedCount: 0 };
       }
       return result;
     }
 
-    // Fallback for older browsers without Web Locks API
-    if (!this.acquireDistributedLock()) {
-      return { success: false, conflicts: this.getPersistedConflicts(), message: lockedMsg, pulledCount: 0, pushedCount: 0 };
+    // Fallback for older browsers
+    if (!(await this.acquireDistributedLock())) {
+      return { success: false, conflicts: currentConflicts, message: lockedMsg, pulledCount: 0, pushedCount: 0 };
     }
     try {
       return await this._performFullSyncInternal();
     } finally {
-      this.releaseDistributedLock();
+      await this.releaseDistributedLock();
     }
   }
 
@@ -334,24 +367,23 @@ private async _performFullSyncInternal(): Promise<{
     pulledCount: number;
     pushedCount: number;
   }> {
+    const currentConflicts = await this.getPersistedConflicts();
     if (this.isSyncing) {
-      return { success: false, conflicts: this.getPersistedConflicts(), message: 'عملية مزامنة أخرى جارية حالياً', pulledCount: 0, pushedCount: 0 };
+      return { success: false, conflicts: currentConflicts, message: 'عملية مزامنة أخرى جارية حالياً', pulledCount: 0, pushedCount: 0 };
     }
 
-
-
     if (!googleDriveService.isConnected()) {
-      return { success: false, conflicts: this.getPersistedConflicts(), message: 'يرجى ربط حساب Google Drive أولاً', pulledCount: 0, pushedCount: 0 };
+      return { success: false, conflicts: currentConflicts, message: 'يرجى ربط حساب Google Drive أولاً', pulledCount: 0, pushedCount: 0 };
     }
 
     const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
     if (!isOnline) {
       this.notifyStatus('offline');
-      return { success: false, conflicts: this.getPersistedConflicts(), message: 'الجهاز غير متصل بالإنترنت', pulledCount: 0, pushedCount: 0 };
+      return { success: false, conflicts: currentConflicts, message: 'الجهاز غير متصل بالإنترنت', pulledCount: 0, pushedCount: 0 };
     }
 
     this.isSyncing = true;
-    this.notifyStatus('syncing');
+    await this.notifyStatusAtomic('syncing');
     await this.logAudit('SYNC_START', 'بدء عملية المزامنة الثنائية مع Google Drive', true);
 
     const newlyDetectedConflicts: SyncConflictItem[] = [];
@@ -365,6 +397,7 @@ private async _performFullSyncInternal(): Promise<{
       const syncFile = files.find((f) => f.name === SYNC_STATE_FILE);
 
       let remoteData: {
+        revision: number;
         version: number;
         deviceId: string;
         lastModified: string;
@@ -376,6 +409,24 @@ private async _performFullSyncInternal(): Promise<{
 
       if (syncFile) {
         remoteData = await googleDriveService.downloadJsonFile(syncFile.id);
+      }
+
+      // SYNC-07: Revision Safety Logic
+      const metaEntry = await db.settings.get(SETTINGS_SYNC_METADATA);
+      const localMeta = metaEntry?.value || { lastRevision: 0 };
+      const remoteRevision = remoteData?.revision || 0;
+
+      // If remote has a higher revision, it means another device pushed.
+      // This is expected in a healthy sync (we pull then push).
+      // But if we have local pending changes AND remote has moved, 
+      // we must pull and integrate remote changes before we can push our own.
+      
+      const localPendingCount = await db.syncQueue.where('status').equals('pending').count();
+      
+      if (remoteRevision < localMeta.lastRevision && localPendingCount === 0) {
+        // This could happen if remote was reset or rolled back. 
+        // We warn but proceed to "fix" the cloud with our current state if we are the authority.
+        await this.logAudit('SYNC_START', `تحذير: المراجعة السحابية (${remoteRevision}) أقدم من المحلية (${localMeta.lastRevision})`, true);
       }
 
       // 2. Load Local Tombstones & Permanent Delete Markers
@@ -411,13 +462,14 @@ private async _performFullSyncInternal(): Promise<{
           if (remTomb.entityType === 'transaction') {
             const exists = await db.transactions.get(remTomb.id);
             if (exists) {
-              await db.transactions.delete(remTomb.id);
+              await transactionEngine.deleteTransaction(remTomb.id, undefined, { isRemote: true });
               pulledCount++;
             }
           } else if (remTomb.entityType === 'account') {
             const exists = await db.accounts.get(remTomb.id);
             if (exists) {
-              await db.accounts.delete(remTomb.id);
+              const { accountService } = await import('./account.service');
+              await accountService.deleteAccount(remTomb.id, true, false, { isRemote: true });
               pulledCount++;
             }
           }
@@ -488,6 +540,7 @@ private async _performFullSyncInternal(): Promise<{
         const localOpIdMap = new Map(localTransactions.filter((t) => !!t.operationId).map((t) => [t.operationId!, t]));
 
         // Merge Remote Accounts (skipping tombstoned accounts)
+        const { accountService } = await import('./account.service');
         for (const remAcc of remoteData.accounts) {
           if (localTombstoneIds.has(remAcc.id)) {
             continue; // Do not resurrect deleted account
@@ -495,10 +548,13 @@ private async _performFullSyncInternal(): Promise<{
 
           const local = localAccMap.get(remAcc.id);
           if (!local) {
-            await db.accounts.put(remAcc);
+            await accountService.createAccount({
+              ...remAcc,
+              operationId: remAcc.id // Use entity ID as operationId for idempotency
+            }, { isRemote: true });
             pulledCount++;
           } else if (remAcc.updatedAt > local.updatedAt) {
-            await db.accounts.put(remAcc);
+            await accountService.updateAccount(remAcc.id, remAcc, { isRemote: true });
             pulledCount++;
           }
         }
@@ -527,8 +583,11 @@ private async _performFullSyncInternal(): Promise<{
           const localMatch = existingById || existingByOp;
 
           if (!localMatch) {
-            // Safe remote insertion
-            await db.transactions.put(remTrx);
+            // Safe remote insertion through Financial Boundary
+            await transactionEngine.createTransaction({
+              ...remTrx,
+              operationId: remTrx.operationId || `remote_${remTrx.id}`
+            }, undefined, { isRemote: true });
             pulledCount++;
           } else {
             // Critical Financial Conflict Evaluation (SYNC-06, SYNC-07)
@@ -566,8 +625,8 @@ private async _performFullSyncInternal(): Promise<{
               });
               // We DO NOT update the local record here. Local "wins" in the DB for now until user resolves.
             } else if (remTrx.updatedAt > (localMatch.updatedAt || '')) {
-              // Safe non-financial metadata update (e.g. note or receiptNumber)
-              await db.transactions.put(remTrx);
+              // Safe non-financial metadata update through Financial Boundary
+              await transactionEngine.updateTransaction(localMatch.id, remTrx, undefined, { isRemote: true });
               pulledCount++;
             }
           }
@@ -632,16 +691,14 @@ private async _performFullSyncInternal(): Promise<{
         (t) => !localTombstoneIds.has(t.id)
       );
 
-      // Whitelist of settings safe to sync (no local secrets, tokens, or encryption keys) (SYNC-04)
-
-
-
-
-
       const localSettings = await db.settings.toArray();
       const syncableSettings = localSettings.filter(s => SETTINGS_WHITELIST.includes(s.key));
 
+      // SYNC-07: Increment revision for push
+      const nextRevision = Math.max(remoteRevision, localMeta.lastRevision) + (pushedCount > 0 ? 1 : 0);
+
       const newCloudState = {
+        revision: nextRevision,
         version: 1,
         deviceId: getDeviceId(),
         deviceName: getDeviceName(),
@@ -658,29 +715,47 @@ private async _performFullSyncInternal(): Promise<{
       // In-place safe update: patch existing file or upload new
       if (syncFile) {
         try {
+          // Double check remote revision hasn't moved while we were merging
+          // In a high-concurrency env we'd use etags, but for GDrive we rely on our tab-locks and sequential push.
           await googleDriveService.updateJsonFile(syncFile.id, SYNC_STATE_FILE, newCloudState, {
             accountCount: updatedAccounts.length,
             transactionCount: updatedTransactions.length,
+            revision: nextRevision
           });
-        } catch {
-          // Fallback: upload new and delete old safely
+        } catch (err: any) {
+          // Fallback: upload new if patch fails (e.g. file gone)
           await googleDriveService.uploadJsonFile(SYNC_STATE_FILE, newCloudState, {
             accountCount: updatedAccounts.length,
             transactionCount: updatedTransactions.length,
+            revision: nextRevision
           });
-          await googleDriveService.deleteFile(syncFile.id).catch(() => {});
+          if (syncFile.id) await googleDriveService.deleteFile(syncFile.id).catch(() => {});
         }
       } else {
         await googleDriveService.uploadJsonFile(SYNC_STATE_FILE, newCloudState, {
           accountCount: updatedAccounts.length,
           transactionCount: updatedTransactions.length,
+          revision: nextRevision
         });
       }
 
-      // 8. POST-UPLOAD SUCCESS: Mark items as completed & prune old completed items
-      for (const item of inFlightPendingItems) {
-        await db.syncQueue.update(item.id, { status: 'completed' });
-      }
+      // 8. POST-UPLOAD SUCCESS: Mark items as completed & update local revision
+      await db.transaction('rw', [db.syncQueue, db.settings], async () => {
+        for (const item of inFlightPendingItems) {
+          await db.syncQueue.update(item.id, { status: 'completed' });
+        }
+        await db.settings.put({
+          id: SETTINGS_SYNC_METADATA,
+          key: SETTINGS_SYNC_METADATA,
+          value: {
+            ...localMeta,
+            lastRevision: nextRevision,
+            lastSyncTime: new Date().toISOString(),
+            status: 'synced'
+          },
+          updatedAt: new Date().toISOString()
+        });
+      });
 
       // Keep recent completed items to prevent database growth
       const allCompleted = await db.syncQueue.where('status').equals('completed').toArray();
@@ -701,17 +776,21 @@ private async _performFullSyncInternal(): Promise<{
       await integrityService.auditIntegrity();
 
       // 10. Merge and Persist Conflicts
-      const existingPersisted = this.getPersistedConflicts().filter((c) => !c.resolved);
+      const existingPersisted = (await this.getPersistedConflicts()).filter((c) => !c.resolved);
       const mergedConflictsMap = new Map<string, SyncConflictItem>();
       existingPersisted.forEach((c) => mergedConflictsMap.set(c.id, c));
       newlyDetectedConflicts.forEach((c) => mergedConflictsMap.set(c.id, c));
       const activeConflicts = Array.from(mergedConflictsMap.values());
-      this.savePersistedConflicts(activeConflicts);
+      await this.savePersistedConflicts(activeConflicts);
 
       const lastSyncStr = new Date().toISOString();
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('hisabati_last_sync_time', lastSyncStr);
-      }
+      // SYNC-05: Move metadata to DB
+      await db.settings.put({
+        id: 'hisabati_last_sync_time',
+        key: 'hisabati_last_sync_time',
+        value: lastSyncStr,
+        updatedAt: lastSyncStr
+      });
 
       await this.logAudit(
         'SYNC_SUCCESS',
@@ -719,6 +798,8 @@ private async _performFullSyncInternal(): Promise<{
         true
       );
 
+      const finalStatus: SyncStatusType = activeConflicts.length > 0 ? 'conflict' : 'synced';
+      await this.notifyStatusAtomic(finalStatus);
       if (activeConflicts.length > 0) {
         if (newlyDetectedConflicts.length > 0) {
           await this.logAudit(
@@ -727,10 +808,7 @@ private async _performFullSyncInternal(): Promise<{
             false
           );
         }
-        this.notifyStatus('conflict');
         this.notifyConflicts(activeConflicts);
-      } else {
-        this.notifyStatus('synced');
       }
 
       return {
@@ -742,22 +820,47 @@ private async _performFullSyncInternal(): Promise<{
       };
     } catch (err: any) {
       // Revert processing items safely with exponential retry tracking
-      for (const item of inFlightPendingItems) {
-        const nextRetry = (item.retryCount || 0) + 1;
-        const nextStatus = nextRetry >= MAX_RETRIES ? 'failed' : 'pending';
-        await db.syncQueue.update(item.id, {
-          retryCount: nextRetry,
-          status: nextStatus,
-          lastError: err?.message || 'فشلت المزامنة',
-        });
-      }
+      await db.transaction('rw', db.syncQueue, async () => {
+        for (const item of inFlightPendingItems) {
+          const nextRetry = (item.retryCount || 0) + 1;
+          const nextStatus = nextRetry >= MAX_RETRIES ? 'failed' : 'pending';
+          await db.syncQueue.update(item.id, {
+            retryCount: nextRetry,
+            status: nextStatus,
+            lastError: err?.message || 'فشلت المزامنة',
+          });
+        }
+      });
 
       await this.logAudit('SYNC_FAILED', `فشلت المزامنة: ${err?.message || 'خطأ غير معروف'}`, false);
-      this.notifyStatus('error');
+      await this.notifyStatusAtomic('error');
       throw err;
     } finally {
       this.isSyncing = false;
     }
+  }
+
+  /**
+   * SYNC-06: Atomic Status Transitions
+   */
+  private async notifyStatusAtomic(status: SyncStatusType): Promise<void> {
+    try {
+      await db.transaction('rw', db.settings, async () => {
+        const metaEntry = await db.settings.get(SETTINGS_SYNC_METADATA);
+        const localMeta = metaEntry?.value || { lastRevision: 0 };
+        
+        await db.settings.put({
+          id: SETTINGS_SYNC_METADATA,
+          key: SETTINGS_SYNC_METADATA,
+          value: { ...localMeta, status },
+          updatedAt: new Date().toISOString()
+        });
+      });
+    } catch (err) {
+      console.warn('Failed to update sync status atomically:', err);
+    }
+
+    this.notifyStatus(status);
   }
 
   /**
@@ -872,16 +975,17 @@ private async _performFullSyncInternal(): Promise<{
 
   /**
    * Resolves a detected conflict between local and remote versions deterministically.
-   * Does not destroy data. Both versions remain auditable.
+   * SYNC-08: Ensures all remote writes go through the Transaction Engine/Boundary.
    */
   public async resolveConflict(conflict: SyncConflictItem, choice: 'local' | 'remote'): Promise<void> {
     if (choice === 'remote' && conflict.remoteVersion?.data) {
       if (conflict.entityType === 'transaction') {
-        await db.transactions.put(conflict.remoteVersion.data);
+        // [SYNC-08 FIX]: Go through TransactionEngine to ensure audit, snapshot, and amountMinor validation
+        await transactionEngine.updateTransaction(conflict.entityId, conflict.remoteVersion.data, undefined, { isRemote: true });
       } else if (conflict.entityType === 'account') {
-        await db.accounts.put(conflict.remoteVersion.data);
+        const { accountService } = await import('./account.service');
+        await accountService.updateAccount(conflict.entityId, conflict.remoteVersion.data, { isRemote: true });
       }
-      await transactionEngine.recalculateAllBalances();
     } else if (choice === 'local' && conflict.localVersion?.data) {
       // Local version retained. Enqueue UPDATE mutation so cloud state aligns on next sync
       await this.enqueueMutation(
@@ -894,12 +998,12 @@ private async _performFullSyncInternal(): Promise<{
     }
 
     // Remove resolved conflict from active persisted conflicts
-    const remaining = this.getPersistedConflicts().filter((c) => c.id !== conflict.id);
-    this.savePersistedConflicts(remaining);
+    const remaining = (await this.getPersistedConflicts()).filter((c) => c.id !== conflict.id);
+    await this.savePersistedConflicts(remaining);
     this.notifyConflicts(remaining);
 
     if (remaining.length === 0) {
-      this.notifyStatus('synced');
+      await this.notifyStatusAtomic('synced');
     }
 
     await this.logAudit('CONFLICT_RESOLVED', `تم حل التعارض (${conflict.id}) باختيار النسخة: ${choice}`, true);

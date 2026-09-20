@@ -38,7 +38,7 @@ export class FinancialTransactionEngine {
    * Creates a transaction with strict financial validation, precision rounding,
    * deduplication / idempotency check, atomic persistence, and derived balance recalculation.
    */
-  async createTransaction(dto: CreateTransactionDTO, actor?: AuditActor): Promise<Transaction> {
+  async createTransaction(dto: CreateTransactionDTO, actor?: AuditActor, options?: { isRemote?: boolean }): Promise<Transaction> {
     const currentActor = actor || rbacGuard.getActiveActor();
 
     // 0. Strict RBAC Guard Assertion (Guarded Execution Gate)
@@ -174,7 +174,7 @@ export class FinancialTransactionEngine {
       if (!createdTransaction) throw new Error('فشل إنشاء العملية المالية');
 
       // Audit & Sync side effects (Post-transaction)
-      await this.postProcessTransaction(createdTransaction, 'CREATE', currentActor, account);
+      await this.postProcessTransaction(createdTransaction, 'CREATE', currentActor, account, options);
 
       return createdTransaction;
     } finally {
@@ -185,7 +185,7 @@ export class FinancialTransactionEngine {
   /**
    * Helper for side-effects after transaction persistence
    */
-  private async postProcessTransaction(trx: Transaction, action: 'CREATE' | 'UPDATE', actor: AuditActor, account: Account) {
+  private async postProcessTransaction(trx: Transaction, action: 'CREATE' | 'UPDATE', actor: AuditActor, account: Account, options?: { isRemote?: boolean }) {
     try {
       await auditTrailService.log({
         actor,
@@ -193,17 +193,20 @@ export class FinancialTransactionEngine {
         targetType: 'transaction',
         targetId: trx.id,
         riskLevel: action === 'CREATE' ? 'LOW' : 'MEDIUM',
-        detailsAr: `${action === 'CREATE' ? 'تسجيل' : 'تعديل'} قيد مالي (${trx.type === 'debit' ? 'مدين' : 'دائن'}) بمبلغ ${trx.amount} على حساب "${account.name}".`,
+        detailsAr: `${action === 'CREATE' ? 'تسجيل' : 'تعديل'} قيد مالي (${trx.type === 'debit' ? 'مدين' : 'دائن'}) بمبلغ ${trx.amount} على حساب "${account.name}".${options?.isRemote ? ' (عن طريق المزامنة)' : ''}`,
         afterState: { ...trx },
         metadata: {
           accountId: account.id,
           amount: trx.amount,
           operationId: trx.operationId,
+          isRemote: options?.isRemote,
         },
       });
     } catch (e) { console.warn('Audit log failed', e); }
 
-    await this.enqueueSyncMutation('transaction', trx.id, action, trx, trx.operationId);
+    if (!options?.isRemote) {
+      await this.enqueueSyncMutation('transaction', trx.id, action, trx, trx.operationId);
+    }
   }
 
   /**
@@ -308,7 +311,7 @@ export class FinancialTransactionEngine {
   /**
    * Updates an existing transaction and updates balances of all affected accounts.
    */
-  async updateTransaction(id: string, dto: UpdateTransactionDTO, actor?: AuditActor): Promise<Transaction> {
+  async updateTransaction(id: string, dto: UpdateTransactionDTO, actor?: AuditActor, options?: { isRemote?: boolean }): Promise<Transaction> {
     const currentActor = actor || rbacGuard.getActiveActor();
 
     await rbacGuard.assertPermission('transactions:update', {
@@ -337,12 +340,15 @@ export class FinancialTransactionEngine {
       systemCurrency: freshSettings.currency,
     });
 
-    // Validate and resolve amount (authoritative amountMinor)
-    const financial = validateAndResolveFinancialAmount(
-      dto.amount !== undefined ? dto.amount : existing.amount,
-      dto.amountMinor !== undefined ? dto.amountMinor : (dto.amount !== undefined ? undefined : existing.amountMinor),
-      activeCurrency
-    );
+    // Resolve and validate financial amount (Source of Truth: amountMinor)
+    // If a new value is provided in DTO, it takes precedence. 
+    // If only one of (amount, amountMinor) is provided, the other is derived.
+    let financial;
+    if (dto.amountMinor !== undefined || dto.amount !== undefined) {
+      financial = validateAndResolveFinancialAmount(dto.amount, dto.amountMinor, activeCurrency);
+    } else {
+      financial = { amount: existing.amount, amountMinor: existing.amountMinor };
+    }
 
     const updatedTrx: Transaction = {
       ...existing,
@@ -388,7 +394,7 @@ export class FinancialTransactionEngine {
       });
     });
 
-    await this.postProcessTransaction(updatedTrx, 'UPDATE', currentActor, account);
+    await this.postProcessTransaction(updatedTrx, 'UPDATE', currentActor, account, options);
 
     return updatedTrx;
   }
@@ -396,7 +402,7 @@ export class FinancialTransactionEngine {
   /**
    * Deletes a transaction and recalculates the affected account balance.
    */
-  async deleteTransaction(id: string, actor?: AuditActor): Promise<boolean> {
+  async deleteTransaction(id: string, actor?: AuditActor, options?: { isRemote?: boolean }): Promise<boolean> {
     const currentActor = actor || rbacGuard.getActiveActor();
 
     // Strict RBAC Guard: assert transactions:delete permission
@@ -421,8 +427,13 @@ export class FinancialTransactionEngine {
       systemCurrency,
     });
 
+    let deleted = false;
     await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, db.settings, async (transaction) => {
-      await db.transactions.delete(id);
+      // Re-verify existence inside transaction to prevent concurrent double-delete/recalculate race
+      const trxToDelete = await transaction.table('transactions').get(id);
+      if (!trxToDelete) return;
+
+      await transaction.table('transactions').delete(id);
       await this.recalculateAccountBalance(accountId, activeCurrency, transaction);
 
       // Log deletion atomically
@@ -458,9 +469,14 @@ export class FinancialTransactionEngine {
       } catch (e) {
         console.warn('Permanent tombstone write warning:', e);
       }
+      deleted = true;
     });
 
-    return true;
+    if (deleted && !options?.isRemote) {
+      await this.enqueueSyncMutation('transaction', id, 'DELETE', { id }, existing.operationId);
+    }
+
+    return deleted;
   }
 
   /**

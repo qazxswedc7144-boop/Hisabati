@@ -19,7 +19,7 @@ export class AccountService {
     return await db.accounts.get(id);
   }
 
-  async createAccount(dto: CreateAccountDTO): Promise<Account> {
+  async createAccount(dto: CreateAccountDTO, options?: { isRemote?: boolean }): Promise<Account> {
     // 0. RBAC Guard
     await rbacGuard.assertPermission('accounts:create', {
       targetType: 'account',
@@ -36,8 +36,15 @@ export class AccountService {
       throw new Error(firstError);
     }
 
+    // Idempotency Check
+    if (dto.operationId) {
+      const existing = await db.accounts.where('id').equals(dto.operationId).first() || 
+                       await db.accounts.get(dto.operationId);
+      if (existing) return existing;
+    }
+
     const now = new Date().toISOString();
-    const id = 'acc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const id = dto.operationId || 'acc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
 
     // Fetch system default currency and resolve strictly
     const systemCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER');
@@ -69,7 +76,9 @@ export class AccountService {
     await db.accounts.add(newAccount);
 
     // Safe offline-first sync mutation enqueueing
-    await this.enqueueSyncMutation('account', id, 'CREATE', newAccount, id);
+    if (!options?.isRemote) {
+      await this.enqueueSyncMutation('account', id, 'CREATE', newAccount, id);
+    }
 
     // If there is an initial balance, record it as a first transaction through the engine
     if (dto.initialBalance && dto.initialBalance > 0) {
@@ -88,7 +97,7 @@ export class AccountService {
     return (await this.getById(id)) || newAccount;
   }
 
-  async updateAccount(id: string, dto: UpdateAccountDTO): Promise<Account | undefined> {
+  async updateAccount(id: string, dto: UpdateAccountDTO, options?: { isRemote?: boolean }): Promise<Account | undefined> {
     // 0. RBAC Guard
     await rbacGuard.assertPermission('accounts:update', {
       targetType: 'account',
@@ -116,7 +125,9 @@ export class AccountService {
     };
 
     await db.accounts.update(id, updated);
-    await this.enqueueSyncMutation('account', id, 'UPDATE', updated, id);
+    if (!options?.isRemote) {
+      await this.enqueueSyncMutation('account', id, 'UPDATE', updated, id);
+    }
     return await this.getById(id);
   }
 
@@ -152,7 +163,7 @@ export class AccountService {
     return await this.getById(id);
   }
 
-  async deleteAccount(id: string, force = false, moveToTrash = false): Promise<boolean> {
+  async deleteAccount(id: string, force = false, moveToTrash = false, options?: { isRemote?: boolean }): Promise<boolean> {
     // 0. RBAC Guard
     await rbacGuard.assertPermission('accounts:delete', {
       targetType: 'account',
@@ -226,9 +237,11 @@ export class AccountService {
     });
 
     // Safe offline-first sync mutation enqueueing (tombstone)
-    await this.enqueueSyncMutation('account', id, 'DELETE', { id }, id);
-    for (const trx of childTrx) {
-      await this.enqueueSyncMutation('transaction', trx.id, 'DELETE', { id: trx.id }, trx.id);
+    if (!options?.isRemote) {
+      await this.enqueueSyncMutation('account', id, 'DELETE', { id }, id);
+      for (const trx of childTrx) {
+        await this.enqueueSyncMutation('transaction', trx.id, 'DELETE', { id: trx.id }, trx.id);
+      }
     }
 
     return true;

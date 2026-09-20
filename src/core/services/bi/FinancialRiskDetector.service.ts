@@ -9,6 +9,9 @@ import {
 import { getCurrencyDecimals } from '@/core/money/currency';
 import { financialHealthEngine } from './FinancialHealthEngine.service';
 
+import { settingsRepository } from '@/core/repositories/settings.repository';
+import { CurrencyCode } from '@/shared/types';
+
 /**
  * FinancialRiskDetector
  * Scans accounts and transactions to identify liquidity threats, concentration hazards,
@@ -32,6 +35,9 @@ export class FinancialRiskDetector {
     customTransactions?: Transaction[],
     customAccounts?: Account[]
   ): Promise<FinancialRiskAlert[]> {
+    const activeCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER') || 'YER';
+    const decimals = getCurrencyDecimals(activeCurrency);
+
     const accounts = customAccounts ?? (await db.accounts.toArray());
     
     let transactions: Transaction[];
@@ -89,7 +95,7 @@ export class FinancialRiskDetector {
               category: 'CONCENTRATION',
               severity: isCritical ? 'CRITICAL' : 'HIGH',
               titleAr: `تركز مالي مرتفع على حساب: ${acc.name}`,
-              descriptionAr: `يمثل هذا الحساب ${ratio.toFixed(1)}% من إجمالي المستحقات والديون المترتبة لك، بمبلغ ${fromMinorUnits(balanceMinor).toLocaleString('ar-EG')} ر.ي.`,
+              descriptionAr: `يمثل هذا الحساب ${ratio.toFixed(1)}% من إجمالي المستحقات والديون المترتبة لك، بمبلغ ${fromMinorUnits(balanceMinor, decimals).toLocaleString('ar-EG')} ر.ي.`,
               recommendationAr: `ينصح بتجميد السحب الآجل مؤقتاً لهذا الحساب وتقسيم مبالغ السداد إلى أقساط سريعة لتخفيف مخاطر التعثر.`,
               affectedAccountId: acc.id,
               affectedAccountName: acc.name,
@@ -127,7 +133,7 @@ export class FinancialRiskDetector {
               category: 'STAGNANCY',
               severity: isHigh ? 'HIGH' : 'MEDIUM',
               titleAr: `حساب راكد دون سداد منذ ${daysSincePayment} يوم`,
-              descriptionAr: `لم يسجل العميل (${acc.name}) أي عملية سداد منذ تاريخ ${lastActivityDate}، والمبلغ المستحق ${fromMinorUnits(balanceMinor).toLocaleString('ar-EG')} ر.ي.`,
+              descriptionAr: `لم يسجل العميل (${acc.name}) أي عملية سداد منذ تاريخ ${lastActivityDate}، والمبلغ المستحق ${fromMinorUnits(balanceMinor, decimals).toLocaleString('ar-EG')} ر.ي.`,
               recommendationAr: `إرسال كشف حساب فوري عبر واتساب أو الاتصال المباشر لطلب تسوية فورية وتجنب انتقال الدين للشطب.`,
               affectedAccountId: acc.id,
               affectedAccountName: acc.name,
