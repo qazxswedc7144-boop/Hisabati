@@ -1,11 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Plus, ArrowUpDown, Filter, ChevronDown, Check, Phone, Clock, ChevronLeft, PlusCircle, Calendar, Coins, SortAsc } from 'lucide-react';
+import { Search, Plus, ArrowUpDown, Filter, ChevronDown, Check, Phone, Clock, ChevronLeft, PlusCircle, Calendar, Coins, SortAsc, AlertCircle } from 'lucide-react';
 import { useAccountStore, useSettingsStore, useUIStore } from '@/shared/stores';
 import { BalanceBadge, EmptyState } from '@/shared/components';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
 import { AccountFilterType, AccountSortField } from '@/shared/types';
 import { useI18n } from '@/shared/hooks/useI18n';
+
+// CHANGELOG (visual-only):
+// - [1] removed header description
+// - [2] added account count
+// - [3] added due date badge
+// - [4] moved chevron to far left
+// - [5] reduced card height
 
 export const AccountsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -28,6 +35,41 @@ export const AccountsPage: React.FC = () => {
   const [isSortOpen, setIsSortOpen] = useState(false);
 
   const filteredAccounts = getFilteredAccounts();
+
+  // Helper for due date badge
+  const getDueBadge = (dueDate?: string) => {
+    if (!dueDate) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(dueDate);
+    due.setHours(0, 0, 0, 0);
+    const diffTime = due.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) {
+      return (
+        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-bold shrink-0">
+          <AlertCircle className="w-2.5 h-2.5" />
+          <span>متأخر</span>
+        </div>
+      );
+    }
+    if (diffDays === 0) {
+      return (
+        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[10px] font-bold shrink-0">
+          <span>مستحق اليوم</span>
+        </div>
+      );
+    }
+    if (diffDays > 0 && diffDays <= 7) {
+      return (
+        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-bold shrink-0">
+          <span>خلال 7 أيام</span>
+        </div>
+      );
+    }
+    return null;
+  };
 
   // Sync URL search params with store filter
   useEffect(() => {
@@ -74,8 +116,8 @@ export const AccountsPage: React.FC = () => {
           <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
             {t('accounts.title')}
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            إدارة حسابات العملاء والموردين ومتابعة الأرصدة
+          <p className="text-[12px] font-medium text-slate-500 dark:text-slate-400">
+            {filteredAccounts.length} حساب
           </p>
         </div>
 
@@ -243,48 +285,51 @@ export const AccountsPage: React.FC = () => {
           />
         )
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5">
           {filteredAccounts.map((account) => (
             <div
               key={account.id}
               id={`account-card-${account.id}`}
-              className="group relative rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-xs hover:shadow-md hover:border-teal-500/40 transition-all flex flex-col justify-between"
+              className="group relative rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 sm:p-4 shadow-xs hover:shadow-md hover:border-teal-500/40 transition-all flex flex-col justify-between min-h-[120px]"
             >
               <div>
                 {/* Top Row: Name + Badge */}
-                <div className="flex items-start justify-between gap-2.5 mb-2">
+                <div className="flex items-start justify-between gap-2.5 mb-1.5">
                   <div
                     onClick={() => navigate(`/accounts/${account.id}`)}
-                    className="min-w-0 cursor-pointer"
+                    className="min-w-0 cursor-pointer flex-1"
                   >
-                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-400 transition truncate">
-                      {account.name}
-                    </h3>
+                    <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                      <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-400 transition truncate">
+                        {account.name}
+                      </h3>
+                      {getDueBadge(account.dueDate)}
+                    </div>
                     {account.phone && (
-                      <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5" dir="ltr">
-                        <Phone className="w-3 h-3 text-slate-400" />
+                      <p className="text-[10px] text-slate-400 flex items-center gap-1" dir="ltr">
+                        <Phone className="w-2.5 h-2.5 text-slate-300" />
                         <span>{account.phone}</span>
                       </p>
                     )}
                   </div>
 
-                  <BalanceBadge balance={account.currentBalance} size="md" />
+                  <BalanceBadge balance={account.currentBalance} size="sm" />
                 </div>
 
                 {/* Note preview if any */}
                 {account.note && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mb-3">
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1 mb-2 italic">
                     {account.note}
                   </p>
                 )}
               </div>
 
               {/* Financial Summary & Action Row */}
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 mt-2 flex items-center justify-between gap-3">
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 mt-1.5 flex items-center justify-between gap-2">
                 <div onClick={() => navigate(`/accounts/${account.id}`)} className="cursor-pointer">
-                  <span className="text-[11px] text-slate-400 block">الرصيد:</span>
+                  <span className="text-[10px] text-slate-400 block leading-tight">الرصيد:</span>
                   <span
-                    className={`text-base font-extrabold tabular-nums ${
+                    className={`text-sm sm:text-base font-extrabold tabular-nums ${
                       account.currentBalance > 0
                         ? 'text-emerald-600 dark:text-emerald-400'
                         : account.currentBalance < 0
@@ -296,11 +341,11 @@ export const AccountsPage: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-2">
                   <button
                     onClick={() => openQuickAdd(account.id)}
                     title="تسجيل عملية لهذا الحساب"
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 text-teal-700 dark:text-teal-300 text-xs font-bold transition min-h-[38px] active:scale-[0.98]"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 text-teal-700 dark:text-teal-300 text-[11px] font-bold transition min-h-[40px] active:scale-[0.98]"
                   >
                     <PlusCircle className="w-3.5 h-3.5" />
                     <span>+ إضافة عملية</span>
@@ -309,7 +354,7 @@ export const AccountsPage: React.FC = () => {
                   <button
                     onClick={() => navigate(`/accounts/${account.id}`)}
                     aria-label="كشف الحساب"
-                    className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[36px] min-h-[36px] flex items-center justify-center"
+                    className="p-2 rounded-xl text-slate-300 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[40px] min-h-[40px] flex items-center justify-center order-first"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
