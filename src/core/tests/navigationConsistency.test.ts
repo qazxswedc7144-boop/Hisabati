@@ -25,19 +25,20 @@ export class NavigationConsistencyTestSuite {
       '/messaging',
       '/ai',
       '/team',
+      '/trash',
       '/settings',
     ];
 
-    // NAV-01: Canonical Registry Completeness (All 8 mandatory routes)
+    // NAV-01: Canonical Registry Completeness (All 9 mandatory routes)
     const itemsRoutes = APPLICATION_NAV_ITEMS.map((item) => item.to);
     const missingRoutes = expectedRoutes.filter((r) => !itemsRoutes.includes(r));
-    const nav01Passed = missingRoutes.length === 0 && APPLICATION_NAV_ITEMS.length === 8;
+    const nav01Passed = missingRoutes.length === 0 && APPLICATION_NAV_ITEMS.length === 9;
     results.push({
       id: 'NAV-01',
-      nameAr: 'اكتمال سجل التنقل الأساسي: شمول جميع الأقسام الثمانية الإلزامية دون أي نقص',
+      nameAr: 'اكتمال سجل التنقل الأساسي: شمول جميع الأقسام التسعة الإلزامية دون أي نقص',
       passed: nav01Passed,
       message: nav01Passed
-        ? 'تم التحقق من وجود جميع الأقسام الثمانية في سجل التنقل'
+        ? 'تم التحقق من وجود جميع الأقسام التسعة في سجل التنقل'
         : `أقسام مفقودة: ${missingRoutes.join(', ')}`,
     });
 
@@ -50,7 +51,8 @@ export class NavigationConsistencyTestSuite {
       APPLICATION_NAV_ITEMS[4].to === '/messaging' &&
       APPLICATION_NAV_ITEMS[5].to === '/ai' &&
       APPLICATION_NAV_ITEMS[6].to === '/team' &&
-      APPLICATION_NAV_ITEMS[7].to === '/settings';
+      APPLICATION_NAV_ITEMS[7].to === '/trash' &&
+      APPLICATION_NAV_ITEMS[8].to === '/settings';
 
     results.push({
       id: 'NAV-02',

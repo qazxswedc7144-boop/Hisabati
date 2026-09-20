@@ -22,6 +22,7 @@ import {
   TeamMember,
   AuditTrailEntry,
   TrashItem,
+  DebtRecord,
 } from '@/shared/types';
 
 export class HisabatiDatabase extends Dexie {
@@ -53,6 +54,7 @@ export class HisabatiDatabase extends Dexie {
     createdAt: string;
     type: 'automatic' | 'manual' | 'rollback';
   }, string>;
+  debts!: Table<DebtRecord, string>;
 
   constructor(dbName: string = 'HisabatiDatabase') {
     super(dbName);
@@ -169,6 +171,58 @@ export class HisabatiDatabase extends Dexie {
       auditTrail: 'id, sequenceNumber, timestamp, action, targetType, targetId, riskLevel, [targetType+targetId]',
       trash: 'id, entityType, entityId, deletedAt, expiresAt, deletedBy, status, [entityType+entityId]',
       safetyBackups: 'id, createdAt, type',
+    });
+
+    // Version 9 Schema (Multi-Debt & Notification Idempotency Hardening)
+    this.version(9).stores({
+      accounts: 'id, name, phone, archived, dueDate, createdAt, updatedAt, [archived+dueDate]',
+      transactions: 'id, accountId, type, date, operationId, createdAt, updatedAt, [accountId+date]',
+      settings: 'id, key, updatedAt',
+      syncQueue: 'id, entityType, entityId, operation, operationId, status, createdAt',
+      syncAuditLogs: 'id, action, timestamp, deviceId, success',
+      messages: 'id, messageId, channel, type, status, recipient, priority, operationId, createdAt, scheduledAt',
+      messageTemplates: 'id, name, type, defaultChannel, active, createdAt',
+      inAppNotifications: 'id, type, priority, read, createdAt, idempotencyKey, relatedEntityId, [type+idempotencyKey]',
+      scheduledMessages: 'id, channel, status, scheduledAt, nextRunAt, operationId, createdAt',
+      messageQueue: 'id, messageId, channel, status, operationId, nextRetryAt, createdAt',
+      aiAuditLogs: 'id, requestId, intent, status, provider, confirmed, timestamp',
+      users: 'id, email, phone, role, activeTeamId, createdAt',
+      teams: 'id, name, ownerId, createdAt',
+      teamMembers: 'id, teamId, userId, role, status, [teamId+userId], createdAt',
+      auditTrail: 'id, sequenceNumber, timestamp, action, targetType, targetId, riskLevel, [targetType+targetId]',
+      trash: 'id, entityType, entityId, deletedAt, expiresAt, deletedBy, status, [entityType+entityId]',
+      safetyBackups: 'id, createdAt, type',
+      debts: 'id, accountId, dueDate, status, [accountId+status], [status+dueDate]',
+    }).upgrade(async (tx) => {
+      const accounts = await tx.table('accounts').toArray();
+      const now = new Date().toISOString();
+      for (const acc of accounts) {
+        const amountMinor = typeof acc.currentBalanceMinor === 'number' 
+          ? acc.currentBalanceMinor 
+          : Math.round((acc.currentBalance || 0) * 100);
+
+        if (acc.dueDate && amountMinor > 0) {
+          const debtId = 'debt_mig_' + acc.id;
+          await tx.table('debts').put({
+            id: debtId,
+            accountId: acc.id,
+            amountMinor,
+            paidMinor: 0,
+            remainingMinor: amountMinor,
+            dueDate: acc.dueDate,
+            status: 'open',
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+      const notifs = await tx.table('inAppNotifications').toArray();
+      for (const n of notifs) {
+        if (!n.idempotencyKey) {
+          n.idempotencyKey = 'legacy_' + n.id;
+          await tx.table('inAppNotifications').put(n);
+        }
+      }
     });
   }
 }

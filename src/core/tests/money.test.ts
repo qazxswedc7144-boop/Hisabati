@@ -23,6 +23,7 @@ import {
   getCurrencyFactor,
   FinancialEngineMoneyAdapter,
 } from '../money';
+import { getMinorDigits, toMinor, fromMinor } from '../utils/money.utils';
 import { db } from '../database/db';
 import {
   DATABASE_SCHEMA_VERSION,
@@ -280,16 +281,16 @@ export class MoneyTestSuite {
     await runTest('MONEY_14', 'Database & Schema Safety', 'الحفاظ الصارم على إصدارات المخطط وقاعدة البيانات', () => {
       // 1. Dexie versions inspection
       const version = (db as any).verno;
-      if (version !== 8) {
-        throw new Error(`Dexie version must be exactly 8, found ${version}`);
+      if (version !== 9) {
+        throw new Error(`Dexie version must be exactly 9, found ${version}`);
       }
 
       // 2. Constants checks
-      if (DATABASE_SCHEMA_VERSION !== 8) {
-        throw new Error(`DATABASE_SCHEMA_VERSION must remain 8, found ${DATABASE_SCHEMA_VERSION}`);
+      if (DATABASE_SCHEMA_VERSION !== 9) {
+        throw new Error(`DATABASE_SCHEMA_VERSION must remain 9, found ${DATABASE_SCHEMA_VERSION}`);
       }
-      if (BACKUP_SCHEMA_VERSION !== 4) {
-        throw new Error(`BACKUP_SCHEMA_VERSION must remain 4, found ${BACKUP_SCHEMA_VERSION}`);
+      if (BACKUP_SCHEMA_VERSION !== 5) {
+        throw new Error(`BACKUP_SCHEMA_VERSION must remain 5, found ${BACKUP_SCHEMA_VERSION}`);
       }
       if (FINANCIAL_FORMAT_VERSION !== 1) {
         throw new Error(`FINANCIAL_FORMAT_VERSION must remain 1, found ${FINANCIAL_FORMAT_VERSION}`);
@@ -333,6 +334,28 @@ export class MoneyTestSuite {
 
       const dual = FinancialEngineMoneyAdapter.computeDualMetrics(mockTrx, 'SAR');
       if (dual.currentBalance !== 50.25) throw new Error(`Expected balance decimal 50.25, got ${dual.currentBalance}`);
+    });
+
+    // 17. Multi-currency Minor Conversion Utils (JPY, KWD, USD, SAR, YER)
+    await runTest('MONEY_17', 'Multi-currency Minor Conversions', 'تحويلات الوحدات الصغرى لمختلف العملات (JPY, KWD, USD, SAR, YER)', () => {
+      // JPY (0 decimals)
+      if (getMinorDigits('JPY') !== 0) throw new Error('Expected JPY decimals 0');
+      if (toMinor(100, 'JPY') !== 100) throw new Error('Expected JPY 100 major to minor 100');
+      if (fromMinor(100, 'JPY') !== 100) throw new Error('Expected JPY 100 minor to major 100');
+
+      // KWD (3 decimals)
+      if (getMinorDigits('KWD') !== 3) throw new Error('Expected KWD decimals 3');
+      if (toMinor(1.234, 'KWD') !== 1234) throw new Error('Expected KWD 1.234 to minor 1234');
+      if (fromMinor(1234, 'KWD') !== 1.234) throw new Error('Expected KWD 1234 minor to major 1.234');
+
+      // USD / SAR (2 decimals)
+      if (getMinorDigits('USD') !== 2) throw new Error('Expected USD decimals 2');
+      if (toMinor(10.5, 'USD') !== 1050) throw new Error('Expected USD 10.5 to minor 1050');
+      if (fromMinor(1050, 'SAR') !== 10.5) throw new Error('Expected SAR 1050 minor to major 10.5');
+
+      // YER (0 decimals)
+      if (getMinorDigits('YER') !== 0) throw new Error('Expected YER decimals 0');
+      if (toMinor(5000, 'YER') !== 5000) throw new Error('Expected YER 5000 to minor 5000');
     });
 
     const passedCount = results.filter((r) => r.passed).length;

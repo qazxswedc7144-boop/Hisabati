@@ -121,6 +121,53 @@ export function migrateBackupV3ToV4(payload: any): any {
 }
 
 /**
+ * Migrates a V4 backup payload to V5 format in memory.
+ * Transfers legacy dueDate from accounts to the new debts array.
+ */
+export function migrateBackupV4ToV5(payload: any): any {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('هيكل ملف النسخة الاحتياطية غير صالح (Invalid Payload)');
+  }
+
+  if (!payload.metadata || typeof payload.metadata !== 'object') {
+    throw new Error('بيانات النسخة الاحتياطية الوصفية غير موجودة (Metadata Missing)');
+  }
+
+  const migrated = structuredClone(payload);
+  const now = new Date().toISOString();
+  const debts: any[] = migrated.debts ?? [];
+  const accounts: any[] = migrated.accounts ?? [];
+
+  for (const acc of accounts) {
+    const dueDate = acc.dueDate;
+    const amountMinor = acc.currentBalanceMinor;
+    if (dueDate && typeof amountMinor === 'number' && amountMinor > 0) {
+      const exists = debts.some(d => d.accountId === acc.id);
+      if (!exists) {
+        debts.push({
+          id: 'debt_mig_' + acc.id,
+          accountId: acc.id,
+          amountMinor,
+          paidMinor: 0,
+          remainingMinor: amountMinor,
+          dueDate,
+          status: 'open',
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+  }
+
+  migrated.debts = debts;
+  migrated.metadata.backupSchemaVersion = 5;
+  migrated.metadata.schemaVersion = 5;
+  migrated.metadata.databaseSchemaVersion = 9;
+
+  return migrated;
+}
+
+/**
  * Validates, gate-checks, and sequentially migrates a raw backup payload to the current BACKUP_SCHEMA_VERSION.
  * Operates strictly in memory with zero database interactions.
  */
@@ -164,6 +211,10 @@ export async function migrateBackupPayload(payload: any): Promise<any> {
 
   if (getBackupSchemaVersion(migrated.metadata) === 3) {
     migrated = migrateBackupV3ToV4(migrated);
+  }
+
+  if (getBackupSchemaVersion(migrated.metadata) === 4) {
+    migrated = migrateBackupV4ToV5(migrated);
   }
 
   // Ensure default fields exist if already at current version

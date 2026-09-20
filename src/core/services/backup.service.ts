@@ -71,6 +71,7 @@ export class BackupService {
     const settings = await db.settings.toArray();
     const trash = await db.trash.toArray(); // 1.6
     const auditTrail = await db.auditTrail.toArray(); // 1.6
+    const debts = await db.debts.toArray(); // [1.6 T-A]
 
     // 1.4: Compute sums with fixed point precision
     let totalDebitSum = 0;
@@ -113,6 +114,7 @@ export class BackupService {
       settings,
       trash,
       auditTrail,
+      debts,
     });
 
     const payload: BackupPayload = {
@@ -125,6 +127,7 @@ export class BackupService {
       settings,
       trash,
       auditTrail,
+      debts,
     };
 
     return payload;
@@ -140,6 +143,7 @@ export class BackupService {
     details?: {
       accountCount: number;
       transactionCount: number;
+      debtCount?: number;
       schemaVersion: number;
       createdAt: string;
       deviceId: string;
@@ -162,6 +166,10 @@ export class BackupService {
 
     if (settings !== undefined && !Array.isArray(settings)) {
       return { isValid: false, error: 'هيكل الإعدادات في النسخة الاحتياطية غير صالح' };
+    }
+
+    if (payload.debts !== undefined && !Array.isArray(payload.debts)) {
+      return { isValid: false, error: 'هيكل جدول الديون في النسخة الاحتياطية غير صالح (Debts must be an array)' };
     }
 
     // Required metadata fields
@@ -283,6 +291,7 @@ export class BackupService {
       details: {
         accountCount: accounts.length,
         transactionCount: transactions.length,
+        debtCount: Array.isArray(payload.debts) ? payload.debts.length : 0,
         schemaVersion: schemaVer,
         createdAt: metadata.createdAt,
         deviceId: metadata.deviceId || 'غير معروف',
@@ -472,7 +481,7 @@ export class BackupService {
 
     // 7. ATOMIC RESTORE (DEXIE TRANSACTION)
     // All-or-nothing rollback on any write failure
-    await activeDb.transaction('rw', [activeDb.accounts, activeDb.transactions, activeDb.settings, activeDb.trash, activeDb.auditTrail], async () => {
+    await activeDb.transaction('rw', [activeDb.accounts, activeDb.transactions, activeDb.settings, activeDb.trash, activeDb.auditTrail, activeDb.debts], async () => {
       const txDb = getDb(); // Direct access within transaction
 
       if (mode === 'replace') {
@@ -480,6 +489,7 @@ export class BackupService {
         await txDb.accounts.clear();
         await txDb.trash.clear(); // 1.6
         await txDb.auditTrail.clear(); // 1.6
+        await txDb.debts.clear(); // [1.6 T-A]
       }
 
       if (Array.isArray(payload.settings) && payload.settings.length > 0) {
@@ -526,6 +536,9 @@ export class BackupService {
       }
       if (Array.isArray(payload.auditTrail) && payload.auditTrail.length > 0) {
         await txDb.auditTrail.bulkPut(payload.auditTrail);
+      }
+      if (Array.isArray(payload.debts) && payload.debts.length > 0) {
+        await txDb.debts.bulkPut(payload.debts);
       }
     });
 

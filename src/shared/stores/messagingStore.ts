@@ -218,6 +218,18 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
   },
 
   fetchDueDebtsAlerts: async (daysAhead = 7) => {
+    // [1.1 T-E] Atomic Lock/Debounce: prevent multiple redundant concurrent fetches
+    if (get().isLoadingDueDebts) {
+      return get().dueDebtsOverview || {
+        totalUpcomingCount: 0,
+        totalOverdueCount: 0,
+        totalDueTodayCount: 0,
+        totalReceivableMinor: 0,
+        totalPayableMinor: 0,
+        alerts: [],
+      };
+    }
+
     try {
       set({ isLoadingDueDebts: true });
       const overview = await reminderService.getDueDebtAlerts(daysAhead);

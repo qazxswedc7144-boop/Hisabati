@@ -116,63 +116,63 @@ export class BackupMigratorTestSuite {
       }
     );
 
-    // 4. V2 → V3 Migration
+    // 4. V2 → V5 Migration
     await this.runTest(
       results,
       'MIG-04',
-      'ترحيل نسخة V2 إلى V3 بنجاح وتعيين القيم الافتراضية',
+      'ترحيل نسخة V2 إلى V5 بنجاح وتعيين القيم الافتراضية',
       async () => {
         const p2 = createMockPayload({ schemaVersion: 2 });
         const migrated = await migrateBackupPayload(p2);
 
-        if (migrated.metadata.backupSchemaVersion !== 3) {
-          throw new Error(`Expected backupSchemaVersion=3, got ${migrated.metadata.backupSchemaVersion}`);
+        if (migrated.metadata.backupSchemaVersion !== BACKUP_SCHEMA_VERSION) {
+          throw new Error(`Expected backupSchemaVersion=${BACKUP_SCHEMA_VERSION}, got ${migrated.metadata.backupSchemaVersion}`);
         }
-        if (migrated.metadata.databaseSchemaVersion !== 6) {
-          throw new Error(`Expected databaseSchemaVersion=6, got ${migrated.metadata.databaseSchemaVersion}`);
+        if (migrated.metadata.databaseSchemaVersion !== DATABASE_SCHEMA_VERSION) {
+          throw new Error(`Expected databaseSchemaVersion=${DATABASE_SCHEMA_VERSION}, got ${migrated.metadata.databaseSchemaVersion}`);
         }
-        if (migrated.metadata.financialFormatVersion !== 1) {
-          throw new Error(`Expected financialFormatVersion=1, got ${migrated.metadata.financialFormatVersion}`);
+        if (migrated.metadata.financialFormatVersion !== FINANCIAL_FORMAT_VERSION) {
+          throw new Error(`Expected financialFormatVersion=${FINANCIAL_FORMAT_VERSION}, got ${migrated.metadata.financialFormatVersion}`);
         }
       }
     );
 
-    // 5. V3 → V3 Idempotent Pass-through
+    // 5. V5 → V5 Idempotent Pass-through
     await this.runTest(
       results,
       'MIG-05',
-      'توافق النسخة الحالية V3 مع نفسها دون تشويه أي حقول',
+      'توافق النسخة الحالية V5 مع نفسها دون تشويه أي حقول',
       async () => {
-        const p3 = createMockPayload({
-          backupSchemaVersion: 3,
-          databaseSchemaVersion: 6,
-          financialFormatVersion: 1,
-          schemaVersion: 3,
+        const p5 = createMockPayload({
+          backupSchemaVersion: BACKUP_SCHEMA_VERSION,
+          databaseSchemaVersion: DATABASE_SCHEMA_VERSION,
+          financialFormatVersion: FINANCIAL_FORMAT_VERSION,
+          schemaVersion: BACKUP_SCHEMA_VERSION,
         });
-        const migrated = await migrateBackupPayload(p3);
+        const migrated = await migrateBackupPayload(p5);
 
-        if (migrated.metadata.backupSchemaVersion !== 3) {
-          throw new Error(`Expected backupSchemaVersion=3, got ${migrated.metadata.backupSchemaVersion}`);
+        if (migrated.metadata.backupSchemaVersion !== BACKUP_SCHEMA_VERSION) {
+          throw new Error(`Expected backupSchemaVersion=${BACKUP_SCHEMA_VERSION}, got ${migrated.metadata.backupSchemaVersion}`);
         }
       }
     );
 
-    // 6. Future V4 and V99 Rejection
+    // 6. Future V6 and V99 Rejection
     await this.runTest(
       results,
       'MIG-06',
-      'رفض النسخ المستقبلية V4 أو V99 فورياً وحماية البيانات من الرجوع للخلف',
+      'رفض النسخ المستقبلية V6 أو V99 فورياً وحماية البيانات من الرجوع للخلف',
       async () => {
-        const futurePayload4 = createMockPayload({ backupSchemaVersion: 4 });
-        let rejected4 = false;
+        const futurePayload6 = createMockPayload({ backupSchemaVersion: BACKUP_SCHEMA_VERSION + 1 });
+        let rejected6 = false;
         try {
-          await migrateBackupPayload(futurePayload4);
+          await migrateBackupPayload(futurePayload6);
         } catch (err: any) {
           if (err.message.includes('newer than the supported version')) {
-            rejected4 = true;
+            rejected6 = true;
           }
         }
-        if (!rejected4) throw new Error('Failed to reject future schema version 4');
+        if (!rejected6) throw new Error(`Failed to reject future schema version ${BACKUP_SCHEMA_VERSION + 1}`);
 
         const futurePayload99 = createMockPayload({ backupSchemaVersion: 99 });
         let rejected99 = false;

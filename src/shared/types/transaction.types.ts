@@ -81,3 +81,15 @@ export interface TransactionSummary {
   totalTransactions: number;
 }
 
+export interface DebtRecord {
+  id: string;
+  accountId: string;
+  amountMinor: number;      // إجمالي الدين
+  paidMinor: number;         // المسدد
+  remainingMinor: number;    // المتبقي (مشتق للفهرسة)
+  dueDate: string;           // YYYY-MM-DD
+  status: 'open' | 'partial' | 'settled' | 'overdue';
+  createdAt: string;
+  updatedAt: string;
+}
+

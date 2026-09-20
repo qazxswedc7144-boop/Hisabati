@@ -66,6 +66,14 @@ export const CURRENCIES: Record<CurrencyCode, CurrencyConfig> = {
     symbolEn: 'OMR',
     decimals: 3,
   },
+  JPY: {
+    code: 'JPY',
+    nameAr: 'ين ياباني',
+    nameEn: 'Japanese Yen',
+    symbolAr: '¥',
+    symbolEn: 'JPY',
+    decimals: 0,
+  },
 };
  
 export const SUPPORTED_CURRENCIES: CurrencyConfig[] = Object.values(CURRENCIES);

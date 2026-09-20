@@ -87,6 +87,7 @@ export interface BackupPayload {
   settings: SettingsEntry[];
   trash?: TrashItem[]; // 1.6: Optional trash records
   auditTrail?: AuditTrailEntry[]; // 1.6: Optional audit trail records
+  debts?: any[]; // [1.6 T-A] Added debts to backup payload
 }
 
 export interface DriveFileInfo {

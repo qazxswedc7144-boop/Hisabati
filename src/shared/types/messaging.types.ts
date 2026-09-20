@@ -79,6 +79,7 @@ export interface InAppNotification {
   relatedEntityType?: 'account' | 'transaction' | 'backup' | 'sync' | 'system';
   relatedEntityId?: string;
   actionUrl?: string;
+  idempotencyKey?: string;
 }
 
 export interface ScheduledMessage {

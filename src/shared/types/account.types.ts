@@ -7,7 +7,10 @@ export interface Account {
   name: string;
   phone?: string;
   note?: string;
-  dueDate?: string; // Optional due date / settlement deadline (YYYY-MM-DD)
+  /**
+   * @deprecated — Source of truth is debts. Kept only for v8→v9 migration fallback.
+   */
+  dueDate?: string;
   category?: 'customer' | 'supplier' | 'personal' | 'other';
   currency?: CurrencyCode;
   createdAt: string;

@@ -25,6 +25,7 @@ import {
 } from '@/shared/stores';
 import { DueDebtAlert, DueDebtUrgency } from '@/shared/types';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
+import { fromMinor } from '@/core/utils/money.utils';
 
 type FilterTab = 'all' | 'due_today' | 'due_week' | 'overdue';
 
@@ -80,7 +81,7 @@ export const DueDebtsAlertCard: React.FC = () => {
   const weekCount = rawAlerts.filter((a) => a.daysRemaining >= 0 && a.daysRemaining <= 7).length;
   const overdueCount = rawAlerts.filter((a) => a.urgency === 'overdue').length;
 
-  const totalReceivableAmount = (dueDebtsOverview?.totalReceivableMinor ?? 0) / 100;
+  const totalReceivableAmount = fromMinor(dueDebtsOverview?.totalReceivableMinor ?? 0, currency);
 
   const getUrgencyBadgeStyle = (urgency: DueDebtUrgency) => {
     switch (urgency) {
@@ -116,7 +117,7 @@ export const DueDebtsAlertCard: React.FC = () => {
   const handleSendReminder = (e: React.MouseEvent, alert: DueDebtAlert) => {
     e.stopPropagation();
     const targetAccount = accounts.find((a) => a.id === alert.accountId) || null;
-    const exactBalance = alert.balanceMinor ? alert.balanceMinor / 100 : alert.balance;
+    const exactBalance = fromMinor(alert.balanceMinor ?? 0, currency);
     const formattedAmount = formatCurrency(exactBalance, currency);
     const balanceDesc = alert.balanceType === 'owed_to_me' ? 'مستحق لكم (ذمم على الحساب)' : 'مستحق عليكم';
     
@@ -140,7 +141,7 @@ export const DueDebtsAlertCard: React.FC = () => {
 
   const handleAddPayment = (e: React.MouseEvent, alert: DueDebtAlert) => {
     e.stopPropagation();
-    openQuickAddTransaction();
+    openQuickAddTransaction(alert.accountId);
   };
 
   return (

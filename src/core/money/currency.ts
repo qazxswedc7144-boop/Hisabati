@@ -69,6 +69,14 @@ export const CURRENCY_PRECISION_MAP: Record<CurrencyCode, CurrencyPrecisionConfi
     nameAr: 'ريال عماني',
     symbolAr: 'ر.ع',
   },
+  JPY: {
+    code: 'JPY',
+    minorUnitDigits: 0,
+    minorUnitFactor: 1,
+    minorUnitNameAr: 'ين',
+    nameAr: 'ين ياباني',
+    symbolAr: '¥',
+  },
 };
 
 export const DEFAULT_CURRENCY: CurrencyCode = 'YER';

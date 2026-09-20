@@ -187,12 +187,12 @@ export class DualRepresentationTestSuite {
     });
 
     // Test 7: Schema Version and Constants Immunity
-    await run('DUAL-07', 'حظر تغيير إصدار Dexie (ثابت على 8) وثبات Backup Schema V4 و Format V1', async () => {
-      if (db.verno !== 8) {
-        throw new Error(`خطأ حرج: تم تعديل إصدار Dexie إلى ${db.verno}. يجب أن يبقى 8 حصراً.`);
+    await run('DUAL-07', 'حظر تغيير إصدار Dexie (ثابت على 9) وثبات Backup Schema V5 و Format V1', async () => {
+      if (db.verno !== 9) {
+        throw new Error(`خطأ حرج: تم تعديل إصدار Dexie إلى ${db.verno}. يجب أن يبقى 9 حصراً.`);
       }
-      if (BACKUP_SCHEMA_VERSION !== 4) {
-        throw new Error(`خطأ حرج: تم تعديل BACKUP_SCHEMA_VERSION إلى ${BACKUP_SCHEMA_VERSION}. يجب أن يبقى 4.`);
+      if (BACKUP_SCHEMA_VERSION !== 5) {
+        throw new Error(`خطأ حرج: تم تعديل BACKUP_SCHEMA_VERSION إلى ${BACKUP_SCHEMA_VERSION}. يجب أن يبقى 5.`);
       }
       if (FINANCIAL_FORMAT_VERSION !== 1) {
         throw new Error(`خطأ حرج: تم تعديل FINANCIAL_FORMAT_VERSION إلى ${FINANCIAL_FORMAT_VERSION}. يجب أن يبقى 1.`);

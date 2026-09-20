@@ -39,6 +39,7 @@ function buildCanonicalContent(payload: {
   settings?: any[];
   trash?: any[];
   auditTrail?: any[];
+  debts?: any[];
 }): string {
   const base: any = {
     schemaVersion: payload.schemaVersion,
@@ -88,6 +89,17 @@ function buildCanonicalContent(payload: {
     }));
   }
 
+  // 1.6: Support for debts in V5+
+  if (payload.schemaVersion >= 5) {
+    base.debts = (payload.debts || []).map(d => ({
+      id: d.id,
+      accountId: d.accountId,
+      amountMinor: d.amountMinor,
+      dueDate: d.dueDate,
+      updatedAt: d.updatedAt
+    }));
+  }
+
   return JSON.stringify(base);
 }
 
@@ -116,6 +128,7 @@ export async function calculateBackupPayloadHash(payloadWithoutHash: {
   settings?: any[];
   trash?: any[];
   auditTrail?: any[];
+  debts?: any[];
 }): Promise<string> {
   const schemaVer =
     payloadWithoutHash.metadata.schemaVersion ??
@@ -137,6 +150,7 @@ export async function calculateBackupPayloadHash(payloadWithoutHash: {
     settings: payloadWithoutHash.settings,
     trash: payloadWithoutHash.trash,
     auditTrail: payloadWithoutHash.auditTrail,
+    debts: payloadWithoutHash.debts,
   });
 
   return await calculateSHA256(contentToHash);
@@ -153,6 +167,7 @@ export async function calculateLegacyBackupPayloadHash(
     settings?: any[];
     trash?: any[];
     auditTrail?: any[];
+    debts?: any[];
   },
   legacyVersion: number = 1
 ): Promise<string> {
@@ -171,6 +186,7 @@ export async function calculateLegacyBackupPayloadHash(
     settings: payloadWithoutHash.settings,
     trash: payloadWithoutHash.trash,
     auditTrail: payloadWithoutHash.auditTrail,
+    debts: payloadWithoutHash.debts,
   });
 
   return await calculateSHA256(contentToHash);
@@ -188,6 +204,7 @@ export async function verifyCurrentBackupHash(payload: any): Promise<boolean> {
     settings: payload.settings || [],
     trash: payload.trash || [],
     auditTrail: payload.auditTrail || [],
+    debts: payload.debts || [],
   });
   return expected === payload.metadata.integrityHash;
 }
@@ -205,6 +222,7 @@ export async function verifyLegacyBackupHash(payload: any, legacyVersion: number
       settings: payload.settings || [],
       trash: payload.trash || [],
       auditTrail: payload.auditTrail || [],
+      debts: payload.debts || [],
     },
     legacyVersion
   );

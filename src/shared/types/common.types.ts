@@ -1,4 +1,4 @@
-export type CurrencyCode = 'YER' | 'SAR' | 'USD' | 'AED' | 'EGP' | 'KWD' | 'QAR' | 'OMR';
+export type CurrencyCode = 'YER' | 'SAR' | 'USD' | 'AED' | 'EGP' | 'KWD' | 'QAR' | 'OMR' | 'JPY';
 
 export interface CurrencyConfig {
   code: CurrencyCode;

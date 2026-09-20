@@ -1,4 +1,4 @@
-import { accountRepository, transactionRepository, messagingRepository } from '@/core/repositories';
+import { accountRepository, transactionRepository, messagingRepository, debtRepository } from '@/core/repositories';
 import {
   DebtReminderCandidate,
   AppMessage,
@@ -17,6 +17,8 @@ import { notificationService } from './notification.service';
 import { schedulerService } from './scheduler.service';
 import { getDeviceId } from '@/core/utils/deviceId';
 import { formatNumber } from '@/core/utils/formatters';
+import { getDb } from '@/core/database/db';
+import Dexie from 'dexie';
 
 export class ReminderService {
   /**
@@ -385,16 +387,43 @@ export class ReminderService {
 
   /**
    * Date-based scan for due and overdue debts for Dashboard notifications.
-   * Examines active scheduled deadlines, explicit account due dates, and stagnant debts.
+   * Source of truth: debts table. Examines active scheduled deadlines and stagnant debts.
+   * Strictly read-only regarding financial balances.
+   */
+  /**
+   * Date-based scan for due and overdue debts for Dashboard notifications.
+   * Source of truth: debts table. Examines active scheduled deadlines and stagnant debts.
    * Strictly read-only regarding financial balances.
    */
   async getDueDebtAlerts(daysAhead: number = 7): Promise<DueDebtsOverview> {
-    const accounts = await accountRepository.getAll();
-    const scheduledList = await messagingRepository.getAllScheduledMessages();
-
+    const db = getDb();
+    
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayStr = today.toISOString().split('T')[0];
+    
+    const horizon = new Date(today);
+    horizon.setDate(horizon.getDate() + daysAhead);
+    const horizonStr = horizon.toISOString().split('T')[0];
+
+    // [0.2] Optimize: Fetch all relevant data in bulk to avoid N+1 queries
+    // [0.1] archived.equals(false) - using filter as ultimate safe fallback for cross-env compatibility
+    // while maintaining performance by fetching all active accounts in one go.
+    const [accounts, scheduledList, allDebts] = await Promise.all([
+      db.accounts.filter(a => !a.archived).toArray(),
+      messagingRepository.getAllScheduledMessages(),
+      db.debts
+        .where('[status+dueDate]')
+        .between(['open', Dexie.minKey], ['open', horizonStr], true, true)
+        .toArray()
+    ]);
+
+    // Index debts by accountId for O(1) lookup
+    const debtsByAccount = new Map<string, DebtRecord[]>();
+    for (const d of allDebts) {
+      if (!debtsByAccount.has(d.accountId)) debtsByAccount.set(d.accountId, []);
+      debtsByAccount.get(d.accountId)!.push(d);
+    }
 
     const alerts: DueDebtAlert[] = [];
     let totalUpcomingCount = 0;
@@ -404,11 +433,12 @@ export class ReminderService {
     let totalPayableMinor = 0;
 
     for (const acc of accounts) {
-      if (acc.archived) continue;
-      if (acc.currentBalance === 0) continue;
+      // [0.4] Use currentBalanceMinor as source of truth
+      const accBalMinor = acc.currentBalanceMinor ?? Math.round((acc.currentBalance ?? 0) * 100);
+      if (accBalMinor === 0) continue;
 
-      const isReceivable = acc.currentBalance > 0;
-      const balMinor = acc.currentBalanceMinor ?? Math.round(Math.abs(acc.currentBalance) * 100);
+      const isReceivable = accBalMinor > 0;
+      const accountDebts = debtsByAccount.get(acc.id) || [];
 
       // 1. Check for active collection schedules for this account
       const accSchedules = scheduledList.filter(
@@ -458,20 +488,21 @@ export class ReminderService {
             }
 
             if (isReceivable) {
-              totalReceivableMinor += balMinor;
+              totalReceivableMinor += accBalMinor;
             } else {
-              totalPayableMinor += balMinor;
+              totalPayableMinor += Math.abs(accBalMinor);
             }
 
             const formattedDueDate = rawDate.split('T')[0];
 
             alerts.push({
-              id: `sched_${schedule.id}`,
+              // [0.5] Ensure uniqueness
+              id: `sched_${acc.id}_${schedule.id}`,
               accountId: acc.id,
               accountName: acc.name,
               phone: acc.phone,
               balance: Math.abs(acc.currentBalance),
-              balanceMinor: balMinor,
+              balanceMinor: Math.abs(accBalMinor),
               balanceType: isReceivable ? 'owed_to_me' : 'owed_by_me',
               dueDate: formattedDueDate,
               daysRemaining: diffDays,
@@ -482,8 +513,8 @@ export class ReminderService {
             });
           }
         }
-      } else {
-        // 2. Check for explicit account dueDate
+      } else if (allDebts.length === 0) {
+        // Fallback to explicit account dueDate only if debts table is empty (partial migration)
         const directDueDate = acc.dueDate;
         if (directDueDate) {
           const targetDate = new Date(directDueDate);
@@ -515,9 +546,9 @@ export class ReminderService {
               }
 
               if (isReceivable) {
-                totalReceivableMinor += balMinor;
+                totalReceivableMinor += accBalMinor;
               } else {
-                totalPayableMinor += balMinor;
+                totalPayableMinor += Math.abs(accBalMinor);
               }
 
               alerts.push({
@@ -526,7 +557,7 @@ export class ReminderService {
                 accountName: acc.name,
                 phone: acc.phone,
                 balance: Math.abs(acc.currentBalance),
-                balanceMinor: balMinor,
+                balanceMinor: Math.abs(accBalMinor),
                 balanceType: isReceivable ? 'owed_to_me' : 'owed_by_me',
                 dueDate: directDueDate.split('T')[0],
                 daysRemaining: diffDays,
@@ -536,34 +567,88 @@ export class ReminderService {
               });
             }
           }
-        } else if (isReceivable) {
-          // 3. Stagnant debts (> 30 days of inactivity)
-          let daysSince = 0;
-          if (acc.lastTransactionDate) {
-            daysSince = Math.floor((today.getTime() - new Date(acc.lastTransactionDate).getTime()) / (1000 * 60 * 60 * 24));
-          } else if (acc.createdAt) {
-            daysSince = Math.floor((today.getTime() - new Date(acc.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-          }
-
-          if (daysSince >= 30) {
-            totalOverdueCount++;
-            totalReceivableMinor += balMinor;
-            alerts.push({
-              id: `stagnant_${acc.id}`,
-              accountId: acc.id,
-              accountName: acc.name,
-              phone: acc.phone,
-              balance: Math.abs(acc.currentBalance),
-              balanceMinor: balMinor,
-              balanceType: 'owed_to_me',
-              dueDate: todayStr,
-              daysRemaining: -daysSince,
-              urgency: 'overdue',
-              urgencyLabel: `دين راكد منذ ${daysSince} يوم`,
-              note: 'لم تُسجل أي حركة سداد منذ أكثر من 30 يوماً',
-            });
-          }
         }
+      }
+
+      if (isReceivable && !alerts.some(a => a.accountId === acc.id)) {
+        // 3. Stagnant debts (> 30 days of inactivity) - only if no specific due date alert exists
+        let daysSince = 0;
+        if (acc.lastTransactionDate) {
+          daysSince = Math.floor((today.getTime() - new Date(acc.lastTransactionDate).getTime()) / (1000 * 60 * 60 * 24));
+        } else if (acc.createdAt) {
+          daysSince = Math.floor((today.getTime() - new Date(acc.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+        }
+
+        if (daysSince >= 30) {
+          totalOverdueCount++;
+          totalReceivableMinor += accBalMinor;
+          alerts.push({
+            id: `stagnant_${acc.id}`,
+            accountId: acc.id,
+            accountName: acc.name,
+            phone: acc.phone,
+            balance: Math.abs(acc.currentBalance),
+            balanceMinor: accBalMinor,
+            balanceType: 'owed_to_me',
+            dueDate: todayStr,
+            daysRemaining: -daysSince,
+            urgency: 'overdue',
+            urgencyLabel: `دين راكد منذ ${daysSince} يوم`,
+            note: 'لم تُسجل أي حركة سداد منذ أكثر من 30 يوماً',
+          });
+        }
+      }
+
+      // 4. Process records from the source of truth: debts table
+      for (const debt of accountDebts) {
+        // [0.3] Fix: use 'settled' instead of 'closed'
+        if (debt.status === 'settled' || debt.remainingMinor <= 0) continue;
+
+        const targetDate = new Date(debt.dueDate);
+        targetDate.setHours(0, 0, 0, 0);
+        const diffDays = Math.round((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+        // Note: we already filtered debts by horizonStr in the initial fetch, so diffDays <= daysAhead is guaranteed
+        let urgency: DueDebtUrgency;
+        let urgencyLabel: string;
+
+        if (diffDays < 0) {
+          urgency = 'overdue';
+          const absDays = Math.abs(diffDays);
+          urgencyLabel = `دين متأخر منذ ${absDays} يوم`;
+          totalOverdueCount++;
+        } else if (diffDays === 0) {
+          urgency = 'due_today';
+          urgencyLabel = 'مستحق اليوم';
+          totalDueTodayCount++;
+        } else if (diffDays === 1) {
+          urgency = 'due_tomorrow';
+          urgencyLabel = 'مستحق غداً';
+          totalUpcomingCount++;
+        } else {
+          urgency = 'due_soon';
+          urgencyLabel = `مستحق خلال ${diffDays} أيام`;
+          totalUpcomingCount++;
+        }
+
+        if (isReceivable) totalReceivableMinor += debt.remainingMinor;
+        else totalPayableMinor += debt.remainingMinor;
+
+        alerts.push({
+          // [0.5] Ensure uniqueness
+          id: `debt_${acc.id}_${debt.id}`,
+          accountId: acc.id,
+          accountName: acc.name,
+          phone: acc.phone,
+          balance: debt.remainingMinor / 100,
+          balanceMinor: debt.remainingMinor,
+          balanceType: isReceivable ? 'owed_to_me' : 'owed_by_me',
+          dueDate: debt.dueDate,
+          daysRemaining: diffDays,
+          urgency,
+          urgencyLabel,
+          note: debt.status === 'partial' ? `متبقي من أصل ${debt.amountMinor / 100}` : undefined
+        });
       }
     }
 

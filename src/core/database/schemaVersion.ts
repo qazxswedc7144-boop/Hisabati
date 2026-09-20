@@ -1,11 +1,11 @@
 /**
  * CHANGELOG
- * - 1.5: Updated DATABASE_SCHEMA_VERSION to 8 and BACKUP_SCHEMA_VERSION to 4.
+ * - 1.6: Updated DATABASE_SCHEMA_VERSION to 9 and BACKUP_SCHEMA_VERSION to 5 (debts table & idempotency).
  * - 1.5: Added MIN_SUPPORTED_* version constants for backward compatibility enforcement.
  */
 
-export const DATABASE_SCHEMA_VERSION = 8;
-export const BACKUP_SCHEMA_VERSION = 4;
+export const DATABASE_SCHEMA_VERSION = 9;
+export const BACKUP_SCHEMA_VERSION = 5;
 export const FINANCIAL_FORMAT_VERSION = 1;
 
 export const MIN_SUPPORTED_BACKUP_VERSION = 1;
