@@ -167,14 +167,14 @@ export const AccountDetailsPage: React.FC = () => {
   return (
     <div id="account-details-page" className="space-y-6 animate-in fade-in duration-200">
       {/* Top Breadcrumb & Action Bar */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-2">
         <button
           id="btn-back-to-accounts"
           onClick={() => navigate('/accounts')}
-          className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-teal-600 dark:hover:text-teal-400 transition"
+          aria-label="العودة للحسابات"
+          className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition shrink-0"
         >
           <ArrowRight className="w-4 h-4" />
-          <span>العودة للحسابات</span>
         </button>
 
         <div className="flex items-center gap-2">
