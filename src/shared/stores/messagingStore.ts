@@ -21,6 +21,8 @@ import { CreateScheduledDTO } from '@/core/services/messaging/scheduler.service'
 import {
   ScheduleDebtCollectionAlertDTO,
   OverdueDebtSummary,
+  DueDebtsOverview,
+  DueDebtAlert,
 } from '@/shared/types';
 
 interface MessagingState {
@@ -29,6 +31,8 @@ interface MessagingState {
   unreadNotificationsCount: number;
   templates: MessageTemplate[];
   scheduledMessages: ScheduledMessage[];
+  dueDebtsOverview: DueDebtsOverview | null;
+  isLoadingDueDebts: boolean;
   isLoading: boolean;
   isNotificationCenterOpen: boolean;
   isSendMessageModalOpen: boolean;
@@ -42,6 +46,8 @@ interface MessagingState {
   fetchMessages: (filter?: { channel?: MessageChannel; status?: MessageStatus; recipient?: string }) => Promise<void>;
   fetchTemplates: () => Promise<void>;
   fetchScheduledMessages: () => Promise<void>;
+  fetchDueDebtsAlerts: (daysAhead?: number) => Promise<DueDebtsOverview>;
+  syncDueDebtNotifications: (daysAhead?: number) => Promise<number>;
   markNotificationRead: (id: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
   deleteNotification: (id: string) => Promise<void>;
@@ -69,6 +75,8 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
   unreadNotificationsCount: 0,
   templates: [],
   scheduledMessages: [],
+  dueDebtsOverview: null,
+  isLoadingDueDebts: false,
   isLoading: false,
   isNotificationCenterOpen: false,
   isSendMessageModalOpen: false,
@@ -207,6 +215,39 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
     const res = await reminderService.scheduleDebtCollectionAlert(dto);
     await get().fetchScheduledMessages();
     return res;
+  },
+
+  fetchDueDebtsAlerts: async (daysAhead = 7) => {
+    try {
+      set({ isLoadingDueDebts: true });
+      const overview = await reminderService.getDueDebtAlerts(daysAhead);
+      set({ dueDebtsOverview: overview, isLoadingDueDebts: false });
+      return overview;
+    } catch (e) {
+      console.error('Failed fetching due debt alerts:', e);
+      set({ isLoadingDueDebts: false });
+      return {
+        totalUpcomingCount: 0,
+        totalOverdueCount: 0,
+        totalDueTodayCount: 0,
+        totalReceivableMinor: 0,
+        totalPayableMinor: 0,
+        alerts: [],
+      };
+    }
+  },
+
+  syncDueDebtNotifications: async (daysAhead = 3) => {
+    try {
+      const createdCount = await reminderService.syncDueDebtNotifications(daysAhead);
+      if (createdCount > 0) {
+        await get().fetchNotifications();
+      }
+      return createdCount;
+    } catch (e) {
+      console.error('Failed syncing due debt notifications:', e);
+      return 0;
+    }
   },
 
   scanOverdueDebts: async (daysThreshold = 30) => {

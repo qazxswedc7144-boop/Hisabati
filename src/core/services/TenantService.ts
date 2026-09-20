@@ -101,12 +101,16 @@ export class TenantService {
   /**
    * Switches the active organization.
    * Handles DB switching and state cleanup.
+   * Hardened: Never allows 'online_verified' based solely on caller-passed data.
    */
-  public async switchOrganization(org: Organization, membership: OrganizationMembership): Promise<void> {
+  public async switchOrganization(org: Organization, membership: OrganizationMembership, verifiedByBackend: boolean = false): Promise<void> {
     const store = useTenantStore.getState();
     store.setLoading(true);
 
     try {
+      // Hardened Security Rule: Never allow 'online_verified' based solely on caller-passed data.
+      const authStatus = verifiedByBackend ? 'online_verified' : 'pending_server_verification';
+
       // 1. Close current DB and open new one
       await tenantDbManager.openTenantDatabase(org.id);
 
@@ -115,13 +119,13 @@ export class TenantService {
         activeOrganization: org,
         currentMembership: membership,
         isLocalMode: false,
-        authMembershipStatus: 'pending_server_verification', // Temporary status in Part 1; pending real backend verification in Part 2
+        authMembershipStatus: authStatus,
       });
 
       // 3. Cleanup other stores (optional, but good practice)
       // Example: useAccountStore.getState().reset();
       
-      console.log(`TenantService: Successfully switched to organization ${org.name}`);
+      console.log(`TenantService: Successfully switched to organization ${org.name} with status ${authStatus}`);
     } catch (error: any) {
       store.setError(error.message);
       throw error;

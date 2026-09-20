@@ -21,6 +21,7 @@ import { NavigationConsistencyTestSuite } from './navigationConsistency.test';
 import { SecurityP0TestSuite } from './securityP0.test';
 import { FirebaseAuthP11TestSuite } from './firebaseAuthP11.test';
 import { FirebaseMembershipP12TestSuite } from './firebaseMembershipP12.test';
+import { runPhaseP13Tests } from './mobileUxP13.test';
 import { tenantService } from '../services/TenantService';
 
 async function main() {
@@ -468,6 +469,25 @@ async function main() {
     }
   } catch (err: any) {
     console.error('Phase P1.2-B-H Test Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // 21. Phase P1.3: Mobile UX, WhatsApp Integration & Biometrics Tests
+  console.log('\n--- [Phase P1.3] Mobile UX, WhatsApp & Biometric Security Tests ---');
+  try {
+    const p13 = await runPhaseP13Tests();
+    console.log(`Phase P1.3 Result: Passed ${p13.passedCount}/${p13.totalCount}`);
+    totalPassed += p13.passedCount;
+    totalFailed += p13.failedCount;
+    totalCount += p13.totalCount;
+    if (p13.failedCount > 0) {
+      for (const r of p13.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ [${r.id}] ${r.name}: ${r.error}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Phase P1.3 Test Suite crashed:', err);
     totalFailed++;
     totalCount++;
   }

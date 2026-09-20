@@ -85,7 +85,7 @@ export class FirebaseMembershipP12TestSuite {
       {
         id: 'P1.2-C',
         title: 'No Tenant DB for No-Membership User (Strict Assertion)',
-        description: 'التحقق الصارم من أن tenantDbManager لم يقم بإنشاء أو فتح أي قاعدة بيانات تخص المستخدم غير المصرح له',
+        description: 'التحقق الصارم من عدم إنشاء أو فتح أي قاعدة بيانات Tenant للمستخدم غير المصرح له والتحقق من عدم وجود قاعدة بيانات firebase_user_*',
         fn: async () => {
           const firebaseUserActor: AuditActor = {
             id: 'firebase_user_789',
@@ -96,20 +96,36 @@ export class FirebaseMembershipP12TestSuite {
           await authService.setActiveActor(firebaseUserActor);
           await tenantService.initialize();
 
-          // Strict Assertion: tenantDbManager.getActiveDatabase() must throw because no tenant DB is initialized
-          let threwUninitializedError = false;
+          // 1. Strict assertion: getActiveDatabase() must throw exactly the uninitialized error.
+          // Any other error or absence of error fails the test (not considered success).
+          let dbError: any = null;
           try {
             tenantDbManager.getActiveDatabase();
           } catch (e: any) {
-            if (e.message.includes('لم يتم تهيئة قاعدة بيانات المؤسسة بعد')) {
-              threwUninitializedError = true;
-            } else {
-              throw new Error(`خطأ غير متوقع عند فحص قاعدة البيانات: ${e.message}`);
+            dbError = e;
+          }
+
+          if (!dbError) {
+            throw new Error('فشل أمني خطير: تم السماح بالوصول لقاعدة البيانات أو فتحها لمستخدم بلا عضوية دون رمي استثناء!');
+          }
+
+          if (dbError.message !== 'لم يتم تهيئة قاعدة بيانات المؤسسة بعد') {
+            throw new Error(`فشل الاختبار بسبب خطأ غير متوقع بدلاً من خطأ عدم التهيئة المحمية: ${dbError.message}`);
+          }
+
+          // 2. Explicitly verify that no unauthorized tenant database of type 'firebase_user_*' exists or was opened
+          if (typeof indexedDB !== 'undefined' && typeof indexedDB.databases === 'function') {
+            const dbs = await indexedDB.databases();
+            const unauthorizedDb = dbs.find(db => db.name && (db.name.includes('firebase_user_789') || db.name.includes('firebase_user')));
+            if (unauthorizedDb) {
+              throw new Error(`فشل أمني حرج: وُجدت قاعدة بيانات غير مصرح بها من نوع firebase_user_*: ${unauthorizedDb.name}`);
             }
           }
 
-          if (!threwUninitializedError) {
-            throw new Error('خطأ أمني خطير: تم فتح قاعدة بيانات للمستخدم بدون عضوية دون إطلاق استثناء عدم التهيئة!');
+          // 3. Verify store state is strictly unassigned
+          const store = useTenantStore.getState();
+          if (store.activeOrganization !== null || store.currentMembership !== null) {
+            throw new Error('فشل أمني: تم تسريب أو إنشاء سياق منظمة أو عضوية لمستخدم Firebase غير المالك لعضوية موثقة');
           }
         },
       },

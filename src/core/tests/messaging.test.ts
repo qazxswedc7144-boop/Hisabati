@@ -636,6 +636,74 @@ export class MessagingTestSuite {
       }
     );
 
+    // Test 23: Date-based due debt scan (Dashboard feature)
+    await runTest(
+      't23_date_based_due_debt_scan',
+      'Date-based due debt scan',
+      'فحص الديون المستحقة وتصنيفها زمنياً (اليوم، غداً، قريباً، متأخر)',
+      async () => {
+        const testAccountId = 'acc_due_test_' + Date.now();
+        const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+
+        // Insert test account with explicit dueDate
+        await db.accounts.put({
+          id: testAccountId,
+          name: 'عميل دين مستحق غداً',
+          phone: '777112233',
+          dueDate: tomorrow,
+          currentBalance: 75000,
+          currentBalanceMinor: 7500000,
+          totalDebit: 75000,
+          totalDebitMinor: 7500000,
+          totalCredit: 0,
+          totalCreditMinor: 0,
+          transactionCount: 1,
+          archived: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+
+        const overview = await reminderService.getDueDebtAlerts(7);
+        if (!overview || !Array.isArray(overview.alerts)) {
+          throw new Error('فشل استرجاع نظرة عامة على الديون المستحقة');
+        }
+
+        const match = overview.alerts.find((a) => a.accountId === testAccountId);
+        if (!match) {
+          throw new Error('لم يتم العثور على الحساب ذي تاريخ الاستحقاق ضمن قائمة التنبيهات');
+        }
+
+        if (match.urgency !== 'due_tomorrow' || match.daysRemaining !== 1) {
+          throw new Error(`حالة الاستحقاق غير دقيقة: ${match.urgency} (المتبقي: ${match.daysRemaining})`);
+        }
+
+        if (match.balance !== 75000) {
+          throw new Error(`المبلغ المستحق غير مطابق: ${match.balance}`);
+        }
+      }
+    );
+
+    // Test 24: In-app notification sync for due debts (idempotency check)
+    await runTest(
+      't24_sync_due_debt_notifications',
+      'Sync due debt notifications with idempotency',
+      'توليد إشعارات التنبيه في النظام للديون المستحقة قريباً دون تكرار في نفس اليوم',
+      async () => {
+        const firstCount = await reminderService.syncDueDebtNotifications(3);
+        // Second run must be idempotent (0 created for the same day)
+        const secondCount = await reminderService.syncDueDebtNotifications(3);
+
+        if (secondCount !== 0) {
+          throw new Error(`فشل خاصية Idempotency: تم توليد ${secondCount} إشعار مكرر في نفس اليوم`);
+        }
+
+        const notifs = await notificationService.getAllNotifications({ type: 'reminder' });
+        if (notifs.length === 0) {
+          throw new Error('لم يتم العثور على أي إشعارات استحقاق مسجلة');
+        }
+      }
+    );
+
     const passedCount = results.filter((r) => r.passed).length;
     const failedCount = results.filter((r) => !r.passed).length;
 

@@ -7,6 +7,7 @@ export interface Account {
   name: string;
   phone?: string;
   note?: string;
+  dueDate?: string; // Optional due date / settlement deadline (YYYY-MM-DD)
   category?: 'customer' | 'supplier' | 'personal' | 'other';
   currency?: CurrencyCode;
   createdAt: string;
@@ -28,6 +29,7 @@ export interface CreateAccountDTO {
   name: string;
   phone?: string;
   note?: string;
+  dueDate?: string;
   category?: 'customer' | 'supplier' | 'personal' | 'other';
   currency?: CurrencyCode;
   initialBalance?: number;
@@ -39,6 +41,7 @@ export interface UpdateAccountDTO {
   name?: string;
   phone?: string;
   note?: string;
+  dueDate?: string;
   category?: 'customer' | 'supplier' | 'personal' | 'other';
   currency?: CurrencyCode;
   archived?: boolean;

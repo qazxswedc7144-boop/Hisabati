@@ -24,6 +24,7 @@ import { StatCard, BalanceBadge, EmptyState } from '@/shared/components';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
 import { useI18n } from '@/shared/hooks/useI18n';
 import { FinancialHealthCard } from '../components/FinancialHealthCard';
+import { DueDebtsAlertCard } from '../components/DueDebtsAlertCard';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -143,6 +144,9 @@ export const DashboardPage: React.FC = () => {
         proactiveInsight={proactiveInsight}
         currency={currency}
       />
+
+      {/* Date-based Due Debts Notification Card */}
+      <DueDebtsAlertCard />
 
       {/* Latest Operations & Top Accounts Overview */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">

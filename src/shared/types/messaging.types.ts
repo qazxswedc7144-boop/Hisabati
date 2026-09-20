@@ -201,3 +201,31 @@ export interface OverdueDebtSummary {
   stagnantCount: number;
   items: OverdueDebtItem[];
 }
+
+export type DueDebtUrgency = 'overdue' | 'due_today' | 'due_tomorrow' | 'due_soon';
+
+export interface DueDebtAlert {
+  id: string;
+  accountId: string;
+  accountName: string;
+  phone?: string;
+  balance: number;
+  balanceMinor?: number;
+  balanceType: 'owed_to_me' | 'owed_by_me';
+  dueDate: string; // YYYY-MM-DD
+  daysRemaining: number; // < 0 overdue, 0 today, > 0 upcoming
+  urgency: DueDebtUrgency;
+  urgencyLabel: string;
+  scheduleId?: string;
+  note?: string;
+}
+
+export interface DueDebtsOverview {
+  totalUpcomingCount: number;
+  totalOverdueCount: number;
+  totalDueTodayCount: number;
+  totalReceivableMinor: number;
+  totalPayableMinor: number;
+  alerts: DueDebtAlert[];
+}
+

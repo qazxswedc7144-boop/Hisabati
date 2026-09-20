@@ -8,6 +8,9 @@ import {
   OverdueDebtSummary,
   OverdueDebtItem,
   ScheduledMessage,
+  DueDebtAlert,
+  DueDebtsOverview,
+  DueDebtUrgency,
 } from '@/shared/types';
 import { templateRenderer } from './templateRenderer.service';
 import { notificationService } from './notification.service';
@@ -378,6 +381,257 @@ export class ReminderService {
     return all.filter(
       (s) => s.relatedEntityType === 'account' && s.relatedEntityId === accountId
     );
+  }
+
+  /**
+   * Date-based scan for due and overdue debts for Dashboard notifications.
+   * Examines active scheduled deadlines, explicit account due dates, and stagnant debts.
+   * Strictly read-only regarding financial balances.
+   */
+  async getDueDebtAlerts(daysAhead: number = 7): Promise<DueDebtsOverview> {
+    const accounts = await accountRepository.getAll();
+    const scheduledList = await messagingRepository.getAllScheduledMessages();
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().split('T')[0];
+
+    const alerts: DueDebtAlert[] = [];
+    let totalUpcomingCount = 0;
+    let totalOverdueCount = 0;
+    let totalDueTodayCount = 0;
+    let totalReceivableMinor = 0;
+    let totalPayableMinor = 0;
+
+    for (const acc of accounts) {
+      if (acc.archived) continue;
+      if (acc.currentBalance === 0) continue;
+
+      const isReceivable = acc.currentBalance > 0;
+      const balMinor = acc.currentBalanceMinor ?? Math.round(Math.abs(acc.currentBalance) * 100);
+
+      // 1. Check for active collection schedules for this account
+      const accSchedules = scheduledList.filter(
+        (s) => s.relatedEntityType === 'account' && s.relatedEntityId === acc.id && s.status === 'active'
+      );
+
+      if (accSchedules.length > 0) {
+        // Sort ascending by deadline date
+        accSchedules.sort((a, b) => {
+          const dateA = a.variables?.deadlineDate || a.nextRunAt || a.scheduledAt;
+          const dateB = b.variables?.deadlineDate || b.nextRunAt || b.scheduledAt;
+          return new Date(dateA).getTime() - new Date(dateB).getTime();
+        });
+
+        for (const schedule of accSchedules) {
+          const rawDate = (schedule.variables?.deadlineDate as string) || schedule.nextRunAt || schedule.scheduledAt;
+          if (!rawDate) continue;
+
+          const targetDate = new Date(rawDate);
+          if (isNaN(targetDate.getTime())) continue;
+          targetDate.setHours(0, 0, 0, 0);
+
+          const diffDays = Math.round((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+          // Include if overdue, due today, or due within daysAhead
+          if (diffDays <= daysAhead) {
+            let urgency: DueDebtUrgency;
+            let urgencyLabel: string;
+
+            if (diffDays < 0) {
+              urgency = 'overdue';
+              const absDays = Math.abs(diffDays);
+              urgencyLabel = `متأخر منذ ${absDays} ${absDays === 1 ? 'يوم' : absDays === 2 ? 'يومين' : 'أيام'}`;
+              totalOverdueCount++;
+            } else if (diffDays === 0) {
+              urgency = 'due_today';
+              urgencyLabel = 'مستحق اليوم';
+              totalDueTodayCount++;
+            } else if (diffDays === 1) {
+              urgency = 'due_tomorrow';
+              urgencyLabel = 'مستحق غداً';
+              totalUpcomingCount++;
+            } else {
+              urgency = 'due_soon';
+              urgencyLabel = `مستحق خلال ${diffDays} أيام`;
+              totalUpcomingCount++;
+            }
+
+            if (isReceivable) {
+              totalReceivableMinor += balMinor;
+            } else {
+              totalPayableMinor += balMinor;
+            }
+
+            const formattedDueDate = rawDate.split('T')[0];
+
+            alerts.push({
+              id: `sched_${schedule.id}`,
+              accountId: acc.id,
+              accountName: acc.name,
+              phone: acc.phone,
+              balance: Math.abs(acc.currentBalance),
+              balanceMinor: balMinor,
+              balanceType: isReceivable ? 'owed_to_me' : 'owed_by_me',
+              dueDate: formattedDueDate,
+              daysRemaining: diffDays,
+              urgency,
+              urgencyLabel,
+              scheduleId: schedule.id,
+              note: (schedule.variables?.note as string) || schedule.subject,
+            });
+          }
+        }
+      } else {
+        // 2. Check for explicit account dueDate
+        const directDueDate = acc.dueDate;
+        if (directDueDate) {
+          const targetDate = new Date(directDueDate);
+          if (!isNaN(targetDate.getTime())) {
+            targetDate.setHours(0, 0, 0, 0);
+            const diffDays = Math.round((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+            if (diffDays <= daysAhead) {
+              let urgency: DueDebtUrgency;
+              let urgencyLabel: string;
+
+              if (diffDays < 0) {
+                urgency = 'overdue';
+                const absDays = Math.abs(diffDays);
+                urgencyLabel = `متأخر منذ ${absDays} ${absDays === 1 ? 'يوم' : absDays === 2 ? 'يومين' : 'أيام'}`;
+                totalOverdueCount++;
+              } else if (diffDays === 0) {
+                urgency = 'due_today';
+                urgencyLabel = 'مستحق اليوم';
+                totalDueTodayCount++;
+              } else if (diffDays === 1) {
+                urgency = 'due_tomorrow';
+                urgencyLabel = 'مستحق غداً';
+                totalUpcomingCount++;
+              } else {
+                urgency = 'due_soon';
+                urgencyLabel = `مستحق خلال ${diffDays} أيام`;
+                totalUpcomingCount++;
+              }
+
+              if (isReceivable) {
+                totalReceivableMinor += balMinor;
+              } else {
+                totalPayableMinor += balMinor;
+              }
+
+              alerts.push({
+                id: `acc_due_${acc.id}`,
+                accountId: acc.id,
+                accountName: acc.name,
+                phone: acc.phone,
+                balance: Math.abs(acc.currentBalance),
+                balanceMinor: balMinor,
+                balanceType: isReceivable ? 'owed_to_me' : 'owed_by_me',
+                dueDate: directDueDate.split('T')[0],
+                daysRemaining: diffDays,
+                urgency,
+                urgencyLabel,
+                note: acc.note,
+              });
+            }
+          }
+        } else if (isReceivable) {
+          // 3. Stagnant debts (> 30 days of inactivity)
+          let daysSince = 0;
+          if (acc.lastTransactionDate) {
+            daysSince = Math.floor((today.getTime() - new Date(acc.lastTransactionDate).getTime()) / (1000 * 60 * 60 * 24));
+          } else if (acc.createdAt) {
+            daysSince = Math.floor((today.getTime() - new Date(acc.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+          }
+
+          if (daysSince >= 30) {
+            totalOverdueCount++;
+            totalReceivableMinor += balMinor;
+            alerts.push({
+              id: `stagnant_${acc.id}`,
+              accountId: acc.id,
+              accountName: acc.name,
+              phone: acc.phone,
+              balance: Math.abs(acc.currentBalance),
+              balanceMinor: balMinor,
+              balanceType: 'owed_to_me',
+              dueDate: todayStr,
+              daysRemaining: -daysSince,
+              urgency: 'overdue',
+              urgencyLabel: `دين راكد منذ ${daysSince} يوم`,
+              note: 'لم تُسجل أي حركة سداد منذ أكثر من 30 يوماً',
+            });
+          }
+        }
+      }
+    }
+
+    // Sort order: Due today first, then Overdue, then Due tomorrow, then Due soon
+    alerts.sort((a, b) => {
+      const priorityMap: Record<DueDebtUrgency, number> = {
+        due_today: 4,
+        overdue: 3,
+        due_tomorrow: 2,
+        due_soon: 1,
+      };
+      const diffPriority = priorityMap[b.urgency] - priorityMap[a.urgency];
+      if (diffPriority !== 0) return diffPriority;
+      return (b.balanceMinor ?? b.balance) - (a.balanceMinor ?? a.balance);
+    });
+
+    return {
+      totalUpcomingCount,
+      totalOverdueCount,
+      totalDueTodayCount,
+      totalReceivableMinor,
+      totalPayableMinor,
+      alerts,
+    };
+  }
+
+  /**
+   * Syncs and dispatches in-app notifications for due and overdue debts.
+   * Avoids duplicate notifications on the same day.
+   */
+  async syncDueDebtNotifications(daysAhead: number = 3): Promise<number> {
+    const overview = await this.getDueDebtAlerts(daysAhead);
+    const existingNotifs = await notificationService.getAllNotifications({ type: 'reminder' });
+    const todayStr = new Date().toISOString().split('T')[0];
+    let createdCount = 0;
+
+    for (const alert of overview.alerts) {
+      // Only create notification for due today, due tomorrow, or overdue
+      if (alert.daysRemaining > 1) continue;
+
+      const alreadyNotified = existingNotifs.some(
+        (n) => n.relatedEntityId === alert.accountId && n.createdAt.startsWith(todayStr)
+      );
+
+      if (!alreadyNotified) {
+        const title = alert.urgency === 'due_today'
+          ? `موعد استحقاق اليوم: ${alert.accountName}`
+          : alert.urgency === 'due_tomorrow'
+          ? `استحقاق غداً: ${alert.accountName}`
+          : `دين متأخر: ${alert.accountName}`;
+
+        const typeDesc = alert.balanceType === 'owed_to_me' ? 'مستحق لك تحصيله' : 'مستحق عليك سداده';
+        const body = `${alert.urgencyLabel}: مبلغ ${formatNumber(alert.balance, 2)} (${typeDesc}) - حساب ${alert.accountName}.`;
+
+        await notificationService.createNotification({
+          title,
+          body,
+          type: 'reminder',
+          priority: alert.urgency === 'due_today' || alert.urgency === 'overdue' ? 'urgent' : 'high',
+          relatedEntityType: 'account',
+          relatedEntityId: alert.accountId,
+          actionUrl: `/accounts/${alert.accountId}`,
+        });
+        createdCount++;
+      }
+    }
+
+    return createdCount;
   }
 }
 
