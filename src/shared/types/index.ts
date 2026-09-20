@@ -13,3 +13,4 @@ export * from './money.types';
 export * from './invoice.types';
 export * from './tenant.types';
 export * from './trash.types';
+export * from './financialAudit.types';

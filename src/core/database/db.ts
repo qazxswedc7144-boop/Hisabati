@@ -23,6 +23,8 @@ import {
   AuditTrailEntry,
   TrashItem,
   DebtRecord,
+  FinancialAuditEntry,
+  FinancialSnapshot,
 } from '@/shared/types';
 
 export class HisabatiDatabase extends Dexie {
@@ -55,6 +57,8 @@ export class HisabatiDatabase extends Dexie {
     type: 'automatic' | 'manual' | 'rollback';
   }, string>;
   debts!: Table<DebtRecord, string>;
+  financialAuditLogs!: Table<FinancialAuditEntry, string>;
+  financialSnapshots!: Table<FinancialSnapshot, string>;
 
   constructor(dbName: string = 'HisabatiDatabase') {
     super(dbName);
@@ -193,6 +197,8 @@ export class HisabatiDatabase extends Dexie {
       trash: 'id, entityType, entityId, deletedAt, expiresAt, deletedBy, status, [entityType+entityId]',
       safetyBackups: 'id, createdAt, type',
       debts: 'id, accountId, dueDate, status, [accountId+status], [status+dueDate]',
+      financialAuditLogs: 'id, sequenceNumber, eventType, operationId, targetType, targetId, organizationId, timestamp',
+      financialSnapshots: 'id, organizationId, ledgerRevision, createdAt',
     }).upgrade(async (tx) => {
       const accounts = await tx.table('accounts').toArray();
       const now = new Date().toISOString();

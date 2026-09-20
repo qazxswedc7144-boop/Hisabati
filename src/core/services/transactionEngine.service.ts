@@ -22,6 +22,7 @@ import {
 import { formatInvoiceNumber } from '../utils/formatters';
 import { rbacGuard } from './rbac/RBACGuard.service';
 import { auditTrailService } from './rbac/AuditTrail.service';
+import { financialAuditService } from './financialAudit.service';
 import { settingsRepository, DEFAULT_SETTINGS } from '../repositories/settings.repository';
 import { useSettingsStore } from '@/shared/stores/settingsStore';
 import { decimalToMinor } from '../money/converter';
@@ -95,7 +96,7 @@ export class FinancialTransactionEngine {
       let createdTransaction: Transaction | null = null;
 
       // Atomic write transaction
-      await db.transaction('rw', db.transactions, db.accounts, db.settings, async () => {
+      await db.transaction('rw', db.transactions, db.accounts, db.settings, db.financialAuditLogs, async (transaction) => {
         // Fetch FRESH settings inside the transaction to prevent race conditions
         const freshSettingsInside = await settingsRepository.getSettings();
 
@@ -148,7 +149,25 @@ export class FinancialTransactionEngine {
         }
 
         await db.transactions.add(newTransaction);
-        await this.recalculateAccountBalance(dto.accountId, activeCurrency);
+        await this.recalculateAccountBalance(dto.accountId, activeCurrency, transaction);
+        
+        // Log financial event atomically inside the transaction
+        await financialAuditService.logFinancialEvent({
+          eventType: 'TRANSACTION_CREATE',
+          targetType: 'transaction',
+          targetId: id,
+          amountMinor: safeAmountMinor,
+          currency: activeCurrency,
+          operationId: idempotencyKey,
+          afterState: {
+            amountMinor: safeAmountMinor,
+            accountId: dto.accountId,
+            type: dto.type,
+            revision: id,
+          },
+          tx: transaction
+        });
+
         createdTransaction = newTransaction;
       });
 
@@ -226,7 +245,7 @@ export class FinancialTransactionEngine {
 
     const createdTransactions: Transaction[] = [];
 
-    await db.transaction('rw', db.transactions, db.accounts, async () => {
+    await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, async (transaction) => {
       // Check idempotency
       const existing = await db.transactions.where('operationId').equals(operationId).first();
       if (existing) {
@@ -254,7 +273,25 @@ export class FinancialTransactionEngine {
         };
 
         await db.transactions.add(trx);
-        await this.recalculateAccountBalance(leg.accountId, currency);
+        await this.recalculateAccountBalance(leg.accountId, currency, transaction);
+        
+        // Log each leg atomically
+        await financialAuditService.logFinancialEvent({
+          eventType: 'DOUBLE_ENTRY_CREATE',
+          targetType: 'transaction',
+          targetId: trx.id,
+          amountMinor: trx.amountMinor,
+          currency: trx.currency,
+          operationId: operationId,
+          afterState: {
+            amountMinor: trx.amountMinor,
+            accountId: trx.accountId,
+            type: trx.type,
+            revision: trx.id,
+          },
+          tx: transaction
+        });
+
         createdTransactions.push(trx);
       }
     });
@@ -320,12 +357,35 @@ export class FinancialTransactionEngine {
       updatedAt: new Date().toISOString(),
     };
 
-    await db.transaction('rw', db.transactions, db.accounts, async () => {
+    await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, async (transaction) => {
       await db.transactions.put(updatedTrx);
-      await this.recalculateAccountBalance(oldAccountId, activeCurrency);
+      await this.recalculateAccountBalance(oldAccountId, activeCurrency, transaction);
       if (targetAccountId !== oldAccountId) {
-        await this.recalculateAccountBalance(targetAccountId, activeCurrency);
+        await this.recalculateAccountBalance(targetAccountId, activeCurrency, transaction);
       }
+
+      // Log update atomically
+      await financialAuditService.logFinancialEvent({
+        eventType: 'TRANSACTION_UPDATE',
+        targetType: 'transaction',
+        targetId: id,
+        amountMinor: updatedTrx.amountMinor,
+        currency: activeCurrency,
+        operationId: updatedTrx.operationId,
+        beforeState: {
+          amountMinor: existing.amountMinor || 0,
+          accountId: existing.accountId,
+          type: existing.type,
+          revision: existing.id,
+        },
+        afterState: {
+          amountMinor: updatedTrx.amountMinor,
+          accountId: targetAccountId,
+          type: updatedTrx.type,
+          revision: id,
+        },
+        tx: transaction
+      });
     });
 
     await this.postProcessTransaction(updatedTrx, 'UPDATE', currentActor, account);
@@ -361,51 +421,44 @@ export class FinancialTransactionEngine {
       systemCurrency,
     });
 
-    await db.transaction('rw', db.transactions, db.accounts, async () => {
+    await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, db.settings, async (transaction) => {
       await db.transactions.delete(id);
-      await this.recalculateAccountBalance(accountId, activeCurrency);
-    });
+      await this.recalculateAccountBalance(accountId, activeCurrency, transaction);
 
-    // Record deletion in audit trail
-    try {
-      await auditTrailService.log({
-        actor: currentActor,
-        action: 'TRANSACTION_DELETE',
+      // Log deletion atomically
+      await financialAuditService.logFinancialEvent({
+        eventType: 'TRANSACTION_DELETE',
         targetType: 'transaction',
         targetId: id,
-        riskLevel: 'HIGH',
-        detailsAr: `حذف قيد مالي رقم ${id} بمبلغ ${existing.amount} من حساب ID ${accountId}.`,
-        beforeState: { ...existing },
+        amountMinor: existing.amountMinor,
+        currency: activeCurrency,
+        operationId: existing.operationId,
+        beforeState: {
+          amountMinor: existing.amountMinor || 0,
+          accountId: existing.accountId,
+          type: existing.type,
+          revision: existing.id,
+        },
+        tx: transaction
       });
-    } catch (logErr) {
-      console.warn('Audit trail delete write warning:', logErr);
-    }
 
-    // Safe offline-first sync mutation enqueueing (tombstone)
-    await this.enqueueSyncMutation(
-      'transaction',
-      id,
-      'DELETE',
-      { id, accountId },
-      id
-    );
-
-    // Phase 2.5: Record Permanent Delete Marker (Permanent Tombstone)
-    try {
-      const existingTombstones = await db.settings.get('hisabati_permanent_tombstones');
-      const list = existingTombstones && Array.isArray(existingTombstones.value) ? existingTombstones.value : [];
-      if (!list.some((t: any) => t.id === id)) {
-        list.push({ id, entityType: 'transaction', deletedAt: new Date().toISOString() });
-        await db.settings.put({
-          id: 'hisabati_permanent_tombstones',
-          key: 'hisabati_permanent_tombstones',
-          value: list,
-          updatedAt: new Date().toISOString(),
-        });
+      // Phase 2.5: Record Permanent Delete Marker (Permanent Tombstone)
+      try {
+        const existingTombstones = await transaction.table('settings').get('hisabati_permanent_tombstones');
+        const list = existingTombstones && Array.isArray(existingTombstones.value) ? existingTombstones.value : [];
+        if (!list.some((t: any) => t.id === id)) {
+          list.push({ id, entityType: 'transaction', deletedAt: new Date().toISOString() });
+          await transaction.table('settings').put({
+            id: 'hisabati_permanent_tombstones',
+            key: 'hisabati_permanent_tombstones',
+            value: list,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      } catch (e) {
+        console.warn('Permanent tombstone write warning:', e);
       }
-    } catch (e) {
-      console.warn('Permanent tombstone write warning:', e);
-    }
+    });
 
     return true;
   }
@@ -415,11 +468,12 @@ export class FinancialTransactionEngine {
    * Transactions are the absolute Source of Truth.
    * Uses integer arithmetic on minor units to guarantee zero floating point drift.
    */
-  async recalculateAccountBalance(accountId: string, currency?: CurrencyCode): Promise<Account | undefined> {
-    const account = await db.accounts.get(accountId);
+  async recalculateAccountBalance(accountId: string, currency?: CurrencyCode, tx?: any): Promise<Account | undefined> {
+    const database = tx || db;
+    const account = await database.table('accounts').get(accountId);
     if (!account) return undefined;
 
-    const transactions = await db.transactions
+    const transactions = await database.table('transactions')
       .where('accountId')
       .equals(accountId)
       .toArray();
@@ -439,8 +493,8 @@ export class FinancialTransactionEngine {
       updatedAt: now,
     };
 
-    await db.accounts.update(accountId, updatedFields);
-    return await db.accounts.get(accountId);
+    await database.table('accounts').update(accountId, updatedFields);
+    return await database.table('accounts').get(accountId);
   }
 
   /**

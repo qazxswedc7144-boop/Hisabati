@@ -23,6 +23,7 @@ import { FirebaseAuthP11TestSuite } from './firebaseAuthP11.test';
 import { FirebaseMembershipP12TestSuite } from './firebaseMembershipP12.test';
 import { runPhaseP13Tests } from './mobileUxP13.test';
 import { FinancialCoreHardeningTestSuite } from './financialCoreHardening.test';
+import { FinancialAuditPart2TestSuite } from './financialAuditPart2.test';
 import { tenantService } from '../services/TenantService';
 
 async function main() {
@@ -508,6 +509,25 @@ async function main() {
     }
   } catch (err: any) {
     console.error('Financial Core Hardening Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // 23. Phase 2/3: Audit Logs & Financial Snapshots
+  console.log('\n--- [Phase 2/3] Audit Logs, Financial State Snapshots & Tamper Detection ---');
+  try {
+    const fap2 = await FinancialAuditPart2TestSuite.runAll();
+    console.log(`Financial Audit Part 2 Result: Passed ${fap2.passed}/${fap2.total}`);
+    totalPassed += fap2.passed;
+    totalFailed += fap2.failed;
+    totalCount += fap2.total;
+    if (fap2.failed > 0) {
+      for (const r of fap2.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ ${r.title}: ${r.error}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Financial Audit Part 2 Suite crashed:', err);
     totalFailed++;
     totalCount++;
   }

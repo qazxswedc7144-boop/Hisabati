@@ -9,7 +9,6 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   FileText,
-  FileSpreadsheet,
   Calendar,
   AlertTriangle,
   X,
@@ -24,6 +23,7 @@ import {
 import { useAccountStore, useTransactionStore, useSettingsStore, useUIStore, useMessagingStore } from '@/shared/stores';
 import { BalanceBadge, EmptyState, EditTransactionModal } from '@/shared/components';
 import { AccountStatementModal } from '@/features/reports/components';
+import { PdfXlsExportIcon } from '@/shared/components/icons/PdfXlsExportIcon';
 import { ReceiptDocumentModal } from '@/features/ocr';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
 
@@ -184,14 +184,14 @@ export const AccountDetailsPage: React.FC = () => {
         <div className="flex items-center gap-2 flex-nowrap shrink-0">
           {/* Statement Button */}
           <button
-            id="btn-open-account-statement"
+            id="btn-account-statement"
+            type="button"
             onClick={() => setShowStatementModal(true)}
-            aria-label="كشف الحساب المالي"
-            className="p-2 sm:px-3 sm:py-2 rounded-xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800/60 text-teal-700 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-900/50 transition min-w-[40px] min-h-[40px] flex items-center justify-center text-xs font-bold gap-1.5 shrink-0"
-            title="كشف الحساب المالي"
+            aria-label="كشف الحساب"
+            title="كشف الحساب"
+            className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[44px] min-h-[44px] flex items-center justify-center border border-slate-200/60 dark:border-slate-800 shrink-0"
           >
-            <FileSpreadsheet className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-            <span className="hidden sm:inline">كشف الحساب</span>
+            <PdfXlsExportIcon className="w-5 h-5" />
           </button>
 
           {/* Schedule Debt Collection Alert Button */}
