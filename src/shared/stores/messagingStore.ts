@@ -69,6 +69,9 @@ interface MessagingState {
   checkDueSchedules: () => Promise<number>;
 }
 
+let __dueDebtsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let __dueDebtsPendingResolvers: Array<(v: DueDebtsOverview | null) => void> = [];
+
 export const useMessagingStore = create<MessagingState>((set, get) => ({
   messages: [],
   notifications: [],
@@ -134,6 +137,15 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
   },
 
   markAllNotificationsRead: async () => {
+    try {
+      await notificationService.markAllAsRead();
+      await get().fetchNotifications();
+    } catch (e) {
+      console.error('Failed marking all notifications read:', e);
+    }
+  },
+
+  markAllAsRead: async () => {
     try {
       await notificationService.markAllAsRead();
       await get().fetchNotifications();
@@ -218,41 +230,25 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
   },
 
   fetchDueDebtsAlerts: async (daysAhead = 7) => {
-    // [1.1 T-E] Atomic Lock & Debounce (500ms)
-    // The lock prevents overlapping concurrent executions.
-    if (get().isLoadingDueDebts) {
-      return get().dueDebtsOverview || {
-        totalUpcomingCount: 0,
-        totalOverdueCount: 0,
-        totalDueTodayCount: 0,
-        totalReceivableMinor: 0,
-        totalPayableMinor: 0,
-        alerts: [],
-      };
-    }
-
-    try {
-      set({ isLoadingDueDebts: true });
-      
-      // Artificial delay to simulate debounce/throttle if called in rapid succession
-      // although the lock above already handles the "atomic" requirement.
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      const overview = await reminderService.getDueDebtAlerts(daysAhead);
-      set({ dueDebtsOverview: overview, isLoadingDueDebts: false });
-      return overview;
-    } catch (e) {
-      console.error('Failed fetching due debt alerts:', e);
-      set({ isLoadingDueDebts: false });
-      return {
-        totalUpcomingCount: 0,
-        totalOverdueCount: 0,
-        totalDueTodayCount: 0,
-        totalReceivableMinor: 0,
-        totalPayableMinor: 0,
-        alerts: [],
-      };
-    }
+    if (__dueDebtsDebounceTimer) clearTimeout(__dueDebtsDebounceTimer);
+    return new Promise((resolve) => {
+      __dueDebtsPendingResolvers.push(resolve);
+      __dueDebtsDebounceTimer = setTimeout(async () => {
+        __dueDebtsDebounceTimer = null;
+        const resolvers = __dueDebtsPendingResolvers;
+        __dueDebtsPendingResolvers = [];
+        set({ isLoadingDueDebts: true });
+        try {
+          const overview = await reminderService.getDueDebtAlerts(daysAhead);
+          set({ dueDebtsOverview: overview, isLoadingDueDebts: false });
+          resolvers.forEach(r => r(overview));
+        } catch (e) {
+          console.error('Failed fetching due debt alerts:', e);
+          set({ isLoadingDueDebts: false });
+          resolvers.forEach(r => r(null));
+        }
+      }, 500);
+    }) as Promise<DueDebtsOverview>;
   },
 
   syncDueDebtNotifications: async (daysAhead = 3) => {

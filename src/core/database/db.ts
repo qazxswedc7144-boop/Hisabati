@@ -224,6 +224,36 @@ export class HisabatiDatabase extends Dexie {
         }
       }
     });
+
+    // Version 10 Schema (Data Type Hardening: archived boolean -> number)
+    this.version(10).stores({
+      accounts: 'id, name, phone, archived, dueDate, createdAt, updatedAt, [archived+dueDate]',
+      transactions: 'id, accountId, type, date, operationId, createdAt, updatedAt, [accountId+date]',
+      settings: 'id, key, updatedAt',
+      syncQueue: 'id, entityType, entityId, operation, operationId, status, createdAt',
+      syncAuditLogs: 'id, action, timestamp, deviceId, success',
+      messages: 'id, messageId, channel, type, status, recipient, priority, operationId, createdAt, scheduledAt',
+      messageTemplates: 'id, name, type, defaultChannel, active, createdAt',
+      inAppNotifications: 'id, type, priority, read, createdAt, idempotencyKey, relatedEntityId, [type+idempotencyKey]',
+      scheduledMessages: 'id, channel, status, scheduledAt, nextRunAt, operationId, createdAt',
+      messageQueue: 'id, messageId, channel, status, operationId, nextRetryAt, createdAt',
+      aiAuditLogs: 'id, requestId, intent, status, provider, confirmed, timestamp',
+      users: 'id, email, phone, role, activeTeamId, createdAt',
+      teams: 'id, name, ownerId, createdAt',
+      teamMembers: 'id, teamId, userId, role, status, [teamId+userId], createdAt',
+      auditTrail: 'id, sequenceNumber, timestamp, action, targetType, targetId, riskLevel, [targetType+targetId]',
+      trash: 'id, entityType, entityId, deletedAt, expiresAt, deletedBy, status, [entityType+entityId]',
+      safetyBackups: 'id, createdAt, type',
+      debts: 'id, accountId, dueDate, status, [accountId+status], [status+dueDate]',
+    }).upgrade(async (tx) => {
+      const accounts = await tx.table('accounts').toArray();
+      for (const acc of accounts) {
+        const archivedValue = acc.archived === true ? 1 : 0;
+        if (typeof acc.archived === 'boolean') {
+          await tx.table('accounts').update(acc.id, { archived: archivedValue });
+        }
+      }
+    });
   }
 }
 

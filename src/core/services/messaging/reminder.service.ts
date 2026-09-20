@@ -11,6 +11,7 @@ import {
   DueDebtAlert,
   DueDebtsOverview,
   DueDebtUrgency,
+  DebtRecord,
 } from '@/shared/types';
 import { templateRenderer } from './templateRenderer.service';
 import { notificationService } from './notification.service';
@@ -19,6 +20,7 @@ import { getDeviceId } from '@/core/utils/deviceId';
 import { formatNumber } from '@/core/utils/formatters';
 import { getDb } from '@/core/database/db';
 import Dexie from 'dexie';
+import { toMinor } from '@/core/utils/money.utils';
 
 export class ReminderService {
   /**
@@ -181,7 +183,7 @@ export class ReminderService {
 
       // Only evaluate positive balances (debts owed TO the user / مطلوب منه)
       if (acc.currentBalance > 0) {
-        const balMinor = acc.currentBalanceMinor ?? Math.round(acc.currentBalance * 100);
+        const balMinor = acc.currentBalanceMinor ?? toMinor(acc.currentBalance ?? 0, acc.currency ?? 'SAR');
         totalDebt += acc.currentBalance;
         totalDebtMinor += balMinor;
 
@@ -241,6 +243,7 @@ export class ReminderService {
           hasScheduledAlert,
           nextScheduledRunAt,
           status,
+          currency: acc.currency,
         });
       }
     }
@@ -390,11 +393,6 @@ export class ReminderService {
    * Source of truth: debts table. Examines active scheduled deadlines and stagnant debts.
    * Strictly read-only regarding financial balances.
    */
-  /**
-   * Date-based scan for due and overdue debts for Dashboard notifications.
-   * Source of truth: debts table. Examines active scheduled deadlines and stagnant debts.
-   * Strictly read-only regarding financial balances.
-   */
   async getDueDebtAlerts(daysAhead: number = 7): Promise<DueDebtsOverview> {
     const db = getDb();
     
@@ -407,10 +405,9 @@ export class ReminderService {
     const horizonStr = horizon.toISOString().split('T')[0];
 
     // [0.2] Optimize: Fetch all relevant data in bulk to avoid N+1 queries
-    // [0.1] archived.equals(false) - using filter as ultimate safe fallback for cross-env compatibility
-    // while maintaining performance by fetching all active accounts in one go.
+    // [1.2] archived.equals(0) - hardened data type in v10
     const [accounts, scheduledList, allDebts] = await Promise.all([
-      db.accounts.filter(a => !a.archived).toArray(),
+      db.accounts.where('archived').equals(0).toArray(),
       messagingRepository.getAllScheduledMessages(),
       db.debts
         .where('[status+dueDate]')
@@ -433,8 +430,8 @@ export class ReminderService {
     let totalPayableMinor = 0;
 
     for (const acc of accounts) {
-      // [0.4] Use currentBalanceMinor as source of truth
-      const accBalMinor = acc.currentBalanceMinor ?? Math.round((acc.currentBalance ?? 0) * 100);
+      // [2.1] Use toMinor instead of Math.round(*100)
+      const accBalMinor = acc.currentBalanceMinor ?? toMinor(acc.currentBalance ?? 0, acc.currency ?? 'SAR');
       if (accBalMinor === 0) continue;
 
       const isReceivable = accBalMinor > 0;
@@ -601,14 +598,12 @@ export class ReminderService {
 
       // 4. Process records from the source of truth: debts table
       for (const debt of accountDebts) {
-        // [0.3] Fix: use 'settled' instead of 'closed'
         if (debt.status === 'settled' || debt.remainingMinor <= 0) continue;
 
         const targetDate = new Date(debt.dueDate);
         targetDate.setHours(0, 0, 0, 0);
         const diffDays = Math.round((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-        // Note: we already filtered debts by horizonStr in the initial fetch, so diffDays <= daysAhead is guaranteed
         let urgency: DueDebtUrgency;
         let urgencyLabel: string;
 
@@ -635,7 +630,6 @@ export class ReminderService {
         else totalPayableMinor += debt.remainingMinor;
 
         alerts.push({
-          // [0.5] Ensure uniqueness
           id: `debt_${acc.id}_${debt.id}`,
           accountId: acc.id,
           accountName: acc.name,
@@ -686,7 +680,6 @@ export class ReminderService {
     let createdCount = 0;
 
     for (const alert of overview.alerts) {
-      // Only create notification for due today, due tomorrow, or overdue
       if (alert.daysRemaining > 1) continue;
 
       const alreadyNotified = existingNotifs.some(
