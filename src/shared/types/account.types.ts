@@ -15,7 +15,7 @@ export interface Account {
   currency?: CurrencyCode;
   createdAt: string;
   updatedAt: string;
-  archived: boolean;
+  archived: 0 | 1;
   
   // Computed / summary fields (cached for performance)
   currentBalance: number; // positive = لك (owed_to_me), negative = عليك (owed_by_me), 0 = settled
@@ -47,7 +47,7 @@ export interface UpdateAccountDTO {
   dueDate?: string;
   category?: 'customer' | 'supplier' | 'personal' | 'other';
   currency?: CurrencyCode;
-  archived?: boolean;
+  archived?: 0 | 1;
 }
 
 export type AccountFilterType = 'all' | 'owed_to_me' | 'owed_by_me' | 'settled' | 'archived';

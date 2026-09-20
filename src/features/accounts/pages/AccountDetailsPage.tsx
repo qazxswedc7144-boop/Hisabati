@@ -113,7 +113,7 @@ export const AccountDetailsPage: React.FC = () => {
 
   const handleToggleArchive = async () => {
     try {
-      if (account.archived) {
+      if (account.archived === 1) {
         await unarchiveAccount(account.id);
         showToast('تم إلغاء أرشفة واستعادة الحساب بنجاح', 'success');
       } else {
@@ -206,14 +206,14 @@ export const AccountDetailsPage: React.FC = () => {
           <button
             onClick={handleToggleArchive}
             className={`p-2 rounded-xl border transition min-w-[40px] min-h-[40px] flex items-center justify-center text-xs font-bold gap-1.5 ${
-              account.archived
+              account.archived === 1
                 ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 text-amber-700 dark:text-amber-400'
                 : 'border-slate-200/80 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
-            title={account.archived ? 'استعادة من الأرشيف' : 'أرشفة الحساب'}
+            title={account.archived === 1 ? 'استعادة من الأرشيف' : 'أرشفة الحساب'}
           >
-            {account.archived ? <RotateCcw className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
-            <span className="hidden sm:inline">{account.archived ? 'استعادة' : 'أرشفة'}</span>
+            {account.archived === 1 ? <RotateCcw className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
+            <span className="hidden sm:inline">{account.archived === 1 ? 'استعادة' : 'أرشفة'}</span>
           </button>
 
           {/* Edit Account */}
@@ -248,7 +248,7 @@ export const AccountDetailsPage: React.FC = () => {
                 {account.name}
               </h2>
               <BalanceBadge balance={account.currentBalance} size="lg" />
-              {account.archived && (
+              {account.archived === 1 && (
                 <span className="text-xs font-bold px-2.5 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
                   مؤرشف
                 </span>

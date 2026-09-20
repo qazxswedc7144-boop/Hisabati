@@ -413,7 +413,7 @@ export class ReportService {
     let activeAccountsCount = 0;
 
     for (const acc of accounts) {
-      if (!acc.archived) activeAccountsCount++;
+      if (acc.archived === 0) activeAccountsCount++;
 
       const balanceMinor = getAccountCurrentBalanceMinor(acc);
 

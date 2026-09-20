@@ -54,6 +54,13 @@ export function migrateBackupV1ToV2(payload: any): any {
   }
 
   const migrated = structuredClone(payload);
+  
+  if (Array.isArray(migrated.accounts)) {
+    migrated.accounts = migrated.accounts.map((a: any) => ({
+      ...a,
+      archived: a.archived === true ? 1 : a.archived === false ? 0 : a.archived,
+    }));
+  }
 
   migrated.metadata.backupSchemaVersion = 2;
   migrated.metadata.schemaVersion = 2;
@@ -75,6 +82,13 @@ export function migrateBackupV2ToV3(payload: any): any {
   }
 
   const migrated = structuredClone(payload);
+
+  if (Array.isArray(migrated.accounts)) {
+    migrated.accounts = migrated.accounts.map((a: any) => ({
+      ...a,
+      archived: a.archived === true ? 1 : a.archived === false ? 0 : a.archived,
+    }));
+  }
 
   migrated.metadata.backupSchemaVersion = 3;
 
@@ -110,6 +124,13 @@ export function migrateBackupV3ToV4(payload: any): any {
 
   const migrated = structuredClone(payload);
 
+  if (Array.isArray(migrated.accounts)) {
+    migrated.accounts = migrated.accounts.map((a: any) => ({
+      ...a,
+      archived: a.archived === true ? 1 : a.archived === false ? 0 : a.archived,
+    }));
+  }
+
   migrated.metadata.backupSchemaVersion = 4;
   migrated.metadata.schemaVersion = 4;
   
@@ -134,6 +155,14 @@ export function migrateBackupV4ToV5(payload: any): any {
   }
 
   const migrated = structuredClone(payload);
+  
+  if (Array.isArray(migrated.accounts)) {
+    migrated.accounts = migrated.accounts.map((a: any) => ({
+      ...a,
+      archived: a.archived === true ? 1 : a.archived === false ? 0 : a.archived,
+    }));
+  }
+
   const now = new Date().toISOString();
   const debts: any[] = migrated.debts ?? [];
   const accounts: any[] = migrated.accounts ?? [];

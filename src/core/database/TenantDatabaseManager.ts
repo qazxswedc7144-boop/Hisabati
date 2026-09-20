@@ -53,6 +53,13 @@ export class TenantDatabaseManager {
         
         // Close previous database if it exists
         if (this.currentDb) {
+          try {
+            // [3.3] Flush any pending debounce resolvers to prevent data leaks or stale UI updates across tenants
+            const { flushDueDebtsDebounce } = await import('@/shared/stores/messagingStore');
+            flushDueDebtsDebounce();
+          } catch {
+            // Non-blocking if store is not yet initialized
+          }
           await this.currentDb.close();
         }
 

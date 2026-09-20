@@ -175,9 +175,9 @@ export const useAccountStore = create<AccountState>((set, get) => ({
 
     // 1. Archive filtering
     if (filterType === 'archived') {
-      result = result.filter((a) => a.archived);
+      result = result.filter((a) => a.archived === 1);
     } else {
-      result = result.filter((a) => !a.archived);
+      result = result.filter((a) => a.archived === 0);
 
       // 2. Status filtering
       if (filterType === 'owed_to_me') {

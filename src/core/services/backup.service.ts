@@ -213,7 +213,8 @@ export class BackupService {
     }
 
     // 0.2: Reject V3+ backups if integrityHash is missing (Prevent Signature Stripping)
-    if (!metadata.integrityHash && schemaVer >= 3) {
+    // Exception: Allow missing hash if it was migrated from a legacy version (< 3)
+    if (!metadata.integrityHash && schemaVer >= 3 && (metadata.originalSchemaVersion === undefined || metadata.originalSchemaVersion >= 3)) {
       return {
         isValid: false,
         error: 'النسخ الاحتياطية من الإصدار 3 فما فوق تتطلب توقيع سلامة البيانات (integrityHash missing)',
@@ -242,6 +243,9 @@ export class BackupService {
       }
       if (accountIds.has(acc.id)) {
         return { isValid: false, error: `تكرار في معرفات الحسابات داخل النسخة (معرف مكرر: ${acc.id})` };
+      }
+      if (acc.archived !== true && acc.archived !== false && acc.archived !== 0 && acc.archived !== 1) {
+        return { isValid: false, error: `قيمة archived غير صالحة للحساب ${acc.id}` };
       }
       accountIds.add(acc.id);
 
@@ -517,7 +521,12 @@ export class BackupService {
       const tombstoneIds = new Set(finalTombstones.map((t) => t.id));
 
       if (payload.accounts && payload.accounts.length > 0) {
-        const validAccounts = payload.accounts.filter((a: any) => !tombstoneIds.has(a.id));
+        // [2.2] Normalize archived boolean -> number (0/1) for compatibility with V1-V9 backups
+        const normalizedAccounts = payload.accounts.map((a: any) => ({
+          ...a,
+          archived: a.archived === true ? 1 : a.archived === false ? 0 : a.archived,
+        }));
+        const validAccounts = normalizedAccounts.filter((a: any) => !tombstoneIds.has(a.id));
         if (validAccounts.length > 0) {
           await txDb.accounts.bulkPut(validAccounts);
         }

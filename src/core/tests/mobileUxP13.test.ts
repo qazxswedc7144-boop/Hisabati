@@ -32,7 +32,7 @@ export async function runPhaseP13Tests() {
       totalCredit: 0,
       totalCreditMinor: 0,
       transactionCount: 1,
-      archived: false,
+      archived: 0 as 0 | 1,
       phone: '+967771234567',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

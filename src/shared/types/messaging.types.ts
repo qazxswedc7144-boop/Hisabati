@@ -191,6 +191,7 @@ export interface OverdueDebtItem {
   hasScheduledAlert: boolean;
   nextScheduledRunAt?: string;
   status: 'due_now' | 'upcoming' | 'stagnant' | 'normal';
+  currency?: CurrencyCode;
 }
 
 export interface OverdueDebtSummary {

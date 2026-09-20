@@ -165,7 +165,7 @@ export const ReceiptToTransactionModal: React.FC<ReceiptToTransactionModalProps>
 
   if (!isOpen || !draft) return null;
 
-  const activeAccounts = accounts.filter((a) => !a.archived);
+  const activeAccounts = accounts.filter((a) => a.archived === 0);
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
 
   const handleConvert = async (e: React.FormEvent) => {

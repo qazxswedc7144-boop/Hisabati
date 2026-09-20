@@ -32,7 +32,7 @@ export class ReminderService {
     const candidates: DebtReminderCandidate[] = [];
 
     for (const acc of accounts) {
-      if (acc.archived) continue;
+      if (acc.archived === 1) continue;
 
       if (acc.currentBalance > 0) {
         candidates.push({
@@ -179,7 +179,7 @@ export class ReminderService {
     let stagnantCount = 0;
 
     for (const acc of accounts) {
-      if (acc.archived) continue;
+      if (acc.archived === 1) continue;
 
       // Only evaluate positive balances (debts owed TO the user / مطلوب منه)
       if (acc.currentBalance > 0) {

@@ -30,7 +30,7 @@ describe('Debt Acceptance Tests (T-A to T-H)', () => {
       name: 'Test T-A',
       currentBalance: 300,
       currentBalanceMinor: 30000,
-      archived: false,
+      archived: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       transactionCount: 0
@@ -58,7 +58,7 @@ describe('Debt Acceptance Tests (T-A to T-H)', () => {
       name: 'Test T-B',
       currentBalance: 500,
       currentBalanceMinor: 50000,
-      archived: false,
+      archived: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       transactionCount: 0
@@ -140,7 +140,7 @@ describe('Debt Acceptance Tests (T-A to T-H)', () => {
       dueDate: tomorrowStr,
       currentBalance: 100,
       currentBalanceMinor: 10000,
-      archived: false,
+      archived: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       transactionCount: 0
@@ -159,7 +159,7 @@ describe('Debt Acceptance Tests (T-A to T-H)', () => {
       name: 'Integrity Test',
       currentBalance: 50,
       currentBalanceMinor: 5000,
-      archived: false,
+      archived: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       transactionCount: 0
@@ -196,7 +196,7 @@ describe('Debt Acceptance Tests (T-A to T-H)', () => {
         name: `Customer ${i}`,
         currentBalance: 100,
         currentBalanceMinor: 10000,
-        archived: false,
+        archived: 0,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         transactionCount: 0

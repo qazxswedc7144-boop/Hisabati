@@ -12,7 +12,7 @@ export class AccountService {
     if (includeArchived) {
       return await db.accounts.orderBy('name').toArray();
     }
-    return await db.accounts.filter((a) => !a.archived).toArray();
+    return await db.accounts.where('archived').equals(0).toArray();
   }
 
   async getById(id: string): Promise<Account | undefined> {
@@ -56,7 +56,7 @@ export class AccountService {
       currency: resolvedCurrency,
       createdAt: now,
       updatedAt: now,
-      archived: false,
+      archived: 0,
       currentBalance: 0,
       currentBalanceMinor: 0,
       totalDebit: 0,
@@ -129,10 +129,10 @@ export class AccountService {
     });
 
     await db.accounts.update(id, {
-      archived: true,
+      archived: 1,
       updatedAt: new Date().toISOString(),
     });
-    await this.enqueueSyncMutation('account', id, 'UPDATE', { archived: true }, id);
+    await this.enqueueSyncMutation('account', id, 'UPDATE', { archived: 1 }, id);
     return await this.getById(id);
   }
 
@@ -145,10 +145,10 @@ export class AccountService {
     });
 
     await db.accounts.update(id, {
-      archived: false,
+      archived: 0,
       updatedAt: new Date().toISOString(),
     });
-    await this.enqueueSyncMutation('account', id, 'UPDATE', { archived: false }, id);
+    await this.enqueueSyncMutation('account', id, 'UPDATE', { archived: 0 }, id);
     return await this.getById(id);
   }
 
@@ -295,9 +295,9 @@ export class AccountService {
     let list = await queryObj.toArray();
 
     if (filter === 'archived') {
-      list = list.filter((a) => a.archived);
+      list = list.filter((a) => a.archived === 1);
     } else {
-      list = list.filter((a) => !a.archived);
+      list = list.filter((a) => a.archived === 0);
 
       if (filter === 'owed_to_me') {
         list = list.filter((a) => a.currentBalance > 0);

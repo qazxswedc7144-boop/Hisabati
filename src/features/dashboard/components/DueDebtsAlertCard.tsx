@@ -22,6 +22,7 @@ import {
   useUIStore,
   useAccountStore,
   useSettingsStore,
+  flushDueDebtsDebounce,
 } from '@/shared/stores';
 import { DueDebtAlert, DueDebtUrgency } from '@/shared/types';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
@@ -52,6 +53,11 @@ export const DueDebtsAlertCard: React.FC = () => {
   useEffect(() => {
     fetchDueDebtsAlerts(7);
     syncDueDebtNotifications(3);
+    
+    // [3.3] Cleanup: Flush pending resolvers when component unmounts to prevent memory leaks or stale UI updates
+    return () => {
+      flushDueDebtsDebounce();
+    };
   }, [fetchDueDebtsAlerts, syncDueDebtNotifications]);
 
   const handleRefresh = async () => {

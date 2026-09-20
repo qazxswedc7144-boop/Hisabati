@@ -67,6 +67,7 @@ interface MessagingState {
   pauseSchedule: (id: string) => Promise<void>;
   resumeSchedule: (id: string) => Promise<void>;
   checkDueSchedules: () => Promise<number>;
+  flushDueDebtsDebounce: () => void;
 }
 
 let __dueDebtsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -304,4 +305,17 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
     }
     return res.triggeredCount;
   },
+
+  flushDueDebtsDebounce: () => {
+    if (__dueDebtsDebounceTimer) {
+      clearTimeout(__dueDebtsDebounceTimer);
+      __dueDebtsDebounceTimer = null;
+    }
+    const resolvers = __dueDebtsPendingResolvers;
+    __dueDebtsPendingResolvers = [];
+    resolvers.forEach(r => r(null));
+    set({ isLoadingDueDebts: false });
+  },
 }));
+
+export const flushDueDebtsDebounce = () => useMessagingStore.getState().flushDueDebtsDebounce();

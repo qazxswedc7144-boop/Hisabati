@@ -61,7 +61,7 @@ async function runPhase7DTests() {
     totalDebit: 0,
     totalCredit: 0,
     transactionCount: 0,
-    archived: false,
+    archived: 0 as 0 | 1,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

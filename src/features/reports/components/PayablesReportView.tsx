@@ -423,7 +423,7 @@ export const PayablesReportView: React.FC = () => {
                         <span className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
                           {item.account.name}
                         </span>
-                        {item.account.archived && (
+                        {item.account.archived === 1 && (
                           <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded shrink-0">
                             مؤرشف
                           </span>
@@ -506,7 +506,7 @@ export const PayablesReportView: React.FC = () => {
                             >
                               {item.account.name}
                             </button>
-                            {item.account.archived && (
+                            {item.account.archived === 1 && (
                               <span className="ms-2 text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded">
                                 مؤرشف
                               </span>
