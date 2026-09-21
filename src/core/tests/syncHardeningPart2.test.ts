@@ -10,6 +10,7 @@ import { useTenantStore } from '@/shared/stores/tenantStore';
 import { auditTrailService } from '../services/rbac/AuditTrail.service';
 import { financialAuditService } from '../services/financialAudit.service';
 import { Transaction, Account } from '@/shared/types';
+import { SyncContextRegistry } from '../services/syncContext';
 
 describe('Sync Engine Hardening Part 2: Conflict & Financial Boundary', () => {
   let testAccount: Account;
@@ -138,5 +139,14 @@ describe('Sync Engine Hardening Part 2: Conflict & Financial Boundary', () => {
 
     const acc = await db.accounts.get(testAccount.id);
     expect(acc?.currentBalanceMinor).toBe(100);
+  });
+
+  it('SyncContextRegistry handles nested begin/end', () => {
+    SyncContextRegistry.beginSyncApply();
+    SyncContextRegistry.beginSyncApply();
+    SyncContextRegistry.endSyncApply();
+    expect(SyncContextRegistry.isInsideSyncApply()).toBe(true); // depth = 1
+    SyncContextRegistry.endSyncApply();
+    expect(SyncContextRegistry.isInsideSyncApply()).toBe(false); // depth = 0
   });
 });

@@ -4,17 +4,17 @@
  * Enforces security invariant that prevents unauthorized `{ isRemote: true }` bypassing local checks.
  */
 export class SyncContextRegistry {
-  private static _isInsideSyncApply: boolean = false;
+  private static _depth: number = 0;
 
   public static beginSyncApply(): void {
-    SyncContextRegistry._isInsideSyncApply = true;
+    SyncContextRegistry._depth++;
   }
 
   public static endSyncApply(): void {
-    SyncContextRegistry._isInsideSyncApply = false;
+    SyncContextRegistry._depth = Math.max(0, SyncContextRegistry._depth - 1);
   }
 
   public static isInsideSyncApply(): boolean {
-    return SyncContextRegistry._isInsideSyncApply;
+    return SyncContextRegistry._depth > 0;
   }
 }

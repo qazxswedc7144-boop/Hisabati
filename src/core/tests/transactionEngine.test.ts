@@ -312,6 +312,21 @@ export async function runFinancialEngineTests(): Promise<EngineTestSuiteResult> 
       testBSuccess ? 'تم التحديث بنجاح' : 'فشل التحديث'
     );
 
+    // Test 15: SyncContextRegistry handles nested begin/end
+    SyncContextRegistry.beginSyncApply();
+    SyncContextRegistry.beginSyncApply();
+    SyncContextRegistry.endSyncApply();
+    const depth1 = SyncContextRegistry.isInsideSyncApply(); // depth = 1 => true
+    SyncContextRegistry.endSyncApply();
+    const depth0 = SyncContextRegistry.isInsideSyncApply(); // depth = 0 => false
+    addResult(
+      15,
+      'SyncContextRegistry handles nested begin/end',
+      depth1 === true && depth0 === false,
+      'depth=1 is true, depth=0 is false',
+      `depth1=${depth1}, depth0=${depth0}`
+    );
+
     // Cleanup test data
     await db.transactions.where('accountId').anyOf([testAcc1Id, testAcc2Id]).delete();
     await db.accounts.where('id').anyOf([testAcc1Id, testAcc2Id]).delete();
