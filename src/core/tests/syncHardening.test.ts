@@ -26,8 +26,7 @@ describe('Phase 4 - Sync Hardening & Safety Tests', () => {
   beforeEach(async () => {
     await tenantService.initialize();
     useTenantStore.getState().setContext({
-      activeOrganization: { id: 'local', name: 'Local Org' } as any,
-      activeBranch: { id: 'main', name: 'Main Branch' } as any
+      activeOrganization: { id: 'local', name: 'Local Org' } as any
     });
 
     await db.accounts.clear();

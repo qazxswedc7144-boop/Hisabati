@@ -12,7 +12,6 @@ import {
   CheckCircle2,
   ChevronDown,
   Download,
-  FileSpreadsheet,
   FileText,
   Loader2,
   MessageCircle,
@@ -31,6 +30,8 @@ import {
   Users,
   Table as TableIcon,
 } from 'lucide-react';
+
+import { PdfXlsExportIcon } from '@/shared/components/icons/PdfXlsExportIcon';
 
 import { useAccountStore, useSettingsStore, useUIStore } from '@/shared/stores';
 import {
@@ -124,17 +125,16 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
     useState<AccountStatementReport | null>(null);
 
   const [loading, setLoading] = useState(false);
-  const [isActionsOpen, setIsActionsOpen] = useState(false);
   const [selectedDocTrx, setSelectedDocTrx] = useState<Transaction | null>(null);
 
   const { showToast: uiShowToast } = useUIStore();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isFormatPickerOpen, setIsFormatPickerOpen] = useState(false);
 
   const accountSearchRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
-  const bottomActionsRef = useRef<HTMLDivElement>(null);
   const requestIdRef = useRef(0);
   const lastInitialAccountIdRef = useRef<string | undefined>(initialAccountId);
 
@@ -204,18 +204,16 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
 
       if (
         actionsRef.current &&
-        !actionsRef.current.contains(target) &&
-        bottomActionsRef.current &&
-        !bottomActionsRef.current.contains(target)
+        !actionsRef.current.contains(target)
       ) {
-        setIsActionsOpen(false);
+        setIsMenuOpen(false);
       }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsAccountSearchOpen(false);
-        setIsActionsOpen(false);
+        setIsMenuOpen(false);
       }
     };
 
@@ -317,13 +315,13 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
 
   const handlePrint = useCallback(() => {
     if (!statement) return;
-    setIsActionsOpen(false);
+    setIsMenuOpen(false);
     pdfGenerator.printStatement(statement, currency);
   }, [statement, currency]);
 
   const handleExportExcel = useCallback(async () => {
     if (!statement) return;
-    setIsActionsOpen(false);
+    setIsMenuOpen(false);
 
     try {
       const blob = await excelGenerator.generateStatementExcel(
@@ -345,7 +343,7 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
 
   const handleExportCSV = useCallback(() => {
     if (!statement) return;
-    setIsActionsOpen(false);
+    setIsMenuOpen(false);
 
     const filename =
       `كشف_حساب_${statement.account.name.replace(/\s+/g, '_')}.csv`;
@@ -356,7 +354,7 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
 
   const handleShareText = useCallback(async () => {
     if (!statement) return;
-    setIsActionsOpen(false);
+    setIsMenuOpen(false);
 
     try {
       const message = shareService.generateStatementTextMessage(
@@ -380,7 +378,7 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
 
   const handleShareWhatsApp = useCallback(() => {
     if (!statement) return;
-    setIsActionsOpen(false);
+    setIsMenuOpen(false);
 
     const message = shareService.generateStatementTextMessage(
       statement,
@@ -416,36 +414,6 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
     [statement]
   );
 
-  // Common action menu options
-  const actionMenuItems = (
-    <div className="py-1">
-      <ReportAction
-        icon={<Printer className="h-4 w-4" />}
-        label="طباعة / تصدير PDF"
-        onClick={handlePrint}
-      />
-      <ReportAction
-        icon={<FileSpreadsheet className="h-4 w-4" />}
-        label="تصدير Excel (.xlsx)"
-        onClick={handleExportExcel}
-      />
-      <ReportAction
-        icon={<Download className="h-4 w-4" />}
-        label="تصدير ملف CSV"
-        onClick={handleExportCSV}
-      />
-      <ReportAction
-        icon={<MessageCircle className="h-4 w-4" />}
-        label="مشاركة عبر واتساب"
-        onClick={handleShareWhatsApp}
-      />
-      <ReportAction
-        icon={<Share2 className="h-4 w-4" />}
-        label="مشاركة / نسخ النص"
-        onClick={handleShareText}
-      />
-    </div>
-  );
 
   if (!selectedAccountId) {
     return (
@@ -507,25 +475,8 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
           />
         </div>
 
-        {/* Left: Export Merged & More Menu */}
+        {/* Left: More Menu Dropdown */}
         <div className="flex items-center gap-1">
-          {/* Merged Export Icon (PDF + Excel) */}
-          <button
-            type="button"
-            onClick={() => setIsExportModalOpen(true)}
-            className="relative w-10 h-10 flex items-center justify-center rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition group"
-            title="تصدير (PDF / Excel)"
-          >
-            <div className="relative flex items-center justify-center">
-              <FileText className="w-5 h-5 text-rose-600 transition-transform group-hover:-translate-x-1" />
-              <div className="absolute -bottom-1 -end-1 p-0.5 rounded-md bg-white dark:bg-slate-800 shadow-xs border border-slate-100 dark:border-slate-700">
-                <TableIcon className="w-3 h-3 text-emerald-600 transition-transform group-hover:translate-x-1" />
-              </div>
-            </div>
-          </button>
-
-          <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-0.5" />
-
           {/* More Menu Dropdown */}
           <div className="relative" ref={actionsRef}>
             <button
@@ -549,12 +500,11 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
                   </div>
                   {[
                     { id: 'print', label: 'طباعة كشف الحساب', icon: Printer, action: handlePrint },
-                    { id: 'excel', label: 'تصدير Excel', icon: FileSpreadsheet, action: handleExportExcel },
-                    { id: 'whatsapp', label: 'مشاركة واتساب', icon: MessageCircle, action: handleShareWhatsApp },
+                    { id: 'export', label: 'تصدير Excel - PDF', icon: PdfXlsExportIcon, action: () => { setIsMenuOpen(false); setIsFormatPickerOpen(true); } },
+                    { id: 'csv', label: 'تصدير ملف CSV', icon: Download, action: handleExportCSV },
                     { id: 'divider-1', isDivider: true },
-                    { id: 'search-account', label: 'تغيير الحساب المختار', icon: RefreshCw, action: handleClearAccount },
-                    { id: 'divider-2', isDivider: true },
-                    { id: 'share', label: 'شارك التطبيق', icon: Share2, action: () => uiShowToast('جاري مشاركة التطبيق...', 'info') },
+                    { id: 'whatsapp', label: 'مشاركة واتساب', icon: MessageCircle, action: handleShareWhatsApp },
+                    { id: 'share-text', label: 'مشاركة / نسخ النص', icon: Share2, action: handleShareText },
                   ].map((item) => (
                     item.isDivider ? (
                       <div key={item.id} className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
@@ -659,8 +609,7 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
                   onClick={handlePrint}
                   className="flex flex-col items-center justify-center gap-2 p-4 rounded-3xl bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40 text-rose-600 hover:bg-rose-100 transition"
                 >
-                  <FileText className="w-6 h-6" />
-                  <span className="text-[10px] font-black">PDF</span>
+                  <PdfXlsExportIcon className="w-6 h-6" />
                 </button>
                 <button
                   type="button"
@@ -842,18 +791,10 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
       {/* Sticky Bottom Summary Bar */}
       {statement && (
         <div
-          ref={bottomActionsRef}
-          className="fixed inset-x-2 bottom-2 z-40 sm:inset-x-4 sm:bottom-4"
+          className="fixed inset-x-2 bottom-[calc(80px+env(safe-area-inset-bottom))] z-40 sm:inset-x-4 sm:bottom-[calc(80px+env(safe-area-inset-bottom))]"
         >
-          <div className="relative mx-auto flex max-w-5xl items-center justify-between gap-2.5 rounded-2xl border border-slate-200/80 bg-white/95 p-3 shadow-2xl backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/95">
-            {/* Pop-up menu anchored to the bottom sticky bar */}
-            {statement && isActionsOpen && (
-              <div className="absolute bottom-16 end-0 z-50 w-60 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl dark:border-slate-700 dark:bg-slate-900 animate-in fade-in slide-in-from-bottom-2 duration-150">
-                {actionMenuItems}
-              </div>
-            )}
-
-            <div className="min-w-0">
+          <div className="relative mx-auto flex max-w-5xl items-center justify-end gap-2.5 rounded-2xl border border-slate-200/80 bg-white/95 p-3 shadow-2xl backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/95">
+            <div className="min-w-0 text-start">
               <p className="text-[10px] font-bold text-slate-400">
                 الرصيد الختامي بعد حركات الفترة
               </p>
@@ -868,15 +809,71 @@ export const AccountStatementView: React.FC<AccountStatementViewProps> = ({
                 </span>
               </div>
             </div>
+          </div>
+        </div>
+      )}
 
-            <button
-              type="button"
-              onClick={() => setIsActionsOpen((prev) => !prev)}
-              className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl bg-teal-600 px-3.5 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-teal-700 active:scale-95"
-            >
-              <MoreVertical className="h-4 w-4" />
-              <span>خيارات التقرير</span>
-            </button>
+      {/* Export Format Picker Popup */}
+      {isFormatPickerOpen && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in"
+          onClick={() => setIsFormatPickerOpen(false)}
+        >
+          <div 
+            className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 animate-in zoom-in-95 duration-200 mb-[calc(60px+env(safe-area-inset-bottom))] sm:mb-0"
+            onClick={(e) => e.stopPropagation()}
+            dir="rtl"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                تصدير كشف الحساب
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setIsFormatPickerOpen(false)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Format Selection Options */}
+            <div className="space-y-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsFormatPickerOpen(false);
+                  handleExportExcel();
+                }}
+                className="w-full flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 hover:border-emerald-200 dark:hover:border-emerald-800 text-slate-800 dark:text-slate-100 font-bold text-xs transition text-start"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400">
+                  <PdfXlsExportIcon className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold text-slate-900 dark:text-slate-100">تصدير Excel (.xlsx)</div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">جداول بيانات قابلة للتعديل والتحليل</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsFormatPickerOpen(false);
+                  handlePrint();
+                }}
+                className="w-full flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 hover:bg-teal-50 dark:hover:bg-teal-950/30 hover:border-teal-200 dark:hover:border-teal-800 text-slate-800 dark:text-slate-100 font-bold text-xs transition text-start"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-100 dark:bg-teal-900/40 text-teal-600 dark:text-teal-400">
+                  <Printer className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold text-slate-900 dark:text-slate-100">تصدير PDF / طباعة</div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">تقرير جاهز للطباعة والمشاركة للحفظ كـ PDF</div>
+                </div>
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -67,7 +67,6 @@ export class AuthService {
         this.authStatus = 'unauthenticated';
       }
       
-      console.log(`AuthService: Status changed to ${this.authStatus}`);
     });
 
     // Simple connectivity check for offline status
@@ -103,7 +102,6 @@ export class AuthService {
    */
   public async setActiveActor(actor: AuditActor): Promise<void> {
     this.currentActor = { ...actor };
-    console.log(`AuthService: Local actor switched to ${actor.name}`);
   }
 
   /**
@@ -137,7 +135,6 @@ export class AuthService {
       if (!auth) {
         this.authStatus = 'unauthenticated';
       }
-      console.log('AuthService: Session cleared and reset to default actor');
     }
   }
 

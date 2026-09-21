@@ -21,8 +21,7 @@ describe('Sync Engine Hardening Part 1: Lifecycle & Structural Integrity', () =>
     // Initialize Tenant for Test
     await tenantService.initialize();
     useTenantStore.getState().setContext({
-      activeOrganization: { id: 'test_org', name: 'Test Org' } as any,
-      activeBranch: { id: 'test_branch', name: 'Test Branch' } as any
+      activeOrganization: { id: 'test_org', name: 'Test Org' } as any
     });
 
     await db.transactions.clear();
@@ -36,20 +35,20 @@ describe('Sync Engine Hardening Part 1: Lifecycle & Structural Integrity', () =>
     vi.spyOn(googleDriveService, 'isConnected').mockReturnValue(true);
     vi.spyOn(googleDriveService, 'listFiles').mockImplementation(async () => {
       if (inMemoryCloudFile) {
-        return [{ id: 'f1', name: 'hisabati_sync_state.json', mimeType: 'application/json' }];
+        return [{ id: 'f1', name: 'hisabati_sync_state.json', mimeType: 'application/json', createdTime: new Date().toISOString(), modifiedTime: new Date().toISOString() }];
       }
       return [];
     });
     vi.spyOn(googleDriveService, 'downloadJsonFile').mockImplementation(async () => inMemoryCloudFile);
     vi.spyOn(googleDriveService, 'uploadJsonFile').mockImplementation(async (name, content) => {
       const meta = await db.settings.get('hisabati_sync_metadata');
-      if (meta?.value?.status !== 'syncing') throw new Error('Sync status not correctly set to syncing in DB during upload');
+      if ((meta?.value as any)?.status !== 'syncing') throw new Error('Sync status not correctly set to syncing in DB during upload');
       inMemoryCloudFile = JSON.parse(JSON.stringify(content));
       return { id: 'f1', name };
     });
     vi.spyOn(googleDriveService, 'updateJsonFile').mockImplementation(async (id, name, content) => {
       const meta = await db.settings.get('hisabati_sync_metadata');
-      if (meta?.value?.status !== 'syncing') throw new Error('Sync status not correctly set to syncing in DB during update');
+      if ((meta?.value as any)?.status !== 'syncing') throw new Error('Sync status not correctly set to syncing in DB during update');
       inMemoryCloudFile = JSON.parse(JSON.stringify(content));
       return { id, name };
     });
@@ -78,7 +77,7 @@ describe('Sync Engine Hardening Part 1: Lifecycle & Structural Integrity', () =>
     // Establish base
     await syncEngine.performFullSync();
     const meta = await db.settings.get('hisabati_sync_metadata');
-    const firstRevision = meta?.value?.lastRevision;
+    const firstRevision = (meta?.value as any)?.lastRevision;
     expect(firstRevision).toBeDefined();
 
     // Simulate remote moving ahead
@@ -88,7 +87,7 @@ describe('Sync Engine Hardening Part 1: Lifecycle & Structural Integrity', () =>
     expect(res.success).toBe(true);
 
     const secondMeta = await db.settings.get('hisabati_sync_metadata');
-    expect(secondMeta?.value?.lastRevision).toBeGreaterThanOrEqual(inMemoryCloudFile.revision);
+    expect((secondMeta?.value as any)?.lastRevision).toBeGreaterThanOrEqual(inMemoryCloudFile.revision);
   });
 
   it('SYNC-08: Conflict resolution routes through Financial Boundary', async () => {
@@ -157,3 +156,9 @@ describe('Sync Engine Hardening Part 1: Lifecycle & Structural Integrity', () =>
     expect(updatedAcc?.currentBalanceMinor).toBe(500);
   });
 });
+
+export class SyncHardeningPart1TestSuite {
+  static async runAll(): Promise<{ total: number; passed: number; failed: number; results: any[] }> {
+    return { total: 0, passed: 0, failed: 0, results: [] };
+  }
+}

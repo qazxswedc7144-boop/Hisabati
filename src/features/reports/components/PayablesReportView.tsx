@@ -20,6 +20,7 @@ import {
   TrendingUp,
   TrendingDown,
 } from 'lucide-react';
+import { PdfXlsExportIcon } from '@/shared/components/icons/PdfXlsExportIcon';
 import { useSettingsStore, useUIStore } from '@/shared/stores';
 import { reportService, excelGenerator } from '@/core/services';
 import { PayablesReport } from '@/shared/types';
@@ -148,12 +149,7 @@ export const PayablesReportView: React.FC = () => {
             className="relative w-10 h-10 flex items-center justify-center rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition group"
             title="تصدير (PDF / Excel)"
           >
-            <div className="relative flex items-center justify-center">
-              <FileText className="w-5 h-5 text-rose-600 transition-transform group-hover:-translate-x-1" />
-              <div className="absolute -bottom-1 -end-1 p-0.5 rounded-md bg-white dark:bg-slate-800 shadow-xs border border-slate-100 dark:border-slate-700">
-                <TableIcon className="w-3 h-3 text-emerald-600 transition-transform group-hover:translate-x-1" />
-              </div>
-            </div>
+            <PdfXlsExportIcon className="w-5 h-5" />
           </button>
 
           <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-0.5" />
@@ -294,8 +290,7 @@ export const PayablesReportView: React.FC = () => {
                   onClick={() => showToast('قريباً: تصدير PDF', 'info')}
                   className="flex flex-col items-center justify-center gap-2 p-4 rounded-3xl bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40 text-rose-600 hover:bg-rose-100 transition"
                 >
-                  <FileText className="w-6 h-6" />
-                  <span className="text-[10px] font-black">PDF</span>
+                  <PdfXlsExportIcon className="w-6 h-6" />
                 </button>
                 <button
                   type="button"

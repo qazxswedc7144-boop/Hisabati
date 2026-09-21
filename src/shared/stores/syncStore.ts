@@ -56,7 +56,7 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
   lastSyncTime: typeof localStorage !== 'undefined' ? localStorage.getItem('hisabati_last_sync_time') : null,
   pendingQueueCount: 0,
   queueStats: { pending: 0, processing: 0, failed: 0, completed: 0, total: 0 },
-  conflicts: syncEngine.getPersistedConflicts(),
+  conflicts: [],
   cloudBackups: [],
   isLoadingBackups: false,
   autoSyncEnabled: true,

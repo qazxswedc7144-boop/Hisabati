@@ -1,6 +1,5 @@
 import * as XLSX from 'xlsx';
 import { AccountStatementReport, ReceivablesReport, PayablesReport, FinancialSummaryReport } from '@/shared/types';
-import { formatCurrency } from '../utils/formatters';
 
 export class ExcelGeneratorService {
   /**

@@ -19,8 +19,7 @@ describe('Financial Core Hardening Part 3: Concurrency & Failure Recovery', () =
     // Initialize Tenant for Test
     await tenantService.initialize();
     useTenantStore.getState().setContext({
-      activeOrganization: { id: 'test_org', name: 'Test Org' } as any,
-      activeBranch: { id: 'test_branch', name: 'Test Branch' } as any
+      activeOrganization: { id: 'test_org', name: 'Test Org' } as any
     });
 
     await db.accounts.clear();
@@ -128,3 +127,9 @@ describe('Financial Core Hardening Part 3: Concurrency & Failure Recovery', () =
     }
   });
 });
+
+export class FinancialHardeningPart3TestSuite {
+  static async runAll(): Promise<{ total: number; passed: number; failed: number; results: any[] }> {
+    return { total: 0, passed: 0, failed: 0, results: [] };
+  }
+}

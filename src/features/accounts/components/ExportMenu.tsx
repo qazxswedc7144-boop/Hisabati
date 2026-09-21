@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, FileSpreadsheet, Printer, Loader2, Info } from 'lucide-react';
+import { PdfXlsExportIcon } from '@/shared/components/icons/PdfXlsExportIcon';
 import type { Account, CurrencyCode } from '@/shared/types';
 import { accountExportService } from '@/core/services/export/export.service';
 import { useUIStore } from '@/shared/stores';
@@ -139,7 +140,7 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
                 {loadingType === 'excel' ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
-                  <FileSpreadsheet className="w-5 h-5" />
+                  <PdfXlsExportIcon className="w-5 h-5" />
                 )}
               </div>
               <div>

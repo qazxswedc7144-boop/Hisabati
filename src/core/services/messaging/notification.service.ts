@@ -3,7 +3,6 @@ import {
   InAppNotification,
   CreateInAppNotificationDTO,
   NotificationType,
-  MessagePriority,
 } from '@/shared/types';
 import { getDb } from '@/core/database/db';
 import { getDeviceId } from '@/core/utils/deviceId';

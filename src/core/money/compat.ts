@@ -6,7 +6,6 @@ import {
 } from '@/shared/types';
 import { decimalToMinor, isValidMinorUnit, minorToDecimal } from './converter';
 import { createMoney } from './money';
-import { DEFAULT_CURRENCY } from './currency';
 
 export interface LegacyMoneyHolder {
   amount: number;

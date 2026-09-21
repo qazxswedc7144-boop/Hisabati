@@ -1,6 +1,5 @@
 import {
   AICardData,
-  AICardType,
   AIResponse,
   StructuredAICommand,
 } from '@/shared/types/ai.types';

@@ -55,8 +55,9 @@ export class SyncEngine {
     }
     try {
       const meta = await db.settings.get(SETTINGS_SYNC_METADATA);
-      if (meta && meta.value?.status) {
-        this.notifyStatus(meta.value.status as SyncStatusType);
+      const val = meta?.value as Record<string, any> | undefined;
+      if (val?.status) {
+        this.notifyStatus(val.status as SyncStatusType);
       }
     } catch {
       // Safely ignore if DB not ready
@@ -79,7 +80,7 @@ export class SyncEngine {
   public subscribeConflicts(listener: (conflicts: SyncConflictItem[]) => void): () => void {
     this.conflictListeners.push(listener);
     // Emit current persisted conflicts immediately
-    listener(this.getPersistedConflicts());
+    this.getPersistedConflicts().then((conflicts) => listener(conflicts));
     return () => {
       this.conflictListeners = this.conflictListeners.filter((l) => l !== listener);
     };
@@ -263,7 +264,7 @@ export class SyncEngine {
       const existing = await db.settings.get(SETTINGS_SYNC_LOCK);
       
       if (existing && existing.value) {
-        const lock = existing.value;
+        const lock = existing.value as { expiresAt: number; tabId: string; deviceId: string };
         // If lock is still valid and owned by someone else
         if (lock.expiresAt > now && lock.tabId !== TAB_INSTANCE_ID) {
           return false;
@@ -288,7 +289,8 @@ export class SyncEngine {
   private async releaseDistributedLock(): Promise<void> {
     await db.transaction('rw', db.settings, async () => {
       const existing = await db.settings.get(SETTINGS_SYNC_LOCK);
-      if (existing && existing.value && existing.value.tabId === TAB_INSTANCE_ID) {
+      const val = existing?.value as { tabId?: string } | undefined;
+      if (val && val.tabId === TAB_INSTANCE_ID) {
         await db.settings.delete(SETTINGS_SYNC_LOCK);
       }
     });
@@ -413,7 +415,7 @@ private async _performFullSyncInternal(): Promise<{
 
       // SYNC-07: Revision Safety Logic
       const metaEntry = await db.settings.get(SETTINGS_SYNC_METADATA);
-      const localMeta = metaEntry?.value || { lastRevision: 0 };
+      const localMeta = (metaEntry?.value as Record<string, any>) || { lastRevision: 0 };
       const remoteRevision = remoteData?.revision || 0;
 
       // If remote has a higher revision, it means another device pushed.
@@ -847,7 +849,7 @@ private async _performFullSyncInternal(): Promise<{
     try {
       await db.transaction('rw', db.settings, async () => {
         const metaEntry = await db.settings.get(SETTINGS_SYNC_METADATA);
-        const localMeta = metaEntry?.value || { lastRevision: 0 };
+        const localMeta = (metaEntry?.value as Record<string, any>) || { lastRevision: 0 };
         
         await db.settings.put({
           id: SETTINGS_SYNC_METADATA,

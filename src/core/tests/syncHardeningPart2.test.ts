@@ -20,8 +20,7 @@ describe('Sync Engine Hardening Part 2: Conflict & Financial Boundary', () => {
     // Initialize Tenant for Test
     await tenantService.initialize();
     useTenantStore.getState().setContext({
-      activeOrganization: { id: 'test_org', name: 'Test Org' } as any,
-      activeBranch: { id: 'test_branch', name: 'Test Branch' } as any
+      activeOrganization: { id: 'test_org', name: 'Test Org' } as any
     });
 
     await db.transactions.clear();
@@ -43,7 +42,7 @@ describe('Sync Engine Hardening Part 2: Conflict & Financial Boundary', () => {
   const setupCloudMock = (remoteData: any) => {
     vi.spyOn(googleDriveService, 'isConnected').mockReturnValue(true);
     vi.spyOn(googleDriveService, 'listFiles').mockResolvedValue([
-      { id: 'f1', name: 'hisabati_sync_state.json', mimeType: 'application/json' }
+      { id: 'f1', name: 'hisabati_sync_state.json', mimeType: 'application/json', createdTime: new Date().toISOString(), modifiedTime: new Date().toISOString() }
     ]);
     vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValue(remoteData);
     vi.spyOn(googleDriveService, 'updateJsonFile').mockResolvedValue({ id: 'f1', name: 'hisabati_sync_state.json' });
