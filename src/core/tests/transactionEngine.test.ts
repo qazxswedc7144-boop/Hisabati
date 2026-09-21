@@ -2,6 +2,7 @@ import { db } from '../database/db';
 import { transactionEngine } from '../services/transactionEngine.service';
 import { accountService } from '../services/account.service';
 import { integrityService, IntegrityReport } from '../services/integrity.service';
+import { SyncContextRegistry } from '../services/syncContext';
 
 export interface TestCaseResult {
   id: number;
@@ -274,6 +275,41 @@ export async function runFinancialEngineTests(): Promise<EngineTestSuiteResult> 
       integrityReport.valid === true,
       'سلامة البيانات = true وبدون أي تناقضات',
       `النتيجة: valid=${integrityReport.valid}, تناقضات=${integrityReport.inconsistencies.length}`
+    );
+
+    // Test 13: isRemote guard rejects remote update without beginSyncApply
+    let testAError = false;
+    try {
+      SyncContextRegistry.endSyncApply();
+      await accountService.updateAccount(testAcc1Id, { name: 'تحديث غير مصرح به' }, { isRemote: true });
+    } catch (e: any) {
+      testAError = true;
+    }
+    addResult(
+      13,
+      'حماية isRemote: منع تحديث الحساب كـ isRemote بدون beginSyncApply',
+      testAError === true,
+      'يرمي استثناء لمنع التجاوز',
+      testAError ? 'تم رمي استثناء ومنع التجاوز بنجاح' : 'فشل: تم السماح بالعملية دون تفعيل العلم'
+    );
+
+    // Test 14: isRemote guard permits remote update after SyncContextRegistry.beginSyncApply()
+    let testBSuccess = false;
+    try {
+      SyncContextRegistry.beginSyncApply();
+      const updated = await accountService.updateAccount(testAcc1Id, { name: 'تحديث بمزامنة معتمدة' }, { isRemote: true });
+      testBSuccess = !!updated && updated.name === 'تحديث بمزامنة معتمدة';
+    } catch (e: any) {
+      testBSuccess = false;
+    } finally {
+      SyncContextRegistry.endSyncApply();
+    }
+    addResult(
+      14,
+      'حماية isRemote: السماح بتحديث الحساب بعد SyncContextRegistry.beginSyncApply()',
+      testBSuccess === true,
+      'نجاح التحديث عن بعد مع تفعيل العلم الموحد',
+      testBSuccess ? 'تم التحديث بنجاح' : 'فشل التحديث'
     );
 
     // Cleanup test data

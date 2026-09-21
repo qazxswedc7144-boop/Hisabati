@@ -23,6 +23,7 @@ import { googleDriveService } from './googleDrive.service';
 import { transactionEngine } from './transactionEngine.service';
 import { integrityService } from './integrity.service';
 import { decimalToMinor } from '../money/converter';
+import { SyncContextRegistry } from './syncContext';
 
 const TAB_INSTANCE_ID = 'tab_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 const SYNC_STATE_FILE = 'hisabati_sync_state.json';
@@ -455,9 +456,9 @@ private async _performFullSyncInternal(): Promise<{
       }
 
       // 3. Process Remote Tombstones (deletions from another device)
-      if (remoteData?.tombstones && Array.isArray(remoteData.tombstones)) {
-        transactionEngine.beginSyncApply();
-        try {
+      SyncContextRegistry.beginSyncApply();
+      try {
+        if (remoteData?.tombstones && Array.isArray(remoteData.tombstones)) {
           for (const remTomb of remoteData.tombstones) {
             localTombstoneIds.add(remTomb.id);
             if (!permanentTombstones.some((pt) => pt.id === remTomb.id)) {
@@ -478,78 +479,67 @@ private async _performFullSyncInternal(): Promise<{
               }
             }
           }
-        } finally {
-          transactionEngine.endSyncApply();
-        }
-      }
-
-      // Persist accumulated permanent tombstones
-      await db.settings.put({
-        id: 'hisabati_permanent_tombstones',
-        key: 'hisabati_permanent_tombstones',
-        value: permanentTombstones,
-        updatedAt: new Date().toISOString(),
-      });
-
-      // Remote State Validation (SYNC-07)
-      if (remoteData) {
-        if (!Array.isArray(remoteData.accounts)) remoteData.accounts = [];
-        if (!Array.isArray(remoteData.transactions)) remoteData.transactions = [];
-        if (!Array.isArray(remoteData.tombstones)) remoteData.tombstones = [];
-        if (!Array.isArray(remoteData.settings)) remoteData.settings = [];
-        
-
-
-
-
-
-
-        // Basic schema checks to prevent poisoning
-        remoteData.accounts = remoteData.accounts.filter((a: any) => {
-          const isValid = a && typeof a === 'object' && a.id && a.name;
-          if (!isValid) this.logAudit('MALFORMED_DATA_REJECTED', `حساب غير صالح في البيانات السحابية. ID: ${a?.id || 'مجهول'}`, false);
-          return isValid;
-        });
-        remoteData.transactions = remoteData.transactions.filter((t: any) => {
-          const isValid = t && typeof t === 'object' && t.id && t.accountId && typeof t.amount === 'number' && !isNaN(t.amount);
-          if (!isValid) this.logAudit('MALFORMED_DATA_REJECTED', `معاملة غير صالحة في البيانات السحابية. ID: ${t?.id || 'مجهول'}`, false);
-          return isValid;
-        });
-        remoteData.settings = remoteData.settings.filter((s: any) => {
-          const isValid = s && typeof s === 'object' && s.id && s.key && SETTINGS_WHITELIST.includes(s.key);
-          if (!isValid) {
-            if (s?.key) this.logAudit('MALFORMED_DATA_REJECTED', `إعداد غير صالح أو غير مصرح به في البيانات السحابية. Key: ${s.key}`, false);
-          }
-          return isValid;
-        });
-      }
-
-      // 4. If remote data exists, merge safe additions and detect conflicts
-      if (remoteData && Array.isArray(remoteData.accounts) && Array.isArray(remoteData.transactions)) {
-        // Merge Settings (SYNC-04)
-        if (remoteData.settings && remoteData.settings.length > 0) {
-          const localSettingsMap = new Map((await db.settings.toArray()).map(s => [s.key, s]));
-          for (const remSet of remoteData.settings) {
-             if (!SETTINGS_WHITELIST.includes(remSet.key)) continue;
-             if (typeof remSet.value !== "string" && typeof remSet.value !== "number" && typeof remSet.value !== "boolean") { this.logAudit("MALFORMED_DATA_REJECTED", `قيمة إعداد غير صالحة. Key: ${remSet.key}`, false); continue; }
-             const local = localSettingsMap.get(remSet.key);
-             if (!local || new Date(remSet.updatedAt || 0) > new Date(local.updatedAt || 0)) {
-               await db.settings.put(remSet);
-             }
-          }
         }
 
-        const localAccounts = await db.accounts.toArray();
-        const localTransactions = await db.transactions.toArray();
+        // Persist accumulated permanent tombstones
+        await db.settings.put({
+          id: 'hisabati_permanent_tombstones',
+          key: 'hisabati_permanent_tombstones',
+          value: permanentTombstones,
+          updatedAt: new Date().toISOString(),
+        });
 
-        const localAccMap = new Map(localAccounts.map((a) => [a.id, a]));
-        const localTrxMap = new Map(localTransactions.map((t) => [t.id, t]));
-        const localOpIdMap = new Map(localTransactions.filter((t) => !!t.operationId).map((t) => [t.operationId!, t]));
+        // Remote State Validation (SYNC-07)
+        if (remoteData) {
+          if (!Array.isArray(remoteData.accounts)) remoteData.accounts = [];
+          if (!Array.isArray(remoteData.transactions)) remoteData.transactions = [];
+          if (!Array.isArray(remoteData.tombstones)) remoteData.tombstones = [];
+          if (!Array.isArray(remoteData.settings)) remoteData.settings = [];
 
-        // Merge Remote Accounts (skipping tombstoned accounts)
-        const { accountService } = await import('./account.service');
-        accountService.beginSyncApply();
-        try {
+          // Basic schema checks to prevent poisoning
+          remoteData.accounts = remoteData.accounts.filter((a: any) => {
+            const isValid = a && typeof a === 'object' && a.id && a.name;
+            if (!isValid) this.logAudit('MALFORMED_DATA_REJECTED', `حساب غير صالح في البيانات السحابية. ID: ${a?.id || 'مجهول'}`, false);
+            return isValid;
+          });
+          remoteData.transactions = remoteData.transactions.filter((t: any) => {
+            const isValid = t && typeof t === 'object' && t.id && t.accountId && typeof t.amount === 'number' && !isNaN(t.amount);
+            if (!isValid) this.logAudit('MALFORMED_DATA_REJECTED', `معاملة غير صالحة في البيانات السحابية. ID: ${t?.id || 'مجهول'}`, false);
+            return isValid;
+          });
+          remoteData.settings = remoteData.settings.filter((s: any) => {
+            const isValid = s && typeof s === 'object' && s.id && s.key && SETTINGS_WHITELIST.includes(s.key);
+            if (!isValid) {
+              if (s?.key) this.logAudit('MALFORMED_DATA_REJECTED', `إعداد غير صالح أو غير مصرح به في البيانات السحابية. Key: ${s.key}`, false);
+            }
+            return isValid;
+          });
+        }
+
+        // 4. If remote data exists, merge safe additions and detect conflicts
+        if (remoteData && Array.isArray(remoteData.accounts) && Array.isArray(remoteData.transactions)) {
+          // Merge Settings (SYNC-04)
+          if (remoteData.settings && remoteData.settings.length > 0) {
+            const localSettingsMap = new Map((await db.settings.toArray()).map(s => [s.key, s]));
+            for (const remSet of remoteData.settings) {
+               if (!SETTINGS_WHITELIST.includes(remSet.key)) continue;
+               if (typeof remSet.value !== "string" && typeof remSet.value !== "number" && typeof remSet.value !== "boolean") { this.logAudit("MALFORMED_DATA_REJECTED", `قيمة إعداد غير صالحة. Key: ${remSet.key}`, false); continue; }
+               const local = localSettingsMap.get(remSet.key);
+               if (!local || new Date(remSet.updatedAt || 0) > new Date(local.updatedAt || 0)) {
+                 await db.settings.put(remSet);
+               }
+            }
+          }
+
+          const localAccounts = await db.accounts.toArray();
+          const localTransactions = await db.transactions.toArray();
+
+          const localAccMap = new Map(localAccounts.map((a) => [a.id, a]));
+          const localTrxMap = new Map(localTransactions.map((t) => [t.id, t]));
+          const localOpIdMap = new Map(localTransactions.filter((t) => !!t.operationId).map((t) => [t.operationId!, t]));
+
+          // Merge Remote Accounts (skipping tombstoned accounts)
+          const { accountService } = await import('./account.service');
           for (const remAcc of remoteData.accounts) {
             if (localTombstoneIds.has(remAcc.id)) {
               continue; // Do not resurrect deleted account
@@ -567,13 +557,8 @@ private async _performFullSyncInternal(): Promise<{
               pulledCount++;
             }
           }
-        } finally {
-          accountService.endSyncApply();
-        }
 
-        // Merge Remote Transactions (skipping tombstoned transactions)
-        transactionEngine.beginSyncApply();
-        try {
+          // Merge Remote Transactions (skipping tombstoned transactions)
           for (const remTrx of remoteData.transactions) {
             if (localTombstoneIds.has(remTrx.id)) {
               continue; // Do not resurrect deleted transaction (SYNC-09)
@@ -645,9 +630,9 @@ private async _performFullSyncInternal(): Promise<{
               }
             }
           }
-        } finally {
-          transactionEngine.endSyncApply();
         }
+      } finally {
+        SyncContextRegistry.endSyncApply();
       }
 
       // 4.5. Recover Stale Processing Items (SYNC-01)
@@ -996,22 +981,17 @@ private async _performFullSyncInternal(): Promise<{
    */
   public async resolveConflict(conflict: SyncConflictItem, choice: 'local' | 'remote'): Promise<void> {
     if (choice === 'remote' && conflict.remoteVersion?.data) {
-      if (conflict.entityType === 'transaction') {
-        // [SYNC-08 FIX]: Go through TransactionEngine to ensure audit, snapshot, and amountMinor validation
-        transactionEngine.beginSyncApply();
-        try {
+      SyncContextRegistry.beginSyncApply();
+      try {
+        if (conflict.entityType === 'transaction') {
+          // [SYNC-08 FIX]: Go through TransactionEngine to ensure audit, snapshot, and amountMinor validation
           await transactionEngine.updateTransaction(conflict.entityId, conflict.remoteVersion.data, undefined, { isRemote: true });
-        } finally {
-          transactionEngine.endSyncApply();
-        }
-      } else if (conflict.entityType === 'account') {
-        const { accountService } = await import('./account.service');
-        accountService.beginSyncApply();
-        try {
+        } else if (conflict.entityType === 'account') {
+          const { accountService } = await import('./account.service');
           await accountService.updateAccount(conflict.entityId, conflict.remoteVersion.data, { isRemote: true });
-        } finally {
-          accountService.endSyncApply();
         }
+      } finally {
+        SyncContextRegistry.endSyncApply();
       }
     } else if (choice === 'local' && conflict.localVersion?.data) {
       // Local version retained. Enqueue UPDATE mutation so cloud state aligns on next sync

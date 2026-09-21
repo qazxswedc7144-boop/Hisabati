@@ -40,17 +40,14 @@ export class FinancialTransactionEngine {
   /**
    * Status Logic Helpers (Phase 2 Immutable Ledger)
    */
-  private _insideSyncApply = false;
   public beginSyncApply(): void {
-    this._insideSyncApply = true;
     SyncContextRegistry.beginSyncApply();
   }
   public endSyncApply(): void {
-    this._insideSyncApply = false;
     SyncContextRegistry.endSyncApply();
   }
   public isInsideSyncApply(): boolean {
-    return this._insideSyncApply || SyncContextRegistry.isInsideSyncApply();
+    return SyncContextRegistry.isInsideSyncApply();
   }
 
   public canEditTransaction(trx: Transaction): boolean {
