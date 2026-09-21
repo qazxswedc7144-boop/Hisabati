@@ -261,11 +261,11 @@ export class FinancialCoreHardeningTestSuite {
       if (res1.id === res2.id) throw new Error('IDs should NOT match');
     });
 
-    // 13. Concurrent duplicate create (Simulated via bypassing memory lock if needed, or just testing the DB check)
+    // 13. Concurrent duplicate create
     await test('13. Concurrent duplicate (DB-backed)', async () => {
       const opId = 'op_concurrent_' + Date.now();
-      // Bypass memory set to test DB check
-      (transactionEngine as any).inFlightSubmissions.clear();
+      // Bypass memory map to test DB check
+      (transactionEngine as any).inFlightPromises.clear();
       
       const p1 = transactionEngine.createTransaction({
         accountId: acc1Id,
@@ -392,8 +392,8 @@ export class FinancialCoreHardeningTestSuite {
        // Verify no orphans
     });
 
-    // 20. DB-backed idempotency (verify it works even if memory Set is cleared)
-    await test('20. DB-backed idempotency (Set clear test)', async () => {
+    // 20. DB-backed idempotency (verify it works even if memory map is cleared)
+    await test('20. DB-backed idempotency (Map clear test)', async () => {
       const opId = 'op_db_only_' + Date.now();
       const res1 = await transactionEngine.createTransaction({
         accountId: acc1Id,
@@ -403,8 +403,8 @@ export class FinancialCoreHardeningTestSuite {
         date: '2026-01-01',
       });
       
-      // Clear memory set
-      (transactionEngine as any).inFlightSubmissions.clear();
+      // Clear memory map
+      (transactionEngine as any).inFlightPromises.clear();
       
       const res2 = await transactionEngine.createTransaction({
         accountId: acc1Id,
@@ -414,6 +414,110 @@ export class FinancialCoreHardeningTestSuite {
         date: '2026-01-01',
       });
       if (res1.id !== res2.id) throw new Error('DB idempotency failed');
+    });
+
+    // 21. Explicit operationId conflict rejection
+    await test('21. Explicit operationId conflict rejection', async () => {
+      const opId = 'op_conflict_' + Date.now();
+      await transactionEngine.createTransaction({
+        accountId: acc1Id,
+        type: 'debit',
+        amount: 500,
+        operationId: opId,
+        date: '2026-01-01',
+      });
+
+      try {
+        await transactionEngine.createTransaction({
+          accountId: acc1Id,
+          type: 'credit', // Different type!
+          amount: 500,
+          operationId: opId,
+          date: '2026-01-01',
+        });
+        throw new Error('Should have failed on operationId conflict');
+      } catch (e: any) {
+        if (!e.message.includes('operationId') && !e.message.includes('مختلفة')) throw e;
+      }
+    });
+
+    // 22. Rapid double submission without operationId (in-flight deduplication)
+    await test('22. Rapid double submission without operationId', async () => {
+      const note = 'rapid_test_note_' + Date.now();
+      const p1 = transactionEngine.createTransaction({
+        accountId: acc1Id,
+        type: 'debit',
+        amount: 350,
+        date: '2026-01-01',
+        note,
+      });
+      const p2 = transactionEngine.createTransaction({
+        accountId: acc1Id,
+        type: 'debit',
+        amount: 350,
+        date: '2026-01-01',
+        note,
+      });
+
+      const [r1, r2] = await Promise.all([p1, p2]);
+      if (r1.id !== r2.id) throw new Error('Rapid double submit should return same transaction instance');
+    });
+
+    // 23. Settings rollback on atomic failure
+    await test('23. Settings rollback on atomic failure', async () => {
+      await db.settings.put({
+        id: 'nextInvoiceNumber',
+        key: 'nextInvoiceNumber',
+        value: 100,
+        updatedAt: new Date().toISOString()
+      });
+
+      try {
+        await db.transaction('rw', db.transactions, db.accounts, db.settings, async () => {
+          await db.settings.put({
+            id: 'nextInvoiceNumber',
+            key: 'nextInvoiceNumber',
+            value: 101,
+            updatedAt: new Date().toISOString()
+          });
+          throw new Error('Simulated DB Crash');
+        });
+      } catch (e) {}
+
+      const settingAfter = await db.settings.get('nextInvoiceNumber');
+      if (settingAfter?.value !== 100) {
+        throw new Error(`Settings value did not rollback: got ${settingAfter?.value}`);
+      }
+    });
+
+    // 24. Concurrent invoice numbering non-collision
+    await test('24. Concurrent invoice numbering non-collision', async () => {
+      await db.settings.put({
+        id: 'nextInvoiceNumber',
+        key: 'nextInvoiceNumber',
+        value: 500,
+        updatedAt: new Date().toISOString()
+      });
+
+      const p1 = transactionEngine.createTransaction({
+        accountId: acc1Id,
+        type: 'debit',
+        amount: 100,
+        date: '2026-01-01',
+        operationId: 'op_inv_1_' + Date.now(),
+      });
+      const p2 = transactionEngine.createTransaction({
+        accountId: acc2Id,
+        type: 'debit',
+        amount: 200,
+        date: '2026-01-01',
+        operationId: 'op_inv_2_' + Date.now(),
+      });
+
+      const [r1, r2] = await Promise.all([p1, p2]);
+      if (r1.receiptNumber && r2.receiptNumber && r1.receiptNumber === r2.receiptNumber) {
+        throw new Error(`Invoice collision: both got ${r1.receiptNumber}`);
+      }
     });
 
     return { total: results.length, passed, failed, results };

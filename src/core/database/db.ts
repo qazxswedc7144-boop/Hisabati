@@ -5,6 +5,7 @@
  */
 
 import Dexie, { type Table } from 'dexie';
+import { decimalToMinor } from '../money/converter';
 import {
   Account,
   Transaction,
@@ -205,7 +206,7 @@ export class HisabatiDatabase extends Dexie {
       for (const acc of accounts) {
         const amountMinor = typeof acc.currentBalanceMinor === 'number' 
           ? acc.currentBalanceMinor 
-          : Math.round((acc.currentBalance || 0) * 100);
+          : decimalToMinor(acc.currentBalance || 0, acc.currency || 'YER');
 
         if (acc.dueDate && amountMinor > 0) {
           const debtId = 'debt_mig_' + acc.id;

@@ -15,6 +15,7 @@ import {
 import { useSyncStore, useUIStore } from '@/shared/stores';
 import { SyncConflictItem } from '@/shared/types';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
+import { minorToDecimal } from '@/core/money/converter';
 import { useLockBody } from '@/shared/hooks';
 
 interface ConflictResolutionModalProps {
@@ -200,7 +201,7 @@ export const ConflictResolutionModal: React.FC<ConflictResolutionModalProps> = (
                             <span className="font-bold text-slate-900 dark:text-slate-100 font-mono text-sm">
                               {formatCurrency(
                                 currentConflict.localVersion.data?.amountMinor !== undefined
-                                  ? currentConflict.localVersion.data.amountMinor / 100
+                                  ? minorToDecimal(currentConflict.localVersion.data.amountMinor, currentConflict.localVersion.data?.currency)
                                   : currentConflict.localVersion.data?.amount || 0
                               )}
                             </span>
@@ -240,7 +241,7 @@ export const ConflictResolutionModal: React.FC<ConflictResolutionModalProps> = (
                             <span className="font-bold text-slate-900 dark:text-slate-100 font-mono text-sm">
                               {formatCurrency(
                                 currentConflict.localVersion.data?.currentBalanceMinor !== undefined
-                                  ? currentConflict.localVersion.data.currentBalanceMinor / 100
+                                  ? minorToDecimal(currentConflict.localVersion.data.currentBalanceMinor, currentConflict.localVersion.data?.currency)
                                   : currentConflict.localVersion.data?.currentBalance || 0
                               )}
                             </span>
@@ -283,7 +284,7 @@ export const ConflictResolutionModal: React.FC<ConflictResolutionModalProps> = (
                             <span className="font-bold text-teal-700 dark:text-teal-300 font-mono text-sm">
                               {formatCurrency(
                                 currentConflict.remoteVersion.data?.amountMinor !== undefined
-                                  ? currentConflict.remoteVersion.data.amountMinor / 100
+                                  ? minorToDecimal(currentConflict.remoteVersion.data.amountMinor, currentConflict.remoteVersion.data?.currency)
                                   : currentConflict.remoteVersion.data?.amount || 0
                               )}
                             </span>
@@ -323,7 +324,7 @@ export const ConflictResolutionModal: React.FC<ConflictResolutionModalProps> = (
                             <span className="font-bold text-teal-700 dark:text-teal-300 font-mono text-sm">
                               {formatCurrency(
                                 currentConflict.remoteVersion.data?.currentBalanceMinor !== undefined
-                                  ? currentConflict.remoteVersion.data.currentBalanceMinor / 100
+                                  ? minorToDecimal(currentConflict.remoteVersion.data.currentBalanceMinor, currentConflict.remoteVersion.data?.currency)
                                   : currentConflict.remoteVersion.data?.currentBalance || 0
                               )}
                             </span>

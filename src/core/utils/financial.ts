@@ -1,53 +1,53 @@
 import { Transaction, TransactionType, CurrencyCode } from '@/shared/types';
 import { getAmountMinor } from '../money/compat';
-import { minorToDecimal, isValidMinorUnit } from '../money/converter';
+import { decimalToMinor, minorToDecimal, isValidMinorUnit } from '../money/converter';
 import { getCurrencyDecimals } from '../money/currency';
 
 /**
- * Precision configuration for monetary units.
- * Minor units multiplier (e.g. 100 for 2 decimals, 1000 for 3 decimals).
+ * Converts a decimal monetary amount to an integer minor unit (e.g. cents/fils).
+ * Accepts either a currency code or explicit numeric decimal count.
  */
-const DEFAULT_DECIMALS = 2;
-const PRECISION_MULTIPLIER = Math.pow(10, DEFAULT_DECIMALS);
-
-/**
- * Converts a decimal monetary amount to an integer minor unit (e.g. cents).
- * Uses Math.round to avoid standard JavaScript IEEE-754 floating-point inaccuracies.
- */
-export function toMinorUnits(amount: number, decimals: number = DEFAULT_DECIMALS): number {
+export function toMinorUnits(amount: number, currencyOrDecimals: CurrencyCode | string | number = 'YER'): number {
   if (isNaN(amount) || !isFinite(amount)) return 0;
-  const factor = Math.pow(10, decimals);
-  return Math.round(amount * factor);
+  if (typeof currencyOrDecimals === 'number') {
+    const factor = Math.pow(10, currencyOrDecimals);
+    return Math.round(amount * factor);
+  }
+  return decimalToMinor(amount, currencyOrDecimals as CurrencyCode);
 }
 
 /**
  * Converts an integer minor unit back to standard floating monetary representation.
+ * Accepts either a currency code or explicit numeric decimal count.
  */
-export function fromMinorUnits(minorUnits: number, decimals: number = DEFAULT_DECIMALS): number {
+export function fromMinorUnits(minorUnits: number, currencyOrDecimals: CurrencyCode | string | number = 'YER'): number {
   if (isNaN(minorUnits) || !isFinite(minorUnits)) return 0;
-  const factor = Math.pow(10, decimals);
-  return minorUnits / factor;
+  if (typeof currencyOrDecimals === 'number') {
+    const factor = Math.pow(10, currencyOrDecimals);
+    return minorUnits / factor;
+  }
+  return minorToDecimal(minorUnits, currencyOrDecimals as CurrencyCode);
 }
 
 /**
  * Deterministically rounds a financial amount to standard monetary decimal places.
  */
-export function roundMoney(amount: number, decimals: number = DEFAULT_DECIMALS): number {
-  return fromMinorUnits(toMinorUnits(amount, decimals), decimals);
+export function roundMoney(amount: number, currencyOrDecimals: CurrencyCode | string | number = 'YER'): number {
+  return fromMinorUnits(toMinorUnits(amount, currencyOrDecimals), currencyOrDecimals);
 }
 
 /**
  * Safe monetary addition.
  */
-export function addMoney(a: number, b: number, decimals: number = DEFAULT_DECIMALS): number {
-  return fromMinorUnits(toMinorUnits(a, decimals) + toMinorUnits(b, decimals), decimals);
+export function addMoney(a: number, b: number, currencyOrDecimals: CurrencyCode | string | number = 'YER'): number {
+  return fromMinorUnits(toMinorUnits(a, currencyOrDecimals) + toMinorUnits(b, currencyOrDecimals), currencyOrDecimals);
 }
 
 /**
  * Safe monetary subtraction.
  */
-export function subtractMoney(a: number, b: number, decimals: number = DEFAULT_DECIMALS): number {
-  return fromMinorUnits(toMinorUnits(a, decimals) - toMinorUnits(b, decimals), decimals);
+export function subtractMoney(a: number, b: number, currencyOrDecimals: CurrencyCode | string | number = 'YER'): number {
+  return fromMinorUnits(toMinorUnits(a, currencyOrDecimals) - toMinorUnits(b, currencyOrDecimals), currencyOrDecimals);
 }
 
 export interface CalculatedAccountMetrics {
@@ -74,25 +74,19 @@ export function computeAccountMetricsFromTransactions(
   let creditUnits = 0;
   let lastDate: string | undefined = undefined;
 
-  const effectiveCurrency = currency || 'YER';
-  const currencyDecimals = getCurrencyDecimals(effectiveCurrency);
-  
-  // Decide on decimal representation for the final summary (decimal fields)
-  // We strictly follow currency decimals unless it's a zero-decimal currency (like YER) with fractional legacy transactions
-  const hasFractions = transactions.some((t) => t.amount !== undefined && !Number.isInteger(t.amount));
-  const displayDecimals = Math.max(currencyDecimals, hasFractions ? 2 : 0);
+  const activeCurrency = (currency as CurrencyCode) || 'YER';
 
   for (const trx of transactions) {
     let amountUnits: number;
-    
+
     // 1. Primary Source: Existing valid amountMinor
     if (trx.amountMinor !== undefined && isValidMinorUnit(trx.amountMinor)) {
       amountUnits = Math.abs(trx.amountMinor);
     } 
     // 2. Secondary Source: Fallback to currency-based conversion from legacy amount
     else {
-      // Use displayDecimals to ensure legacy fractional transactions are scaled correctly (e.g. 1000.15 YER -> 100015 units)
-      amountUnits = toMinorUnits(Math.abs(trx.amount), displayDecimals);
+      const trxCurrency = (trx.currency as CurrencyCode) || activeCurrency;
+      amountUnits = Math.abs(getAmountMinor(trx, trxCurrency));
     }
 
     if (trx.type === 'debit') {
@@ -108,15 +102,9 @@ export function computeAccountMetricsFromTransactions(
 
   const currentBalanceUnits = debitUnits - creditUnits;
 
-  let totalDebit: number;
-  let totalCredit: number;
-  let currentBalance: number;
-
-  // [PHASE B - Hardening] Final balance fields calculation
-  // We use displayDecimals to ensure consistency with the units used during the scan
-  totalDebit = fromMinorUnits(debitUnits, displayDecimals);
-  totalCredit = fromMinorUnits(creditUnits, displayDecimals);
-  currentBalance = fromMinorUnits(currentBalanceUnits, displayDecimals);
+  const totalDebit = minorToDecimal(debitUnits, activeCurrency);
+  const totalCredit = minorToDecimal(creditUnits, activeCurrency);
+  const currentBalance = minorToDecimal(currentBalanceUnits, activeCurrency);
 
   return {
     totalDebit,
@@ -146,10 +134,7 @@ export function computeStatementRunningBalances(
 ): StatementItem[] {
   if (transactions.length === 0) return [];
 
-  const effectiveCurrency = currency || 'YER';
-  const currencyDecimals = getCurrencyDecimals(effectiveCurrency);
-  const hasFractions = transactions.some((t) => t.amount % 1 !== 0);
-  const displayDecimals = (hasFractions || currencyDecimals === 2) ? 2 : currencyDecimals;
+  const activeCurrency = (currency as CurrencyCode) || 'YER';
 
   // Sort chronological (oldest first)
   const chronological = [...transactions].sort((a, b) => {
@@ -163,15 +148,15 @@ export function computeStatementRunningBalances(
 
   for (const trx of chronological) {
     let units: number;
-    
+
     // 1. Primary Source: Existing valid amountMinor
     if (trx.amountMinor !== undefined && isValidMinorUnit(trx.amountMinor)) {
       units = Math.abs(trx.amountMinor);
     } 
     // 2. Fallback: Currency-aware conversion
     else {
-      const effectiveDecimals = (trx.amount % 1 !== 0 && currencyDecimals === 0) ? 2 : currencyDecimals;
-      units = toMinorUnits(Math.abs(trx.amount), effectiveDecimals);
+      const trxCurrency = (trx.currency as CurrencyCode) || activeCurrency;
+      units = Math.abs(getAmountMinor(trx, trxCurrency));
     }
 
     if (trx.type === 'debit') {
@@ -180,7 +165,7 @@ export function computeStatementRunningBalances(
       runningUnits -= units;
     }
 
-    const decimalVal = fromMinorUnits(runningUnits, displayDecimals);
+    const decimalVal = minorToDecimal(runningUnits, activeCurrency);
 
     itemMap.set(trx.id, {
       decimal: decimalVal,

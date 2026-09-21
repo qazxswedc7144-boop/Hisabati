@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Account, AccountFilterType, AccountSortField, CreateAccountDTO, UpdateAccountDTO, TrashItem } from '@/shared/types';
 import { accountRepository } from '@/core/repositories/account.repository';
 import { seedMockDataIfEmpty } from '@/shared/data/mockData';
+import { decimalToMinor } from '@/core/money/converter';
 
 interface AccountState {
   accounts: Account[];
@@ -206,8 +207,8 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         return a.name.localeCompare(b.name, 'ar');
       }
       if (sortField === 'balance') {
-        const balA = a.currentBalanceMinor !== undefined ? Math.abs(a.currentBalanceMinor) : Math.round(Math.abs(a.currentBalance) * 100);
-        const balB = b.currentBalanceMinor !== undefined ? Math.abs(b.currentBalanceMinor) : Math.round(Math.abs(b.currentBalance) * 100);
+        const balA = a.currentBalanceMinor !== undefined ? Math.abs(a.currentBalanceMinor) : decimalToMinor(Math.abs(a.currentBalance || 0), a.currency || 'YER');
+        const balB = b.currentBalanceMinor !== undefined ? Math.abs(b.currentBalanceMinor) : decimalToMinor(Math.abs(b.currentBalance || 0), b.currency || 'YER');
         return balB - balA;
       }
       if (sortField === 'createdAt') {

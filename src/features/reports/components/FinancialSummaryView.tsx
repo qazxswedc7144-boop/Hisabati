@@ -25,6 +25,7 @@ import { useSettingsStore, useUIStore } from '@/shared/stores';
 import { reportService, excelGenerator } from '@/core/services';
 import { FinancialSummaryReport, DatePreset, DateRange } from '@/shared/types';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
+import { decimalToMinor } from '@/core/money/converter';
 import { formatISODate } from '@/core/utils/dateRange';
 import { DateRangePicker } from './DateRangePicker';
 
@@ -509,10 +510,10 @@ export const FinancialSummaryView: React.FC = () => {
               <div className="w-full overflow-x-auto py-2">
                 <div className="min-w-[500px] h-48 relative flex items-end gap-2 px-2 pt-6 pb-2">
                   {(() => {
-                    const values = report.dailyBreakdown.map(d => d.netMinor !== undefined ? d.netMinor : d.net * 100);
+                    const values = report.dailyBreakdown.map(d => d.netMinor !== undefined ? d.netMinor : decimalToMinor(d.net, currency));
                     const maxVal = Math.max(...values.map(v => Math.abs(v)), 1);
                     return report.dailyBreakdown.map((day, idx) => {
-                      const netVal = day.netMinor !== undefined ? day.netMinor : day.net * 100;
+                      const netVal = day.netMinor !== undefined ? day.netMinor : decimalToMinor(day.net, currency);
                       const isPositive = netVal >= 0;
                       const heightPercent = Math.min(100, Math.max(12, Math.round((Math.abs(netVal) / maxVal) * 75)));
                       

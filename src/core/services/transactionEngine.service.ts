@@ -32,7 +32,7 @@ import { validateAndResolveFinancialAmount } from '../money/financialSafety';
 
 export class FinancialTransactionEngine {
   // In-memory mutex/deduplication registry for rapid in-flight double submission prevention
-  private inFlightSubmissions = new Set<string>();
+  private inFlightPromises = new Map<string, Promise<any>>();
 
   /**
    * Creates a transaction with strict financial validation, precision rounding,
@@ -78,33 +78,46 @@ export class FinancialTransactionEngine {
     const safeAmount = financialAmount.amount;
     const safeAmountMinor = financialAmount.amountMinor;
 
-    // 3. Idempotency Key Handling (DB-Backed Uniqueness)
-    // We use operationId as the definitive idempotency key.
-    const idempotencyKey = dto.operationId || `op_${dto.accountId}_${dto.type}_${safeAmountMinor}_${dto.date}_${dto.note?.trim() || ''}`;
-    
-    // Memory lock (pre-emptive)
-    if (this.inFlightSubmissions.has(idempotencyKey)) {
-      const existing = await db.transactions.where('operationId').equals(idempotencyKey).first();
-      if (existing) return existing;
-    }
-    this.inFlightSubmissions.add(idempotencyKey);
+    // 3. Idempotency Key Handling
+    const explicitOpId = dto.operationId?.trim();
+    const finalOpId = explicitOpId || (`op_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
 
-    try {
+    // In-flight deduplication / double-click key
+    const rapidLockKey = explicitOpId
+      ? `op_${explicitOpId}`
+      : `rapid_${dto.accountId}_${dto.type}_${safeAmountMinor}_${dto.date || ''}_${dto.note?.trim() || ''}`;
+
+    if (this.inFlightPromises.has(rapidLockKey)) {
+      return await this.inFlightPromises.get(rapidLockKey)!;
+    }
+
+    const executionPromise = (async () => {
+      let createdTransaction: Transaction | null = null;
+      let nextInvoiceNumberToCommit: number | undefined = undefined;
+
       const now = new Date().toISOString();
       const id = 'trx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
 
-      let createdTransaction: Transaction | null = null;
-
-      // Atomic write transaction
+      // Atomic write transaction across all financial tables
       await db.transaction('rw', db.transactions, db.accounts, db.settings, db.financialAuditLogs, async (transaction) => {
         // Fetch FRESH settings inside the transaction to prevent race conditions
         const freshSettingsInside = await settingsRepository.getSettings();
 
-        // Double-check idempotency inside DB transaction to prevent race conditions
-        const existingTrx = await db.transactions.where('operationId').equals(idempotencyKey).first();
-        if (existingTrx) {
-          createdTransaction = existingTrx;
-          return;
+        // Check if explicit operationId exists in DB
+        if (explicitOpId) {
+          const existingTrx = await transaction.table('transactions').where('operationId').equals(explicitOpId).first();
+          if (existingTrx) {
+            // Check for conflict: same operationId used for different transaction payload
+            if (
+              existingTrx.accountId !== dto.accountId ||
+              existingTrx.type !== dto.type ||
+              existingTrx.amountMinor !== safeAmountMinor
+            ) {
+              throw new Error('الرقم المرجعي operationId مستخدم سابقاً مع بيانات عملية مختلفة');
+            }
+            createdTransaction = existingTrx;
+            return;
+          }
         }
 
         const newTransaction: Transaction = {
@@ -117,7 +130,7 @@ export class FinancialTransactionEngine {
           date: dto.date || now.split('T')[0],
           note: dto.note?.trim() || undefined,
           receiptNumber: dto.receiptNumber?.trim() || undefined,
-          operationId: idempotencyKey,
+          operationId: finalOpId,
           receiptId: dto.receiptId?.trim() || undefined,
           documentRef: dto.documentRef || undefined,
           documentMetadata: dto.documentMetadata || undefined,
@@ -125,40 +138,43 @@ export class FinancialTransactionEngine {
           updatedAt: now,
         };
 
-        // Auto-generate invoice number if needed
+        // Auto-generate invoice number atomically if needed
         if (!newTransaction.receiptNumber && freshSettingsInside.invoiceNumberingFormat !== 'manual') {
-          const nextVal = (freshSettingsInside.nextInvoiceNumber || 1);
+          const settingRec = await transaction.table('settings').get('nextInvoiceNumber');
+          const nextVal = (settingRec && typeof settingRec.value === 'number')
+            ? settingRec.value
+            : (freshSettingsInside.nextInvoiceNumber || 1);
+
           const generated = formatInvoiceNumber(
             freshSettingsInside.invoicePrefix || 'INV-',
             nextVal,
             freshSettingsInside.invoiceNumberingFormat || 'sequential',
             newTransaction.date
           );
-          
+
           if (generated) {
             newTransaction.receiptNumber = generated;
-            await db.settings.put({
+            await transaction.table('settings').put({
               id: 'nextInvoiceNumber',
               key: 'nextInvoiceNumber',
               value: nextVal + 1,
               updatedAt: now,
             });
-            // Sync settings store
-            useSettingsStore.getState().updateSettings({ nextInvoiceNumber: nextVal + 1 });
+            nextInvoiceNumberToCommit = nextVal + 1;
           }
         }
 
-        await db.transactions.add(newTransaction);
+        await transaction.table('transactions').add(newTransaction);
         await this.recalculateAccountBalance(dto.accountId, activeCurrency, transaction);
-        
-        // Log financial event atomically inside the transaction
+
+        // Log financial event atomically inside DB transaction
         await financialAuditService.logFinancialEvent({
           eventType: 'TRANSACTION_CREATE',
           targetType: 'transaction',
           targetId: id,
           amountMinor: safeAmountMinor,
           currency: activeCurrency,
-          operationId: idempotencyKey,
+          operationId: finalOpId,
           afterState: {
             amountMinor: safeAmountMinor,
             accountId: dto.accountId,
@@ -171,41 +187,73 @@ export class FinancialTransactionEngine {
         createdTransaction = newTransaction;
       });
 
-      if (!createdTransaction) throw new Error('فشل إنشاء العملية المالية');
+      if (!createdTransaction) {
+        throw new Error('فشل إنشاء العملية المالية');
+      }
 
-      // Audit & Sync side effects (Post-transaction)
+      // Update Zustand ONLY AFTER DB commit succeeds (avoids TOCTOU drift)
+      if (nextInvoiceNumberToCommit !== undefined) {
+        try {
+          useSettingsStore.getState().updateSettings({ nextInvoiceNumber: nextInvoiceNumberToCommit });
+        } catch {
+          // Non-blocking
+        }
+      }
+
+      // Post-commit side effects (Audit trail & Sync enqueue)
       await this.postProcessTransaction(createdTransaction, 'CREATE', currentActor, account, options);
 
       return createdTransaction;
+    })();
+
+    this.inFlightPromises.set(rapidLockKey, executionPromise);
+    try {
+      return await executionPromise;
     } finally {
-      setTimeout(() => this.inFlightSubmissions.delete(idempotencyKey), 2000);
+      if (!explicitOpId) {
+        setTimeout(() => {
+          if (this.inFlightPromises.get(rapidLockKey) === executionPromise) {
+            this.inFlightPromises.delete(rapidLockKey);
+          }
+        }, 2000);
+      } else {
+        this.inFlightPromises.delete(rapidLockKey);
+      }
     }
   }
 
   /**
    * Helper for side-effects after transaction persistence
    */
-  private async postProcessTransaction(trx: Transaction, action: 'CREATE' | 'UPDATE', actor: AuditActor, account: Account, options?: { isRemote?: boolean }) {
+  private async postProcessTransaction(trx: Transaction, action: 'CREATE' | 'UPDATE', actor: AuditActor, account?: Account, options?: { isRemote?: boolean }) {
     try {
-      await auditTrailService.log({
-        actor,
-        action: action === 'CREATE' ? 'TRANSACTION_CREATE' : 'TRANSACTION_UPDATE',
-        targetType: 'transaction',
-        targetId: trx.id,
-        riskLevel: action === 'CREATE' ? 'LOW' : 'MEDIUM',
-        detailsAr: `${action === 'CREATE' ? 'تسجيل' : 'تعديل'} قيد مالي (${trx.type === 'debit' ? 'مدين' : 'دائن'}) بمبلغ ${trx.amount} على حساب "${account.name}".${options?.isRemote ? ' (عن طريق المزامنة)' : ''}`,
-        afterState: { ...trx },
-        metadata: {
-          accountId: account.id,
-          amount: trx.amount,
-          operationId: trx.operationId,
-          isRemote: options?.isRemote,
-        },
-      });
-    } catch (e) { console.warn('Audit log failed', e); }
+      if (account) {
+        await auditTrailService.log({
+          actor,
+          action: action === 'CREATE' ? 'TRANSACTION_CREATE' : 'TRANSACTION_UPDATE',
+          targetType: 'transaction',
+          targetId: trx.id,
+          riskLevel: action === 'CREATE' ? 'LOW' : 'MEDIUM',
+          detailsAr: `${action === 'CREATE' ? 'تسجيل' : 'تعديل'} قيد مالي (${trx.type === 'debit' ? 'مدين' : 'دائن'}) بمبلغ ${trx.amount} على حساب "${account.name}".${options?.isRemote ? ' (عن طريق المزامنة)' : ''}`,
+          afterState: { ...trx },
+          metadata: {
+            accountId: account.id,
+            amount: trx.amount,
+            operationId: trx.operationId,
+            isRemote: options?.isRemote,
+          },
+        });
+      }
+    } catch (e) {
+      console.warn('[PostProcess] Non-financial audit log failed', e);
+    }
 
     if (!options?.isRemote) {
-      await this.enqueueSyncMutation('transaction', trx.id, action, trx, trx.operationId);
+      try {
+        await this.enqueueSyncMutation('transaction', trx.id, action, trx, trx.operationId);
+      } catch (e) {
+        console.warn('[PostProcess] Sync mutation enqueue failed', e);
+      }
     }
   }
 
@@ -218,7 +266,6 @@ export class FinancialTransactionEngine {
     const freshSettings = await settingsRepository.getSettings();
     const currency = dto.currency || freshSettings.currency || 'YER';
     const date = dto.date || new Date().toISOString().split('T')[0];
-    const operationId = dto.operationId || `journal_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
     if (dto.entries.length < 2) {
       throw new Error('القيد المزدوج يجب أن يحتوي على طرفين على الأقل');
@@ -246,66 +293,99 @@ export class FinancialTransactionEngine {
       throw new Error(`القيد غير متوازن: إجمالي المدين (${totalDebitMinor}) لا يساوي إجمالي الدائن (${totalCreditMinor})`);
     }
 
-    const createdTransactions: Transaction[] = [];
+    const explicitOpId = dto.operationId?.trim();
+    const operationId = explicitOpId || (`journal_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
 
-    await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, async (transaction) => {
-      // Check idempotency
-      const existing = await db.transactions.where('operationId').equals(operationId).first();
-      if (existing) {
-        // Find all siblings
-        const allSiblings = await db.transactions.where('operationId').equals(operationId).toArray();
-        createdTransactions.push(...allSiblings);
-        return;
-      }
+    const rapidLockKey = explicitOpId
+      ? `journal_op_${explicitOpId}`
+      : `journal_rapid_${dto.entries.map(e => `${e.accountId}_${e.type}_${e.amountMinor || e.amount}`).join('_')}_${date}`;
 
-      for (const leg of validatedLegs) {
-        const id = 'trx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
-        const trx: Transaction = {
-          id,
-          accountId: leg.accountId,
-          type: leg.type,
-          amount: leg.resolvedAmount,
-          amountMinor: leg.resolvedAmountMinor,
-          currency,
-          date,
-          note: leg.note || dto.note,
-          receiptNumber: leg.receiptNumber || dto.receiptNumber,
-          operationId,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-
-        await db.transactions.add(trx);
-        await this.recalculateAccountBalance(leg.accountId, currency, transaction);
-        
-        // Log each leg atomically
-        await financialAuditService.logFinancialEvent({
-          eventType: 'DOUBLE_ENTRY_CREATE',
-          targetType: 'transaction',
-          targetId: trx.id,
-          amountMinor: trx.amountMinor,
-          currency: trx.currency,
-          operationId: operationId,
-          afterState: {
-            amountMinor: trx.amountMinor,
-            accountId: trx.accountId,
-            type: trx.type,
-            revision: trx.id,
-          },
-          tx: transaction
-        });
-
-        createdTransactions.push(trx);
-      }
-    });
-
-    // Side effects for each leg
-    for (const trx of createdTransactions) {
-      const acc = await db.accounts.get(trx.accountId);
-      if (acc) await this.postProcessTransaction(trx, 'CREATE', currentActor, acc);
+    if (this.inFlightPromises.has(rapidLockKey)) {
+      return await this.inFlightPromises.get(rapidLockKey)!;
     }
 
-    return createdTransactions;
+    const executionPromise = (async () => {
+      const createdTransactions: Transaction[] = [];
+
+      await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, async (transaction) => {
+        // Check idempotency in DB
+        const existing = await transaction.table('transactions').where('operationId').equals(operationId).first();
+        if (existing) {
+          const allSiblings = await transaction.table('transactions').where('operationId').equals(operationId).toArray();
+          const existingDebitSum = allSiblings.filter(t => t.type === 'debit').reduce((s, t) => s + (t.amountMinor || 0), 0);
+          if (allSiblings.length !== validatedLegs.length || existingDebitSum !== totalDebitMinor) {
+            throw new Error('الرقم المرجعي operationId مستخدم لقيد مزدوج مختلف');
+          }
+          createdTransactions.push(...allSiblings);
+          return;
+        }
+
+        for (const leg of validatedLegs) {
+          const id = 'trx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+          const trx: Transaction = {
+            id,
+            accountId: leg.accountId,
+            type: leg.type,
+            amount: leg.resolvedAmount,
+            amountMinor: leg.resolvedAmountMinor,
+            currency,
+            date,
+            note: leg.note || dto.note,
+            receiptNumber: leg.receiptNumber || dto.receiptNumber,
+            operationId,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          await transaction.table('transactions').add(trx);
+          await this.recalculateAccountBalance(leg.accountId, currency, transaction);
+
+          await financialAuditService.logFinancialEvent({
+            eventType: 'DOUBLE_ENTRY_CREATE',
+            targetType: 'transaction',
+            targetId: trx.id,
+            amountMinor: trx.amountMinor,
+            currency: trx.currency,
+            operationId: operationId,
+            afterState: {
+              amountMinor: trx.amountMinor,
+              accountId: trx.accountId,
+              type: trx.type,
+              revision: trx.id,
+            },
+            tx: transaction
+          });
+
+          createdTransactions.push(trx);
+        }
+      });
+
+      for (const trx of createdTransactions) {
+        try {
+          const acc = await db.accounts.get(trx.accountId);
+          if (acc) await this.postProcessTransaction(trx, 'CREATE', currentActor, acc);
+        } catch (e) {
+          console.warn('Post-process failed for double-entry leg:', e);
+        }
+      }
+
+      return createdTransactions;
+    })();
+
+    this.inFlightPromises.set(rapidLockKey, executionPromise);
+    try {
+      return await executionPromise;
+    } finally {
+      if (!explicitOpId) {
+        setTimeout(() => {
+          if (this.inFlightPromises.get(rapidLockKey) === executionPromise) {
+            this.inFlightPromises.delete(rapidLockKey);
+          }
+        }, 2000);
+      } else {
+        this.inFlightPromises.delete(rapidLockKey);
+      }
+    }
   }
 
   /**
