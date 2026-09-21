@@ -370,26 +370,51 @@ export class FinancialCoreHardeningTestSuite {
        if (!report.valid) throw new Error('Financial integrity failed: ' + JSON.stringify(report.inconsistencies));
     });
 
-    // 19. No partial transaction
-    await test('19. Verify no records if one leg is invalid', async () => {
-       try {
-         await transactionEngine.createDoubleEntry({
-           entries: [
-             { accountId: acc1Id, type: 'credit', amount: 100 },
-             { accountId: 'non-existent', type: 'debit', amount: 100 },
-           ]
-         });
-       } catch (e) {}
-       // The second leg might fail at db level if we had FKs, but here let's test amount validation
-       try {
-         await transactionEngine.createDoubleEntry({
-           entries: [
-             { accountId: acc1Id, type: 'credit', amount: 100 },
-             { accountId: acc2Id, type: 'debit', amount: NaN as any },
-           ]
-         });
-       } catch (e) {}
-       // Verify no orphans
+    // 19. No partial transaction & No false positives
+    await test('19. Verify no records if one leg is invalid (Real Assertions)', async () => {
+      const targetOpId = 'op_invalid_leg_' + Date.now();
+      const acc1Before = await db.accounts.get(acc1Id);
+      const acc2Before = await db.accounts.get(acc2Id);
+      const bal1Before = acc1Before?.currentBalanceMinor || 0;
+      const bal2Before = acc2Before?.currentBalanceMinor || 0;
+      const auditCountBefore = await db.financialAuditLogs.count();
+
+      let caughtError: Error | null = null;
+      try {
+        await transactionEngine.createDoubleEntry({
+          operationId: targetOpId,
+          entries: [
+            { accountId: acc1Id, type: 'credit', amount: 100 },
+            { accountId: acc2Id, type: 'debit', amount: NaN as any },
+          ]
+        });
+      } catch (e: any) {
+        caughtError = e;
+      }
+
+      // 1. Must catch an explicit error
+      if (!caughtError) {
+        throw new Error('Test 19 failed: Invalid leg should have thrown an error');
+      }
+
+      // 2. Assert NO orphan transaction with targetOpId
+      const orphans = await db.transactions.where('operationId').equals(targetOpId).toArray();
+      if (orphans.length > 0) {
+        throw new Error(`Test 19 failed: Found ${orphans.length} orphan transactions in DB`);
+      }
+
+      // 3. Assert NO balance corruption
+      const acc1After = await db.accounts.get(acc1Id);
+      const acc2After = await db.accounts.get(acc2Id);
+      if (acc1After?.currentBalanceMinor !== bal1Before || acc2After?.currentBalanceMinor !== bal2Before) {
+        throw new Error('Test 19 failed: Balance corrupted after failed double-entry');
+      }
+
+      // 4. Assert NO invalid audit record
+      const auditCountAfter = await db.financialAuditLogs.count();
+      if (auditCountAfter !== auditCountBefore) {
+        throw new Error('Test 19 failed: Financial audit log created for a failed transaction');
+      }
     });
 
     // 20. DB-backed idempotency (verify it works even if memory map is cleared)
@@ -517,6 +542,197 @@ export class FinancialCoreHardeningTestSuite {
       const [r1, r2] = await Promise.all([p1, p2]);
       if (r1.receiptNumber && r2.receiptNumber && r1.receiptNumber === r2.receiptNumber) {
         throw new Error(`Invoice collision: both got ${r1.receiptNumber}`);
+      }
+    });
+
+    // 25. Post-Commit Side Effects Isolation (Sync/Audit failure does not rollback DB)
+    await test('25. Post-Commit Side Effects Isolation', async () => {
+      const opId = 'op_post_process_' + Date.now();
+      // Monkey patch enqueueSyncMutation to throw an error
+      const originalEnqueue = (transactionEngine as any).enqueueSyncMutation;
+      (transactionEngine as any).enqueueSyncMutation = async () => {
+        throw new Error('Simulated Sync Network Failure');
+      };
+
+      try {
+        const trx = await transactionEngine.createTransaction({
+          accountId: acc1Id,
+          type: 'debit',
+          amount: 444,
+          operationId: opId,
+          date: '2026-01-01',
+        });
+
+        // Verify transaction WAS created in DB despite sync failure
+        const dbTrx = await db.transactions.where('operationId').equals(opId).first();
+        if (!dbTrx) {
+          throw new Error('Test 25 failed: Financial transaction was lost due to sync side-effect failure');
+        }
+        if (trx.id !== dbTrx.id) {
+          throw new Error('Test 25 failed: Returned transaction ID mismatch');
+        }
+      } finally {
+        (transactionEngine as any).enqueueSyncMutation = originalEnqueue;
+      }
+    });
+
+    // 26. 10 Concurrent Requests for Invoice Numbering (Sequential & Unique)
+    await test('26. 10 Concurrent Invoice Numbering Requests (No Collisions)', async () => {
+      const startSeq = 1000;
+      await db.settings.put({
+        id: 'nextInvoiceNumber',
+        key: 'nextInvoiceNumber',
+        value: startSeq,
+        updatedAt: new Date().toISOString()
+      });
+
+      const promises = [];
+      for (let i = 0; i < 10; i++) {
+        promises.push(
+          transactionEngine.createTransaction({
+            accountId: acc1Id,
+            type: 'debit',
+            amount: 10 + i,
+            date: '2026-01-01',
+            operationId: `op_conc_inv_${i}_${Date.now()}`,
+          })
+        );
+      }
+
+      const results = await Promise.all(promises);
+      const invoiceNumbers = results.map(r => r.receiptNumber).filter(Boolean) as string[];
+
+      if (invoiceNumbers.length !== 10) {
+        throw new Error(`Expected 10 invoice numbers, got ${invoiceNumbers.length}`);
+      }
+
+      const uniqueNumbers = new Set(invoiceNumbers);
+      if (uniqueNumbers.size !== 10) {
+        throw new Error(`Invoice number collision detected! Unique count: ${uniqueNumbers.size} / 10`);
+      }
+    });
+
+    // 27. 3+ Legs Balanced Double Entry & Failure Injection
+    await test('27. 3+ Legs Balanced Double Entry & Failure Injection', async () => {
+      const acc3Id = 'acc_hard_3_' + Date.now();
+      await db.accounts.add({
+        id: acc3Id,
+        name: 'Test Account 3',
+        currency: 'USD',
+        currentBalance: 0,
+        currentBalanceMinor: 0,
+        totalDebit: 0,
+        totalDebitMinor: 0,
+        totalCredit: 0,
+        totalCreditMinor: 0,
+        transactionCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        archived: 0,
+      });
+
+      const opId = 'op_3leg_' + Date.now();
+      const legs = await transactionEngine.createDoubleEntry({
+        operationId: opId,
+        date: '2026-01-01',
+        currency: 'USD',
+        entries: [
+          { accountId: acc1Id, type: 'debit', amountMinor: 10000 },
+          { accountId: acc2Id, type: 'debit', amountMinor: 20000 },
+          { accountId: acc3Id, type: 'credit', amountMinor: 30000 },
+        ]
+      });
+
+      if (legs.length !== 3) {
+        throw new Error(`Expected 3 legs created, got ${legs.length}`);
+      }
+
+      const acc3 = await db.accounts.get(acc3Id);
+      if (acc3?.currentBalanceMinor !== -30000) {
+        throw new Error(`Account 3 balance incorrect: ${acc3?.currentBalanceMinor} (expected -30000 for credit)`);
+      }
+
+      // Now inject failure in middle of 3-leg entry
+      const failOpId = 'op_3leg_fail_' + Date.now();
+      let caughtErr = false;
+      try {
+        await db.transaction('rw', db.transactions, db.accounts, async () => {
+          await db.transactions.add({ id: 'leg_f1', accountId: acc1Id, type: 'debit', amount: 10, amountMinor: 1000, operationId: failOpId, date: '2026-01-01', createdAt: '', updatedAt: '' });
+          await db.transactions.add({ id: 'leg_f2', accountId: acc2Id, type: 'debit', amount: 20, amountMinor: 2000, operationId: failOpId, date: '2026-01-01', createdAt: '', updatedAt: '' });
+          throw new Error('Mid-persistence crash');
+        });
+      } catch (e) {
+        caughtErr = true;
+      }
+
+      if (!caughtErr) throw new Error('Expected crash error');
+      const orphanCount = await db.transactions.where('operationId').equals(failOpId).count();
+      if (orphanCount !== 0) {
+        throw new Error(`Found ${orphanCount} orphan legs after mid-persistence crash`);
+      }
+    });
+
+    // 28. Multi-Currency Balance Integrity (YER, SAR, USD, KWD)
+    await test('28. Multi-Currency Balance Integrity (YER, SAR, USD, KWD)', async () => {
+      const currencies = ['YER', 'SAR', 'USD', 'KWD'] as const;
+      for (const curr of currencies) {
+        const testAccId = `acc_mc_${curr}_` + Date.now();
+        await db.accounts.add({
+          id: testAccId,
+          name: `Multi Currency Acc ${curr}`,
+          currency: curr,
+          currentBalance: 0,
+          currentBalanceMinor: 0,
+          totalDebit: 0,
+          totalDebitMinor: 0,
+          totalCredit: 0,
+          totalCreditMinor: 0,
+          transactionCount: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          archived: 0,
+        });
+
+        // Create 2 debit and 1 credit transactions
+        await transactionEngine.createTransaction({
+          accountId: testAccId,
+          type: 'debit',
+          amount: 50,
+          currency: curr,
+          date: '2026-01-01',
+          operationId: `op_mc_1_${curr}_${Date.now()}`,
+        });
+
+        await transactionEngine.createTransaction({
+          accountId: testAccId,
+          type: 'debit',
+          amount: 25,
+          currency: curr,
+          date: '2026-01-01',
+          operationId: `op_mc_2_${curr}_${Date.now()}`,
+        });
+
+        await transactionEngine.createTransaction({
+          accountId: testAccId,
+          type: 'credit',
+          amount: 10,
+          currency: curr,
+          date: '2026-01-01',
+          operationId: `op_mc_3_${curr}_${Date.now()}`,
+        });
+
+        const accInDb = await db.accounts.get(testAccId);
+        const trxsInDb = await db.transactions.where('accountId').equals(testAccId).toArray();
+
+        let recalcMinor = 0;
+        for (const t of trxsInDb) {
+          if (t.type === 'debit') recalcMinor += (t.amountMinor || 0);
+          else recalcMinor -= (t.amountMinor || 0);
+        }
+
+        if (accInDb?.currentBalanceMinor !== recalcMinor) {
+          throw new Error(`Divergence in ${curr}: cached ${accInDb?.currentBalanceMinor} vs recalculated ${recalcMinor}`);
+        }
       }
     });
 

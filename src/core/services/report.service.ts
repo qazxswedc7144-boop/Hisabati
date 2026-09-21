@@ -216,15 +216,16 @@ export class ReportService {
     const { decimals } = await resolveReportDecimals({ transactions: allTransactions });
 
     const getTrxAmountMinor = (trx: Transaction): number => {
-      if (decimals === 2 && allTransactions.some((t) => t.amount % 1 !== 0)) {
+      const factor = Math.pow(10, decimals);
+      if (allTransactions.some((t) => t.amount % 1 !== 0)) {
         if (
           trx.amountMinor !== undefined &&
           isValidMinorUnit(trx.amountMinor) &&
-          Math.abs(trx.amountMinor) === Math.round(Math.abs(trx.amount) * 100)
+          Math.abs(trx.amountMinor) === Math.round(Math.abs(trx.amount) * factor)
         ) {
           return Math.abs(trx.amountMinor);
         }
-        return toMinorUnits(Math.abs(trx.amount), 2);
+        return toMinorUnits(Math.abs(trx.amount), decimals);
       }
       return getTransactionMinorUnits(trx, decimals);
     };
@@ -232,9 +233,9 @@ export class ReportService {
     // Initial balance from account metadata (if present)
     let initialBalanceMinor = getAccountInitialBalanceMinor(account, decimals);
     const accFinancial = account as AccountFinancial;
-    if (decimals === 2 && allTransactions.some((t) => t.amount % 1 !== 0)) {
+    if (allTransactions.some((t) => t.amount % 1 !== 0)) {
       if (typeof accFinancial.initialBalance === 'number' && Number.isFinite(accFinancial.initialBalance)) {
-        initialBalanceMinor = toMinorUnits(accFinancial.initialBalance, 2);
+        initialBalanceMinor = toMinorUnits(accFinancial.initialBalance, decimals);
       }
     }
 
