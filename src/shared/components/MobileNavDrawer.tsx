@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -9,13 +9,32 @@ import {
 import { useUIStore, useMessagingStore } from '@/shared/stores';
 import { useI18n } from '@/shared/hooks/useI18n';
 import { APPLICATION_NAV_ITEMS } from '@/shared/config/navigation';
+import { getDb } from '@/core/database/db';
 
 import { UserAuthSection } from './UserAuthSection';
 
 export const MobileNavDrawer: React.FC = () => {
   const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
   const setSidebarOpen = useUIStore((state) => state.setSidebarOpen);
-  const unreadNotificationsCount = useMessagingStore((state) => state.unreadNotificationsCount);
+  const unreadCount = useMessagingStore((s) => s.unreadNotificationsCount);
+
+  const [trashCount, setTrashCount] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const db = getDb();
+        const count = await db.trash.where('status').equals('pending').count().catch(() => db.trash.count());
+        if (!cancelled) setTrashCount(count);
+      } catch { /* ignore */ }
+    };
+    if (isSidebarOpen) {
+      load();
+      // 1.3: Force refresh notification count on drawer open to ensure badge parity
+      useMessagingStore.getState().fetchNotifications();
+    }
+    return () => { cancelled = true; };
+  }, [isSidebarOpen]);
 
   const { t, isRTL } = useI18n();
   const location = useLocation();
@@ -134,12 +153,11 @@ export const MobileNavDrawer: React.FC = () => {
             {/* Navigation Links (Scrollable) */}
             <nav className="flex-1 overflow-y-auto p-3 space-y-1 overscroll-contain">
               <div className="px-2 py-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                المزيد من الأقسام
+                الأقسام
               </div>
 
               {drawerItems.map((item) => {
                 const label = item.labelKey ? t(item.labelKey, item.fallbackLabel) : item.fallbackLabel;
-                const badge = item.hasBadge ? unreadNotificationsCount : 0;
 
                 return (
                   <NavLink
@@ -167,9 +185,14 @@ export const MobileNavDrawer: React.FC = () => {
                           />
                           <span>{label}</span>
                         </div>
-                        {badge > 0 && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-600 text-white">
-                            {badge}
+                        {item.to === '/messaging' && unreadCount > 0 && (
+                          <span className="ms-auto min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center">
+                            {unreadCount > 99 ? '99+' : unreadCount}
+                          </span>
+                        )}
+                        {item.to === '/trash' && trashCount > 0 && (
+                          <span className="ms-auto min-w-[20px] h-5 px-1.5 rounded-full bg-amber-500 text-white text-[10px] font-black flex items-center justify-center">
+                            {trashCount > 99 ? '99+' : trashCount}
                           </span>
                         )}
                       </>

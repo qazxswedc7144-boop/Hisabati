@@ -2,6 +2,8 @@ import { CurrencyCode } from './common.types';
 
 export type TransactionType = 'debit' | 'credit'; // 'debit' = لي (أعطيته / مستحق لي) | 'credit' = علي (استلمت منه / مستحق له)
 
+export type TransactionStatus = 'draft' | 'posted' | 'reversed';
+
 export interface Transaction {
   id: string;
   accountId: string;
@@ -16,6 +18,15 @@ export interface Transaction {
   createdAt: string;
   updatedAt: string;
   
+  // Phase 2 Immutable Ledger Status
+  status?: TransactionStatus;
+  postedAt?: string;
+  postedBy?: string;
+  reversedAt?: string;
+  reversedBy?: string;
+  reversalOfTransactionId?: string;
+  correctedByTransactionId?: string;
+
   // Optional populated fields for UI convenience
   accountName?: string;
   runningBalance?: number; // Derived running balance for statement view
@@ -55,6 +66,7 @@ export interface CreateTransactionDTO {
   note?: string;
   receiptNumber?: string;
   operationId?: string; // Unique idempotency key
+  status?: TransactionStatus;
   receiptId?: string;
   documentRef?: string;
   documentMetadata?: Transaction['documentMetadata'];
@@ -87,6 +99,7 @@ export interface UpdateTransactionDTO {
   date?: string;
   note?: string;
   receiptNumber?: string;
+  status?: TransactionStatus;
 }
 
 export interface TransactionSummary {

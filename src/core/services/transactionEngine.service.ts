@@ -1,6 +1,8 @@
 import { db } from '../database/db';
 import {
   Transaction,
+  TransactionType,
+  TransactionStatus,
   CreateTransactionDTO,
   UpdateTransactionDTO,
   CreateDoubleEntryDTO,
@@ -33,6 +35,83 @@ import { validateAndResolveFinancialAmount } from '../money/financialSafety';
 export class FinancialTransactionEngine {
   // In-memory mutex/deduplication registry for rapid in-flight double submission prevention
   private inFlightPromises = new Map<string, Promise<any>>();
+
+  /**
+   * Status Logic Helpers (Phase 2 Immutable Ledger)
+   */
+  public canEditTransaction(trx: Transaction): boolean {
+    const status = trx.status || 'posted'; // Legacy policy
+    return status === 'draft';
+  }
+
+  public canDeleteTransaction(trx: Transaction): boolean {
+    const status = trx.status || 'posted'; // Legacy policy
+    return status === 'draft';
+  }
+
+  public validateStatusTransition(from: TransactionStatus | undefined, to: TransactionStatus): void {
+    const current = from || 'posted';
+    
+    if (current === 'posted' && to === 'draft') {
+      throw new Error('لا يمكن تحويل عملية مرحلة (POSTED) إلى مسودة (DRAFT)');
+    }
+    
+    if (current === 'reversed') {
+      throw new Error('لا يمكن تعديل حالة عملية معكوسة (REVERSED)');
+    }
+
+    if (current === 'posted' && to === 'posted') return;
+  }
+
+  /**
+   * Transitions a transaction from DRAFT to POSTED.
+   */
+  async postTransaction(id: string, actor?: AuditActor): Promise<Transaction> {
+    const currentActor = actor || rbacGuard.getActiveActor();
+    const existing = await db.transactions.get(id);
+    if (!existing) throw new Error('العملية غير موجودة');
+    if (existing.status === 'posted') return existing;
+    
+    this.validateStatusTransition(existing.status, 'posted');
+
+    const now = new Date().toISOString();
+    const updatedTrx: Transaction = {
+      ...existing,
+      status: 'posted',
+      postedAt: now,
+      postedBy: currentActor.id,
+      updatedAt: now,
+    };
+
+    await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, async (transaction) => {
+      await transaction.table('transactions').put(updatedTrx);
+      await financialAuditService.logFinancialEvent({
+        eventType: 'TRANSACTION_POST',
+        targetType: 'transaction',
+        targetId: id,
+        amountMinor: updatedTrx.amountMinor,
+        currency: updatedTrx.currency,
+        operationId: updatedTrx.operationId,
+        beforeState: {
+          amountMinor: existing.amountMinor || 0,
+          accountId: existing.accountId,
+          type: existing.type,
+          revision: existing.id,
+        },
+        afterState: {
+          amountMinor: updatedTrx.amountMinor,
+          accountId: updatedTrx.accountId,
+          type: updatedTrx.type,
+          revision: id,
+        },
+        tx: transaction
+      });
+    });
+
+    const account = await db.accounts.get(updatedTrx.accountId);
+    await this.postProcessTransaction(updatedTrx, 'UPDATE', currentActor, account);
+    return updatedTrx;
+  }
 
   /**
    * Creates a transaction with strict financial validation, precision rounding,
@@ -131,6 +210,9 @@ export class FinancialTransactionEngine {
           note: dto.note?.trim() || undefined,
           receiptNumber: dto.receiptNumber?.trim() || undefined,
           operationId: finalOpId,
+          status: dto.status || 'posted',
+          postedAt: (dto.status || 'posted') === 'posted' ? now : undefined,
+          postedBy: (dto.status || 'posted') === 'posted' ? currentActor.id : undefined,
           receiptId: dto.receiptId?.trim() || undefined,
           documentRef: dto.documentRef || undefined,
           documentMetadata: dto.documentMetadata || undefined,
@@ -333,6 +415,9 @@ export class FinancialTransactionEngine {
             note: leg.note || dto.note,
             receiptNumber: leg.receiptNumber || dto.receiptNumber,
             operationId,
+            status: 'posted',
+            postedAt: new Date().toISOString(),
+            postedBy: currentActor.id,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           };
@@ -403,6 +488,10 @@ export class FinancialTransactionEngine {
 
     const existing = await db.transactions.get(id);
     if (!existing) throw new Error(`العملية رقم ${id} غير موجودة`);
+
+    if (!this.canEditTransaction(existing)) {
+      throw new Error('لا يمكن تعديل عملية مرحلة (POSTED) أو معكوسة (REVERSED)');
+    }
 
     const oldAccountId = existing.accountId;
     const targetAccountId = dto.accountId || oldAccountId;
@@ -496,6 +585,10 @@ export class FinancialTransactionEngine {
     const existing = await db.transactions.get(id);
     if (!existing) {
       return false;
+    }
+
+    if (!this.canDeleteTransaction(existing)) {
+      throw new Error('لا يمكن حذف عملية مرحلة (POSTED) أو معكوسة (REVERSED)');
     }
 
     const accountId = existing.accountId;

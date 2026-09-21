@@ -26,6 +26,7 @@ import { FinancialCoreHardeningTestSuite } from './financialCoreHardening.test';
 import { FinancialAuditPart2TestSuite } from './financialAuditPart2.test';
 import { FinancialHardeningPart3TestSuite } from './financialHardeningPart3.test';
 import { SyncHardeningPart1TestSuite } from './syncHardeningPart1.test';
+import { ImmutableLedgerTestSuite } from './immutableLedger.test';
 import { tenantService } from '../services/TenantService';
 
 async function main() {
@@ -568,6 +569,25 @@ async function main() {
     }
   } catch (err: any) {
     console.error('Sync Hardening Part 1 Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // 26. PHASE 2 — PART 1/3: IMMUTABLE FINANCIAL LEDGER
+  console.log('\n--- [PHASE 2 — PART 1/3] Immutable Financial Ledger Status & Foundation ---');
+  try {
+    const immut = await ImmutableLedgerTestSuite.runAll();
+    console.log(`Immutable Ledger Result: Passed ${immut.passed}/${immut.total}`);
+    totalPassed += immut.passed;
+    totalFailed += immut.failed;
+    totalCount += immut.total;
+    if (immut.failed > 0) {
+      for (const r of immut.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ [${r.id}] ${r.title}: ${r.error || 'Failed'}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Immutable Ledger Suite crashed:', err);
     totalFailed++;
     totalCount++;
   }
