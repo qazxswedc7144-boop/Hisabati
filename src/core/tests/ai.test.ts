@@ -137,9 +137,9 @@ export class AITestSuite {
       'Arabic Number: Standard Digits 5000',
       'تحويل الأرقام الإنجليزية (5000) بدقة وحدات كسرية',
       () => {
-        const res = ArabicNumberParser.parse('سجل 5000 ريال');
+        const res = ArabicNumberParser.parse('سجل 5000 ريال سعودي');
         if (!res || res.amount !== 5000 || res.amountMinor !== 500000) {
-          throw new Error(`Expected 5000 (500000 minor), got ${JSON.stringify(res)}`);
+          throw new Error(`Expected 5000 (500000 minor for SAR), got ${JSON.stringify(res)}`);
         }
       }
     );
@@ -149,9 +149,9 @@ export class AITestSuite {
       'Arabic Number: Eastern Numerals ٥٠٠٠',
       'تحويل الأرقام المشرقية (٥٠٠٠) بدقة',
       () => {
-        const res = ArabicNumberParser.parse('سجل ٥٠٠٠ ريال');
+        const res = ArabicNumberParser.parse('سجل ٥٠٠٠ ريال سعودي');
         if (!res || res.amount !== 5000 || res.amountMinor !== 500000) {
-          throw new Error(`Expected 5000 from ٥٠٠٠, got ${JSON.stringify(res)}`);
+          throw new Error(`Expected 5000 from ٥٠٠٠ (500000 minor for SAR), got ${JSON.stringify(res)}`);
         }
       }
     );

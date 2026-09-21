@@ -181,13 +181,13 @@ export class OCRTestSuite {
         title: 'Total Amount & Minor Units Calculation',
         description: 'استخراج المبلغ الإجمالي وتحويله إلى Minor Units (أعداد صحيحة)',
         fn: async () => {
-          const sample = 'فاتورة رقم: 88\nالمبلغ الإجمالي: 45000.50 ريال';
+          const sample = 'فاتورة رقم: 88\nالمبلغ الإجمالي: 45000.50 ريال سعودي';
           const res = OCRFieldParser.parse(sample);
           if (res.totalAmount.value !== 45000.5) {
             throw new Error(`Expected 45000.5, got ${res.totalAmount.value}`);
           }
           if (res.totalAmountMinor.value !== 4500050) {
-            throw new Error(`Expected 4500050 minor units, got ${res.totalAmountMinor.value}`);
+            throw new Error(`Expected 4500050 minor units for SAR, got ${res.totalAmountMinor.value}`);
           }
         },
       },

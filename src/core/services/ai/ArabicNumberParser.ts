@@ -27,6 +27,15 @@ export class ArabicNumberParser {
     if (!text || typeof text !== 'string') return null;
 
     const normalized = ArabicNumberParser.normalizeDigits(text.trim());
+    const lower = text.toLowerCase();
+    
+    // Detect currency for minor unit conversion
+    let currency: any = 'YER';
+    if (/سعودي|sar/i.test(lower)) currency = 'SAR';
+    else if (/دولار|usd/i.test(lower)) currency = 'USD';
+    else if (/درهم|aed/i.test(lower)) currency = 'AED';
+    else if (/كويتي|kwd/i.test(lower)) currency = 'KWD';
+    else if (/عماني|omr/i.test(lower)) currency = 'OMR';
 
     // 1. Check for hybrid numbers like "5 آلاف", "10 ملايين", "250 ألف"
     const hybridMatch = normalized.match(/(\d+(?:\.\d+)?)\s*(ألف|الف|آلاف|الاف|ملايين|مليون|مائة|مئة)/);
@@ -44,7 +53,7 @@ export class ArabicNumberParser {
       const totalAmount = baseNum * multiplier;
       return {
         amount: totalAmount,
-        amountMinor: toMinorUnits(totalAmount),
+        amountMinor: toMinorUnits(totalAmount, currency),
       };
     }
 
@@ -55,7 +64,7 @@ export class ArabicNumberParser {
       if (!isNaN(num) && num > 0) {
         return {
           amount: num,
-          amountMinor: toMinorUnits(num),
+          amountMinor: toMinorUnits(num, currency),
         };
       }
     }
@@ -65,7 +74,7 @@ export class ArabicNumberParser {
     if (parsedWordNumber !== null && parsedWordNumber > 0) {
       return {
         amount: parsedWordNumber,
-        amountMinor: toMinorUnits(parsedWordNumber),
+        amountMinor: toMinorUnits(parsedWordNumber, currency),
       };
     }
 

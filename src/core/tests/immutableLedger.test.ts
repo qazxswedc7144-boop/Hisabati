@@ -133,10 +133,38 @@ export const ImmutableLedgerTestSuite = {
       addResult(10, 'إعادة الترحيل (POST) لعملية مرحلة لا يضاعف الرصيد', balBeforeDoublePost === balAfterDoublePost);
 
       // K. Failure during postTransaction -> Rollback
-      // We simulate failure by passing an invalid update that fails inside the transaction
-      // But Dexie transactions are hard to fail mid-way without a manual throw.
-      // We'll trust the db.transaction wrapper if we ensure it covers all steps.
-      addResult(11, 'الترحيل عملية ذرية (Atomic) - مفترض من db.transaction', true);
+      const rollbackTrxId = 'trx_rollback_' + Date.now();
+      await db.transactions.add({
+        id: rollbackTrxId,
+        accountId: testAccountId,
+        type: 'debit',
+        amount: 777,
+        amountMinor: 777,
+        status: 'draft',
+        date: '2026-01-01',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        operationId: 'op_rollback_test'
+      });
+      const balBeforeRollback = (await db.accounts.get(testAccountId))?.currentBalanceMinor || 0;
+      
+      // We force an error by overriding a method temporarily or passing bad data
+      // Actually, transactionEngine.postTransaction uses db.transaction. 
+      // Let's manually trigger a transaction that fails.
+      try {
+        await db.transaction('rw', [db.accounts, db.transactions, db.financialAuditLogs], async () => {
+          await transactionEngine.postTransaction(rollbackTrxId);
+          throw new Error('FORCED_ROLLBACK');
+        });
+      } catch (e: any) {
+        // Expected
+      }
+      const balAfterRollback = (await db.accounts.get(testAccountId))?.currentBalanceMinor || 0;
+      const trxAfterRollback = await db.transactions.get(rollbackTrxId);
+      
+      addResult(11, 'الترحيل عملية ذرية (Atomic Rollback)', 
+        balBeforeRollback === balAfterRollback && trxAfterRollback?.status === 'draft'
+      );
 
       // L. Legacy transaction without status -> Treated as POSTED
       const legacyId = 'legacy_fix_' + Date.now();
@@ -154,7 +182,7 @@ export const ImmutableLedgerTestSuite = {
       });
       await transactionEngine.recalculateAccountBalance(testAccountId, 'YER');
       const legacyAcc = await db.accounts.get(testAccountId);
-      // Balance was 1500 + 400 = 1900. (Reversed 2000 is ignored)
+      // Balance was 1500 + 400 = 1900. (Reversed 2000 is ignored, Draft 777 rolled back)
       addResult(12, 'العمليات القديمة تدخل في الرصيد وتُعامل كـ POSTED', legacyAcc?.currentBalanceMinor === 1900);
 
       // M. Double Entry DRAFT
@@ -224,44 +252,61 @@ export const ImmutableLedgerTestSuite = {
       }, 0);
       addResult(16, 'تطابق الرصيد المخزن مع المعاد حسابه من القيود', finalAcc?.currentBalanceMinor === calculated);
 
-      // Final Check for Multi-currency decimals
-      const sarAccId = 'acc_sar_' + Date.now();
-      await db.accounts.add({ 
-        id: sarAccId, 
-        name: 'SAR Account', 
-        currency: 'SAR', 
-        currentBalanceMinor: 0,
-        currentBalance: 0,
-        totalDebit: 0,
-        totalDebitMinor: 0,
-        totalCredit: 0,
-        totalCreditMinor: 0,
-        transactionCount: 0,
-        archived: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-      await transactionEngine.createTransaction({ 
-        accountId: sarAccId, 
-        type: 'debit', 
-        amount: 10.55, 
-        status: 'posted',
-        date: '2026-01-01'
-      });
-      const sarAcc = await db.accounts.get(sarAccId);
-      addResult(17, 'دقة العملات (SAR: 2 decimals -> 10.55 = 1055 minor)', sarAcc?.currentBalanceMinor === 1055);
+      // Final Check for Multi-currency decimals (YER, SAR, USD, KWD)
+      const currencies: { code: string, decimals: number, amount: number, expectedMinor: number }[] = [
+        { code: 'YER', decimals: 0, amount: 1000, expectedMinor: 1000 },
+        { code: 'SAR', decimals: 2, amount: 10.55, expectedMinor: 1055 },
+        { code: 'USD', decimals: 2, amount: 50.75, expectedMinor: 5075 },
+        { code: 'KWD', decimals: 3, amount: 1.255, expectedMinor: 1255 }
+      ];
+
+      let allCurrenciesValid = true;
+      for (const cur of currencies) {
+        const curAccId = `acc_${cur.code.toLowerCase()}_${Date.now()}`;
+        await db.accounts.add({ 
+          id: curAccId, 
+          name: `${cur.code} Account`, 
+          currency: cur.code as any, 
+          currentBalanceMinor: 0,
+          currentBalance: 0,
+          totalDebit: 0,
+          totalDebitMinor: 0,
+          totalCredit: 0,
+          totalCreditMinor: 0,
+          transactionCount: 0,
+          archived: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        await transactionEngine.createTransaction({ 
+          accountId: curAccId, 
+          type: 'debit', 
+          amount: cur.amount, 
+          status: 'posted',
+          date: '2026-01-01'
+        });
+        const curAcc = await db.accounts.get(curAccId);
+        if (curAcc?.currentBalanceMinor !== cur.expectedMinor) {
+          allCurrenciesValid = false;
+          console.error(`Currency ${cur.code} failed: expected ${cur.expectedMinor}, got ${curAcc?.currentBalanceMinor}`);
+        }
+        await db.transactions.where('accountId').equals(curAccId).delete();
+        await db.accounts.delete(curAccId);
+      }
+      addResult(17, 'دقة العملات المتعددة (YER, SAR, USD, KWD)', allCurrenciesValid);
 
       // Integrity Check
       const integrity = await integrityService.verifyFinancialIntegrity();
+      if (!integrity.valid) {
+        console.error('Integrity Inconsistencies:', integrity.inconsistencies);
+      }
       addResult(18, 'سلامة النظام المالي بالكامل (Integrity Service)', integrity.valid);
 
       // Cleanup
-      await db.transactions.where('accountId').equals(testAccountId).delete();
-      await db.transactions.where('accountId').equals(testAcc2).delete();
-      await db.transactions.where('accountId').equals(sarAccId).delete();
-      await db.accounts.delete(testAccountId);
-      await db.accounts.delete(testAcc2);
-      await db.accounts.delete(sarAccId);
+      await Promise.all([
+        db.transactions.where('accountId').anyOf([testAccountId, testAcc2]).delete(),
+        db.accounts.where('id').anyOf([testAccountId, testAcc2]).delete()
+      ]);
 
     } catch (err: any) {
       console.error('Immutable Ledger Full Test Failed:', err);

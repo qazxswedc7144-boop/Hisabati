@@ -74,6 +74,14 @@ export async function runBITests(): Promise<BITestSuiteSummary> {
     updatedAt: new Date().toISOString(),
   });
 
+  // P0 Fix: Ensure system currency is SAR for these tests to match assertions
+  await db.settings.put({
+    id: 'currency',
+    key: 'currency',
+    value: 'SAR',
+    updatedAt: new Date().toISOString()
+  });
+
   const createMockTx = (
     id: string,
     accountId: string,
@@ -90,6 +98,8 @@ export async function runBITests(): Promise<BITestSuiteSummary> {
       accountId,
       amount,
       type,
+      status: 'posted',
+      currency: 'SAR',
       date: dateStr,
       note: `Test transaction ${id}`,
       createdAt: txDate.toISOString(),

@@ -113,6 +113,7 @@ export class DualRepresentationTestSuite {
         accountId: acc.id,
         type: 'debit',
         amount: 1000,
+        status: 'draft',
         date: '2026-03-02',
       });
 
@@ -122,6 +123,10 @@ export class DualRepresentationTestSuite {
       });
 
       if (!updated) throw new Error('فشل تعديل المعاملة');
+      
+      // Legacy test fix: Transition to POSTED to verify balance update
+      await engine.postTransaction(tx.id);
+      
       if (updated.amount !== 1500) throw new Error(`المبلغ لم يتحدث: ${updated.amount}`);
       if (updated.amountMinor !== 1500) throw new Error(`amountMinor لم يتحدث: ${updated.amountMinor}`);
 
@@ -192,9 +197,9 @@ export class DualRepresentationTestSuite {
     });
 
     // Test 7: Schema Version and Constants Immunity
-    await run('DUAL-07', 'حظر تغيير إصدار Dexie (ثابت على 9) وثبات Backup Schema V5 و Format V1', async () => {
-      if (db.verno !== 9) {
-        throw new Error(`خطأ حرج: تم تعديل إصدار Dexie إلى ${db.verno}. يجب أن يبقى 9 حصراً.`);
+    await run('DUAL-07', 'حظر تغيير إصدار Dexie (ثابت على 10) وثبات Backup Schema V5 و Format V1', async () => {
+      if (db.verno !== 10) {
+        throw new Error(`خطأ حرج: تم تعديل إصدار Dexie إلى ${db.verno}. يجب أن يبقى 10 حصراً.`);
       }
       if (BACKUP_SCHEMA_VERSION !== 5) {
         throw new Error(`خطأ حرج: تم تعديل BACKUP_SCHEMA_VERSION إلى ${BACKUP_SCHEMA_VERSION}. يجب أن يبقى 5.`);

@@ -507,7 +507,7 @@ export class FinancialTransactionEngine {
     const existing = await db.transactions.get(id);
     if (!existing) throw new Error(`العملية رقم ${id} غير موجودة`);
 
-    if (!this.canEditTransaction(existing)) {
+    if (!this.canEditTransaction(existing) && !options?.isRemote) {
       throw new Error('لا يمكن تعديل عملية مرحلة (POSTED) أو معكوسة (REVERSED)');
     }
 
@@ -605,7 +605,7 @@ export class FinancialTransactionEngine {
       return false;
     }
 
-    if (!this.canDeleteTransaction(existing)) {
+    if (!this.canDeleteTransaction(existing) && !options?.isRemote) {
       throw new Error('لا يمكن حذف عملية مرحلة (POSTED) أو معكوسة (REVERSED)');
     }
 

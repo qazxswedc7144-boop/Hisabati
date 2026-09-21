@@ -4,7 +4,7 @@
  * - 1.5: Added MIN_SUPPORTED_* version constants for backward compatibility enforcement.
  */
 
-export const DATABASE_SCHEMA_VERSION = 9;
+export const DATABASE_SCHEMA_VERSION = 10;
 export const BACKUP_SCHEMA_VERSION = 5;
 export const FINANCIAL_FORMAT_VERSION = 1;
 

@@ -122,6 +122,7 @@ export class Phase24SyncHardeningTestSuite {
             accountId: acc.id,
             type: 'debit',
             amount: 1000,
+            status: 'draft',
             date: '2026-06-01',
             operationId: 'op_trx_tombstone_70',
           });

@@ -101,6 +101,7 @@ export class Phase25TombstoneHardeningTestSuite {
             accountId: acc.id,
             type: 'debit',
             amount: 1500,
+            status: 'draft',
             date: '2026-01-01',
             operationId: 'op_70_days',
           });
@@ -142,6 +143,7 @@ export class Phase25TombstoneHardeningTestSuite {
             accountId: acc.id,
             type: 'credit',
             amount: 2500,
+            status: 'draft',
             date: '2025-01-01',
             operationId: 'op_365_days',
           });
@@ -178,6 +180,7 @@ export class Phase25TombstoneHardeningTestSuite {
             accountId: acc.id,
             type: 'debit',
             amount: 3000,
+            status: 'draft',
             date: '2026-05-01',
             operationId: 'op_backup_res',
           });

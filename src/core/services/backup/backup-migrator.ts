@@ -191,7 +191,7 @@ export function migrateBackupV4ToV5(payload: any): any {
   migrated.debts = debts;
   migrated.metadata.backupSchemaVersion = 5;
   migrated.metadata.schemaVersion = 5;
-  migrated.metadata.databaseSchemaVersion = 9;
+  migrated.metadata.databaseSchemaVersion = DATABASE_SCHEMA_VERSION;
 
   return migrated;
 }

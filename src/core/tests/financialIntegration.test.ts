@@ -413,15 +413,15 @@ export class FinancialIntegrationTestSuite {
     });
 
     // FIN-20: Database Schema Version Invariant Rule
-    await run('FIN-20', 'ثبات DATABASE_SCHEMA_VERSION=9 و FINANCIAL_FORMAT_VERSION=1', async () => {
-      if (DATABASE_SCHEMA_VERSION !== 9) {
-        throw new Error(`DATABASE_SCHEMA_VERSION يجب أن يكون 9 حصرياً، وجد: ${DATABASE_SCHEMA_VERSION}`);
+    await run('FIN-20', 'ثبات DATABASE_SCHEMA_VERSION=10 و FINANCIAL_FORMAT_VERSION=1', async () => {
+      if (DATABASE_SCHEMA_VERSION !== 10) {
+        throw new Error(`DATABASE_SCHEMA_VERSION يجب أن يكون 10 حصرياً، وجد: ${DATABASE_SCHEMA_VERSION}`);
       }
       if (FINANCIAL_FORMAT_VERSION !== 1) {
         throw new Error(`FINANCIAL_FORMAT_VERSION يجب أن يكون 1 حصرياً، وجد: ${FINANCIAL_FORMAT_VERSION}`);
       }
-      if (db.verno !== 9) {
-        throw new Error(`إصدار Dexie الحالي يجب أن يكون 9 حصرياً، وجد: ${db.verno}`);
+      if (db.verno !== 10) {
+        throw new Error(`إصدار Dexie الحالي يجب أن يكون 10 حصرياً، وجد: ${db.verno}`);
       }
     });
 

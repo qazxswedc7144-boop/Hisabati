@@ -479,6 +479,7 @@ export class CloudSyncTestSuite {
             type: 'debit',
             amount: 350,
             date: '2026-09-08',
+            status: 'draft',
             operationId: `op_tomb_${Date.now()}`,
           });
 
@@ -773,6 +774,7 @@ export class CloudSyncTestSuite {
             type: 'debit',
             amount: 1000,
             date: '2026-09-08',
+            status: 'posted',
           });
 
           // Construct conflict item

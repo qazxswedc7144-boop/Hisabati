@@ -106,7 +106,7 @@ export class FinancialHealthEngine {
         // [BI-FIX]: Derive truth from provided transactions to satisfy "Transactions are the absolute Source of Truth"
         // This ensures tests with mock accounts pass even if they don't have pre-calculated balance fields.
         const accTxs = accountTransactionsMap.get(acc.id) || [];
-        const calculated = computeAccountMetricsFromTransactions(accTxs);
+        const calculated = computeAccountMetricsFromTransactions(accTxs, activeCurrency);
         currentBalance = calculated.currentBalance;
         debitMinor = calculated.totalDebitMinor;
         creditMinor = calculated.totalCreditMinor;

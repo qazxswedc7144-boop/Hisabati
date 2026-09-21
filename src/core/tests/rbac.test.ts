@@ -156,7 +156,7 @@ export class RBACTestSuite {
         title: 'Guarded Gate: Prevent Employee from Deleting Transactions',
         description: 'منع الموظف (Employee) من حذف أي معاملة مالية مع تسجيل محاولة غير مصرح بها',
         fn: async () => {
-          // 1. First create transaction as Accountant
+          // 1. First create transaction as Accountant (DRAFT to allow RBAC deletion test)
           const trx = await transactionEngine.createTransaction(
             {
               accountId: testAccountId,
@@ -164,6 +164,7 @@ export class RBACTestSuite {
               type: 'debit',
               date: new Date().toISOString().split('T')[0],
               note: 'معاملة محاسبية قابلة للاختبار',
+              status: 'draft',
             },
             accountantActor
           );

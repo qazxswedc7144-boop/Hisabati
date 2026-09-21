@@ -78,6 +78,7 @@ export class FinancialAuditPart2TestSuite {
         accountId: acc1Id,
         type: 'debit',
         amountMinor: 5000,
+        status: 'draft',
         date: '2026-01-01',
       });
       // Correctly update both to avoid financial safety mismatch
@@ -93,6 +94,7 @@ export class FinancialAuditPart2TestSuite {
         accountId: acc1Id,
         type: 'debit',
         amountMinor: 2000,
+        status: 'draft',
         date: '2026-01-01',
       });
       await transactionEngine.deleteTransaction(trx.id);
@@ -214,7 +216,7 @@ export class FinancialAuditPart2TestSuite {
     });
 
     await test('16. Detect Drift: Deletion after snapshot', async () => {
-      const trx = await transactionEngine.createTransaction({ accountId: acc1Id, type: 'debit', amountMinor: 100, date: '2026-01-01' });
+      const trx = await transactionEngine.createTransaction({ accountId: acc1Id, type: 'debit', amountMinor: 100, status: 'draft', date: '2026-01-01' });
       const snap = await financialSnapshotService.createSnapshot();
       await transactionEngine.deleteTransaction(trx.id);
       

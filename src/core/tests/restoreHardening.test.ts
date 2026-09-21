@@ -483,10 +483,10 @@ export class RestoreHardeningTestSuite {
     await this.runTest(
       results,
       'RST-11',
-      'عزل قاعدة البيانات: ثبات إصدارات Dexie 1-9 وثبات FINANCIAL_FORMAT_VERSION=1',
+      'عزل قاعدة البيانات: ثبات إصدارات Dexie 1-10 وثبات FINANCIAL_FORMAT_VERSION=1',
       async () => {
-        if (DATABASE_SCHEMA_VERSION !== 9) {
-          throw new Error(`DATABASE_SCHEMA_VERSION must remain 9, got ${DATABASE_SCHEMA_VERSION}`);
+        if (DATABASE_SCHEMA_VERSION !== 10) {
+          throw new Error(`DATABASE_SCHEMA_VERSION must remain 10, got ${DATABASE_SCHEMA_VERSION}`);
         }
         if (BACKUP_SCHEMA_VERSION !== 5) {
           throw new Error(`BACKUP_SCHEMA_VERSION must remain 5, got ${BACKUP_SCHEMA_VERSION}`);
@@ -497,8 +497,8 @@ export class RestoreHardeningTestSuite {
 
         // Check db versions max
         const versions = (db as any).verno;
-        if (versions && versions > 9) {
-          throw new Error(`Dexie version is ${versions}, which exceeds maximum version 9!`);
+        if (versions && versions > 10) {
+          throw new Error(`Dexie version is ${versions}, which exceeds maximum version 10!`);
         }
       }
     );

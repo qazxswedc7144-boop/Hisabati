@@ -193,6 +193,7 @@ export class SettingsTestSuite {
             accountId: testAccount.id,
             type: 'debit',
             amount: 5000,
+            status: 'draft',
             note: 'معاملة قبل تغيير العملة',
             date: new Date().toISOString().split('T')[0],
           });
