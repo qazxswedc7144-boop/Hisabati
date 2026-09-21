@@ -6,8 +6,21 @@ import { roundMoney } from '../utils/financial';
 import { rbacGuard } from './rbac/RBACGuard.service';
 import { resolveRequiredCurrency } from '../money/currency';
 import { settingsRepository } from '../repositories/settings.repository';
+import { SyncContextRegistry } from './syncContext';
 
 export class AccountService {
+  public beginSyncApply(): void {
+    SyncContextRegistry.beginSyncApply();
+  }
+
+  public endSyncApply(): void {
+    SyncContextRegistry.endSyncApply();
+  }
+
+  public isInsideSyncApply(): boolean {
+    return SyncContextRegistry.isInsideSyncApply();
+  }
+
   async getAll(includeArchived = false): Promise<Account[]> {
     if (includeArchived) {
       return await db.accounts.orderBy('name').toArray();
@@ -20,6 +33,10 @@ export class AccountService {
   }
 
   async createAccount(dto: CreateAccountDTO, options?: { isRemote?: boolean }): Promise<Account> {
+    if (options?.isRemote && !this.isInsideSyncApply()) {
+      throw new Error('isRemote ممنوع خارج محرك المزامنة (syncEngine)');
+    }
+
     // 0. RBAC Guard
     await rbacGuard.assertPermission('accounts:create', {
       targetType: 'account',
@@ -98,6 +115,10 @@ export class AccountService {
   }
 
   async updateAccount(id: string, dto: UpdateAccountDTO, options?: { isRemote?: boolean }): Promise<Account | undefined> {
+    if (options?.isRemote && !this.isInsideSyncApply()) {
+      throw new Error('isRemote ممنوع خارج محرك المزامنة (syncEngine)');
+    }
+
     // 0. RBAC Guard
     await rbacGuard.assertPermission('accounts:update', {
       targetType: 'account',
@@ -164,6 +185,10 @@ export class AccountService {
   }
 
   async deleteAccount(id: string, force = false, moveToTrash = false, options?: { isRemote?: boolean }): Promise<boolean> {
+    if (options?.isRemote && !this.isInsideSyncApply()) {
+      throw new Error('isRemote ممنوع خارج محرك المزامنة (syncEngine)');
+    }
+
     // 0. RBAC Guard
     await rbacGuard.assertPermission('accounts:delete', {
       targetType: 'account',

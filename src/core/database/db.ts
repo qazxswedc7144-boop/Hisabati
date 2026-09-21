@@ -26,6 +26,7 @@ import {
   DebtRecord,
   FinancialAuditEntry,
   FinancialSnapshot,
+  PendingSideEffect,
 } from '@/shared/types';
 
 export class HisabatiDatabase extends Dexie {
@@ -60,6 +61,7 @@ export class HisabatiDatabase extends Dexie {
   debts!: Table<DebtRecord, string>;
   financialAuditLogs!: Table<FinancialAuditEntry, string>;
   financialSnapshots!: Table<FinancialSnapshot, string>;
+  pendingSideEffects!: Table<PendingSideEffect, string>;
 
   constructor(dbName: string = 'HisabatiDatabase') {
     super(dbName);
@@ -266,6 +268,31 @@ export class HisabatiDatabase extends Dexie {
           trx.updatedAt = new Date().toISOString();
         }
       });
+    });
+
+    // Version 11 Schema (Hardened Sync & Durable Pending Side Effects)
+    this.version(11).stores({
+      accounts: 'id, name, phone, archived, dueDate, createdAt, updatedAt, [archived+dueDate]',
+      transactions: 'id, accountId, type, date, operationId, status, createdAt, updatedAt, [accountId+date]',
+      settings: 'id, key, updatedAt',
+      syncQueue: 'id, entityType, entityId, operation, operationId, status, createdAt',
+      syncAuditLogs: 'id, action, timestamp, deviceId, success',
+      messages: 'id, messageId, channel, type, status, recipient, priority, operationId, createdAt, scheduledAt',
+      messageTemplates: 'id, name, type, defaultChannel, active, createdAt',
+      inAppNotifications: 'id, type, priority, read, createdAt, idempotencyKey, relatedEntityId, [type+idempotencyKey]',
+      scheduledMessages: 'id, channel, status, scheduledAt, nextRunAt, operationId, createdAt',
+      messageQueue: 'id, messageId, channel, status, operationId, nextRetryAt, createdAt',
+      aiAuditLogs: 'id, requestId, intent, status, provider, confirmed, timestamp',
+      users: 'id, email, phone, role, activeTeamId, createdAt',
+      teams: 'id, name, ownerId, createdAt',
+      teamMembers: 'id, teamId, userId, role, status, [teamId+userId], createdAt',
+      auditTrail: 'id, sequenceNumber, timestamp, action, targetType, targetId, riskLevel, [targetType+targetId]',
+      trash: 'id, entityType, entityId, deletedAt, expiresAt, deletedBy, status, [entityType+entityId]',
+      safetyBackups: 'id, createdAt, type',
+      debts: 'id, accountId, dueDate, status, [accountId+status], [status+dueDate]',
+      financialAuditLogs: 'id, sequenceNumber, eventType, operationId, targetType, targetId, organizationId, timestamp',
+      financialSnapshots: 'id, organizationId, ledgerRevision, createdAt',
+      pendingSideEffects: 'id, sourceType, sourceId, effectType, createdAt',
     });
   }
 }

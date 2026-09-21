@@ -140,3 +140,14 @@ export interface CloudSyncState {
   autoBackupInterval: 'disabled' | 'daily' | 'weekly';
   conflicts: SyncConflictItem[];
 }
+
+export interface PendingSideEffect {
+  id: string;
+  sourceType: 'transaction' | 'account';
+  sourceId: string;
+  effectType: 'SYNC_ENQUEUE' | 'AUDIT_LOG' | 'NOTIFICATION';
+  payload: any;
+  createdAt: string;
+  retries: number;
+  lastError?: string;
+}

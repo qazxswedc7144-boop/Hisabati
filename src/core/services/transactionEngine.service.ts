@@ -31,6 +31,7 @@ import { decimalToMinor } from '../money/converter';
 import { getCurrencyDecimals, resolveRequiredCurrency } from '../money/currency';
 import { assertDualMoneyRepresentation } from '../money/validator';
 import { validateAndResolveFinancialAmount } from '../money/financialSafety';
+import { SyncContextRegistry } from './syncContext';
 
 export class FinancialTransactionEngine {
   // In-memory mutex/deduplication registry for rapid in-flight double submission prevention
@@ -39,6 +40,19 @@ export class FinancialTransactionEngine {
   /**
    * Status Logic Helpers (Phase 2 Immutable Ledger)
    */
+  private _insideSyncApply = false;
+  public beginSyncApply(): void {
+    this._insideSyncApply = true;
+    SyncContextRegistry.beginSyncApply();
+  }
+  public endSyncApply(): void {
+    this._insideSyncApply = false;
+    SyncContextRegistry.endSyncApply();
+  }
+  public isInsideSyncApply(): boolean {
+    return this._insideSyncApply || SyncContextRegistry.isInsideSyncApply();
+  }
+
   public canEditTransaction(trx: Transaction): boolean {
     const status = trx.status || 'posted'; // Legacy policy
     return status === 'draft';
@@ -121,8 +135,12 @@ export class FinancialTransactionEngine {
       });
     });
 
-    const account = await db.accounts.get(updatedTrx.accountId);
-    await this.postProcessTransaction(updatedTrx, 'UPDATE', currentActor, account);
+    try {
+      const account = await db.accounts.get(updatedTrx.accountId);
+      await this.postProcessTransaction(updatedTrx, 'UPDATE', currentActor, account);
+    } catch (e) {
+      console.warn('[postTransaction] Post-process side effects failed safely:', e);
+    }
     return updatedTrx;
   }
 
@@ -349,8 +367,22 @@ export class FinancialTransactionEngine {
     if (!options?.isRemote) {
       try {
         await this.enqueueSyncMutation('transaction', trx.id, action, trx, trx.operationId);
-      } catch (e) {
-        console.warn('[PostProcess] Sync mutation enqueue failed', e);
+      } catch (sideEffectErr: any) {
+        console.warn('[PostProcess] Sync mutation enqueue failed', sideEffectErr);
+        try {
+          await db.pendingSideEffects.add({
+            id: 'pse_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+            sourceType: 'transaction',
+            sourceId: trx.id,
+            effectType: 'SYNC_ENQUEUE',
+            payload: { action, trx },
+            createdAt: new Date().toISOString(),
+            retries: 0,
+            lastError: sideEffectErr?.message,
+          });
+        } catch (dbErr) {
+          console.warn('[PostProcess] Failed to store pending side effect', dbErr);
+        }
       }
     }
   }
@@ -507,6 +539,10 @@ export class FinancialTransactionEngine {
     const existing = await db.transactions.get(id);
     if (!existing) throw new Error(`العملية رقم ${id} غير موجودة`);
 
+    if (options?.isRemote && !this.isInsideSyncApply()) {
+      throw new Error('isRemote ممنوع خارج محرك المزامنة (syncEngine)');
+    }
+
     if (!this.canEditTransaction(existing) && !options?.isRemote) {
       throw new Error('لا يمكن تعديل عملية مرحلة (POSTED) أو معكوسة (REVERSED)');
     }
@@ -603,6 +639,10 @@ export class FinancialTransactionEngine {
     const existing = await db.transactions.get(id);
     if (!existing) {
       return false;
+    }
+
+    if (options?.isRemote && !this.isInsideSyncApply()) {
+      throw new Error('isRemote ممنوع خارج محرك المزامنة (syncEngine)');
     }
 
     if (!this.canDeleteTransaction(existing) && !options?.isRemote) {

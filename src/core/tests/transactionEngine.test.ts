@@ -133,10 +133,32 @@ export async function runFinancialEngineTests(): Promise<EngineTestSuiteResult> 
       `رصيد = ${acc1AfterTrx3?.currentBalance}، إجمالي عليك = ${acc1AfterTrx3?.totalCredit}`
     );
 
+    // Test: Unauthorized isRemote throws error outside syncEngine
+    let unauthorizedCaught = false;
+    try {
+      await transactionEngine.updateTransaction(trx2.id, { amount: 8000 }, undefined, { isRemote: true });
+    } catch (err: any) {
+      if (err.message.includes('isRemote ممنوع خارج محرك المزامنة')) {
+        unauthorizedCaught = true;
+      }
+    }
+    addResult(
+      4.5,
+      'منع استخدام isRemote خارج محرك المزامنة',
+      unauthorizedCaught,
+      'رمي استثناء عند تمرير isRemote دون beginSyncApply',
+      unauthorizedCaught ? 'تم رمي الاستثناء بنجاح' : 'لم يتم رمي الاستثناء'
+    );
+
     // Test 5: Edit Transaction 2 (5,000 -> 8,000) -> Balance = 15,000
-    await transactionEngine.updateTransaction(trx2.id, {
-      amount: 8000,
-    }, undefined, { isRemote: true });
+    transactionEngine.beginSyncApply();
+    try {
+      await transactionEngine.updateTransaction(trx2.id, {
+        amount: 8000,
+      }, undefined, { isRemote: true });
+    } finally {
+      transactionEngine.endSyncApply();
+    }
     const acc1AfterEdit = await db.accounts.get(testAcc1Id);
     addResult(
       5,
@@ -147,7 +169,12 @@ export async function runFinancialEngineTests(): Promise<EngineTestSuiteResult> 
     );
 
     // Test 6: Delete Transaction
-    await transactionEngine.deleteTransaction(trx2.id, undefined, { isRemote: true });
+    transactionEngine.beginSyncApply();
+    try {
+      await transactionEngine.deleteTransaction(trx2.id, undefined, { isRemote: true });
+    } finally {
+      transactionEngine.endSyncApply();
+    }
     const acc1AfterDelete = await db.accounts.get(testAcc1Id);
     addResult(
       6,
@@ -158,9 +185,14 @@ export async function runFinancialEngineTests(): Promise<EngineTestSuiteResult> 
     );
 
     // Test 7: Move Transaction 1 (10,000) to Account 2 -> Recalculates both
-    await transactionEngine.updateTransaction(trx1.id, {
-      accountId: testAcc2Id,
-    }, undefined, { isRemote: true });
+    transactionEngine.beginSyncApply();
+    try {
+      await transactionEngine.updateTransaction(trx1.id, {
+        accountId: testAcc2Id,
+      }, undefined, { isRemote: true });
+    } finally {
+      transactionEngine.endSyncApply();
+    }
     const acc1AfterMove = await db.accounts.get(testAcc1Id);
     const acc2AfterMove = await db.accounts.get(testAcc2Id);
     addResult(
@@ -172,9 +204,14 @@ export async function runFinancialEngineTests(): Promise<EngineTestSuiteResult> 
     );
 
     // Test 8: Change Transaction 3 type from Credit to Debit
-    await transactionEngine.updateTransaction(trx3.id, {
-      type: 'debit',
-    }, undefined, { isRemote: true });
+    transactionEngine.beginSyncApply();
+    try {
+      await transactionEngine.updateTransaction(trx3.id, {
+        type: 'debit',
+      }, undefined, { isRemote: true });
+    } finally {
+      transactionEngine.endSyncApply();
+    }
     const acc1AfterTypeChange = await db.accounts.get(testAcc1Id);
     addResult(
       8,

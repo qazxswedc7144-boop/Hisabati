@@ -456,25 +456,30 @@ private async _performFullSyncInternal(): Promise<{
 
       // 3. Process Remote Tombstones (deletions from another device)
       if (remoteData?.tombstones && Array.isArray(remoteData.tombstones)) {
-        for (const remTomb of remoteData.tombstones) {
-          localTombstoneIds.add(remTomb.id);
-          if (!permanentTombstones.some((pt) => pt.id === remTomb.id)) {
-            permanentTombstones.push({ id: remTomb.id, entityType: remTomb.entityType, deletedAt: remTomb.deletedAt });
-          }
-          if (remTomb.entityType === 'transaction') {
-            const exists = await db.transactions.get(remTomb.id);
-            if (exists) {
-              await transactionEngine.deleteTransaction(remTomb.id, undefined, { isRemote: true });
-              pulledCount++;
+        transactionEngine.beginSyncApply();
+        try {
+          for (const remTomb of remoteData.tombstones) {
+            localTombstoneIds.add(remTomb.id);
+            if (!permanentTombstones.some((pt) => pt.id === remTomb.id)) {
+              permanentTombstones.push({ id: remTomb.id, entityType: remTomb.entityType, deletedAt: remTomb.deletedAt });
             }
-          } else if (remTomb.entityType === 'account') {
-            const exists = await db.accounts.get(remTomb.id);
-            if (exists) {
-              const { accountService } = await import('./account.service');
-              await accountService.deleteAccount(remTomb.id, true, false, { isRemote: true });
-              pulledCount++;
+            if (remTomb.entityType === 'transaction') {
+              const exists = await db.transactions.get(remTomb.id);
+              if (exists) {
+                await transactionEngine.deleteTransaction(remTomb.id, undefined, { isRemote: true });
+                pulledCount++;
+              }
+            } else if (remTomb.entityType === 'account') {
+              const exists = await db.accounts.get(remTomb.id);
+              if (exists) {
+                const { accountService } = await import('./account.service');
+                await accountService.deleteAccount(remTomb.id, true, false, { isRemote: true });
+                pulledCount++;
+              }
             }
           }
+        } finally {
+          transactionEngine.endSyncApply();
         }
       }
 
@@ -543,95 +548,105 @@ private async _performFullSyncInternal(): Promise<{
 
         // Merge Remote Accounts (skipping tombstoned accounts)
         const { accountService } = await import('./account.service');
-        for (const remAcc of remoteData.accounts) {
-          if (localTombstoneIds.has(remAcc.id)) {
-            continue; // Do not resurrect deleted account
-          }
+        accountService.beginSyncApply();
+        try {
+          for (const remAcc of remoteData.accounts) {
+            if (localTombstoneIds.has(remAcc.id)) {
+              continue; // Do not resurrect deleted account
+            }
 
-          const local = localAccMap.get(remAcc.id);
-          if (!local) {
-            await accountService.createAccount({
-              ...remAcc,
-              operationId: remAcc.id // Use entity ID as operationId for idempotency
-            }, { isRemote: true });
-            pulledCount++;
-          } else if (remAcc.updatedAt > local.updatedAt) {
-            await accountService.updateAccount(remAcc.id, remAcc, { isRemote: true });
-            pulledCount++;
-          }
-        }
-
-        // Merge Remote Transactions (skipping tombstoned transactions)
-        for (const remTrx of remoteData.transactions) {
-          if (localTombstoneIds.has(remTrx.id)) {
-            continue; // Do not resurrect deleted transaction (SYNC-09)
-          }
-
-          // Ensure amountMinor is canonical (SYNC-05)
-          if (!remTrx.currency || typeof remTrx.currency !== 'string') {
-             await this.logAudit('MALFORMED_DATA_REJECTED', `تم تجاهل عملية مالية قادمة من السحابة بسبب غياب العملة الصحيحة. ID: ${remTrx.id}`, false);
-             continue; // REJECT
-          }
-          if (remTrx.amountMinor === undefined && remTrx.amount !== undefined) {
-            remTrx.amountMinor = decimalToMinor(remTrx.amount, remTrx.currency);
-          }
-          if (remTrx.amountMinor === undefined || isNaN(remTrx.amountMinor)) {
-             await this.logAudit('MALFORMED_DATA_REJECTED', `تم تجاهل عملية مالية قادمة من السحابة بسبب قيمة amountMinor غير صالحة. ID: ${remTrx.id}`, false);
-             continue; // REJECT
-          }
-
-          const existingById = localTrxMap.get(remTrx.id);
-          const existingByOp = remTrx.operationId ? localOpIdMap.get(remTrx.operationId) : undefined;
-          const localMatch = existingById || existingByOp;
-
-          if (!localMatch) {
-            // Safe remote insertion through Financial Boundary
-            await transactionEngine.createTransaction({
-              ...remTrx,
-              operationId: remTrx.operationId || `remote_${remTrx.id}`
-            }, undefined, { isRemote: true });
-            pulledCount++;
-          } else {
-            // Critical Financial Conflict Evaluation (SYNC-06, SYNC-07)
-            const localAmount = Number(localMatch.amount);
-            const remoteAmount = Number(remTrx.amount);
-            const localMinor = Number(localMatch.amountMinor ?? localAmount);
-            const remoteMinor = Number(remTrx.amountMinor ?? remoteAmount);
-
-            const hasFinancialConflict =
-              localMinor !== remoteMinor ||
-              localAmount !== remoteAmount ||
-              localMatch.type !== remTrx.type ||
-              localMatch.accountId !== remTrx.accountId;
-
-            // [SYNC-06 FIX]: Be more aggressive in protecting local data from blind overwrites.
-            if (hasFinancialConflict) {
-              // Meaningful financial conflict detected: NEVER resolve by blind Last-Write-Wins!
-              // Preserve both versions cleanly
-              newlyDetectedConflicts.push({
-                id: 'cf_' + remTrx.id,
-                entityType: 'transaction',
-                entityId: remTrx.id,
-                localVersion: {
-                  title: `المعاملة محلياً (${localMatch.amount} ${localMatch.type === 'debit' ? 'لك' : 'عليك'})`,
-                  updatedAt: localMatch.updatedAt || '',
-                  data: localMatch,
-                },
-                remoteVersion: {
-                  title: `المعاملة في السحابة (${remTrx.amount} ${remTrx.type === 'debit' ? 'لك' : 'عليك'})`,
-                  updatedAt: remTrx.updatedAt || '',
-                  data: remTrx,
-                },
-                detectedAt: new Date().toISOString(),
-                resolved: false,
-              });
-              // We DO NOT update the local record here. Local "wins" in the DB for now until user resolves.
-            } else if (remTrx.updatedAt > (localMatch.updatedAt || '')) {
-              // Safe non-financial metadata update through Financial Boundary
-              await transactionEngine.updateTransaction(localMatch.id, remTrx, undefined, { isRemote: true });
+            const local = localAccMap.get(remAcc.id);
+            if (!local) {
+              await accountService.createAccount({
+                ...remAcc,
+                operationId: remAcc.id // Use entity ID as operationId for idempotency
+              }, { isRemote: true });
+              pulledCount++;
+            } else if (remAcc.updatedAt > local.updatedAt) {
+              await accountService.updateAccount(remAcc.id, remAcc, { isRemote: true });
               pulledCount++;
             }
           }
+        } finally {
+          accountService.endSyncApply();
+        }
+
+        // Merge Remote Transactions (skipping tombstoned transactions)
+        transactionEngine.beginSyncApply();
+        try {
+          for (const remTrx of remoteData.transactions) {
+            if (localTombstoneIds.has(remTrx.id)) {
+              continue; // Do not resurrect deleted transaction (SYNC-09)
+            }
+
+            // Ensure amountMinor is canonical (SYNC-05)
+            if (!remTrx.currency || typeof remTrx.currency !== 'string') {
+               await this.logAudit('MALFORMED_DATA_REJECTED', `تم تجاهل عملية مالية قادمة من السحابة بسبب غياب العملة الصحيحة. ID: ${remTrx.id}`, false);
+               continue; // REJECT
+            }
+            if (remTrx.amountMinor === undefined && remTrx.amount !== undefined) {
+              remTrx.amountMinor = decimalToMinor(remTrx.amount, remTrx.currency);
+            }
+            if (remTrx.amountMinor === undefined || isNaN(remTrx.amountMinor)) {
+               await this.logAudit('MALFORMED_DATA_REJECTED', `تم تجاهل عملية مالية قادمة من السحابة بسبب قيمة amountMinor غير صالحة. ID: ${remTrx.id}`, false);
+               continue; // REJECT
+            }
+
+            const existingById = localTrxMap.get(remTrx.id);
+            const existingByOp = remTrx.operationId ? localOpIdMap.get(remTrx.operationId) : undefined;
+            const localMatch = existingById || existingByOp;
+
+            if (!localMatch) {
+              // Safe remote insertion through Financial Boundary
+              await transactionEngine.createTransaction({
+                ...remTrx,
+                operationId: remTrx.operationId || `remote_${remTrx.id}`
+              }, undefined, { isRemote: true });
+              pulledCount++;
+            } else {
+              // Critical Financial Conflict Evaluation (SYNC-06, SYNC-07)
+              const localAmount = Number(localMatch.amount);
+              const remoteAmount = Number(remTrx.amount);
+              const localMinor = Number(localMatch.amountMinor ?? localAmount);
+              const remoteMinor = Number(remTrx.amountMinor ?? remoteAmount);
+
+              const hasFinancialConflict =
+                localMinor !== remoteMinor ||
+                localAmount !== remoteAmount ||
+                localMatch.type !== remTrx.type ||
+                localMatch.accountId !== remTrx.accountId;
+
+              // [SYNC-06 FIX]: Be more aggressive in protecting local data from blind overwrites.
+              if (hasFinancialConflict) {
+                // Meaningful financial conflict detected: NEVER resolve by blind Last-Write-Wins!
+                // Preserve both versions cleanly
+                newlyDetectedConflicts.push({
+                  id: 'cf_' + remTrx.id,
+                  entityType: 'transaction',
+                  entityId: remTrx.id,
+                  localVersion: {
+                    title: `المعاملة محلياً (${localMatch.amount} ${localMatch.type === 'debit' ? 'لك' : 'عليك'})`,
+                    updatedAt: localMatch.updatedAt || '',
+                    data: localMatch,
+                  },
+                  remoteVersion: {
+                    title: `المعاملة في السحابة (${remTrx.amount} ${remTrx.type === 'debit' ? 'لك' : 'عليك'})`,
+                    updatedAt: remTrx.updatedAt || '',
+                    data: remTrx,
+                  },
+                  detectedAt: new Date().toISOString(),
+                  resolved: false,
+                });
+                // We DO NOT update the local record here. Local "wins" in the DB for now until user resolves.
+              } else if (remTrx.updatedAt > (localMatch.updatedAt || '')) {
+                // Safe non-financial metadata update through Financial Boundary
+                await transactionEngine.updateTransaction(localMatch.id, remTrx, undefined, { isRemote: true });
+                pulledCount++;
+              }
+            }
+          }
+        } finally {
+          transactionEngine.endSyncApply();
         }
       }
 
@@ -983,10 +998,20 @@ private async _performFullSyncInternal(): Promise<{
     if (choice === 'remote' && conflict.remoteVersion?.data) {
       if (conflict.entityType === 'transaction') {
         // [SYNC-08 FIX]: Go through TransactionEngine to ensure audit, snapshot, and amountMinor validation
-        await transactionEngine.updateTransaction(conflict.entityId, conflict.remoteVersion.data, undefined, { isRemote: true });
+        transactionEngine.beginSyncApply();
+        try {
+          await transactionEngine.updateTransaction(conflict.entityId, conflict.remoteVersion.data, undefined, { isRemote: true });
+        } finally {
+          transactionEngine.endSyncApply();
+        }
       } else if (conflict.entityType === 'account') {
         const { accountService } = await import('./account.service');
-        await accountService.updateAccount(conflict.entityId, conflict.remoteVersion.data, { isRemote: true });
+        accountService.beginSyncApply();
+        try {
+          await accountService.updateAccount(conflict.entityId, conflict.remoteVersion.data, { isRemote: true });
+        } finally {
+          accountService.endSyncApply();
+        }
       }
     } else if (choice === 'local' && conflict.localVersion?.data) {
       // Local version retained. Enqueue UPDATE mutation so cloud state aligns on next sync

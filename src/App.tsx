@@ -13,6 +13,7 @@ import { auth } from '@/core/database/firebase';
 import { useSettingsStore, useRBACStore } from '@/shared/stores';
 import { AuditActor } from '@/shared/types';
 import { tenantService } from '@/core/services/TenantService';
+import { processPendingSideEffects } from '@/core/services/pendingSideEffects.worker';
 
 // Lazy loaded features
 const ReportsPage = lazy(() => import('@/features/reports/pages/ReportsPage').then(m => ({ default: m.ReportsPage })));
@@ -51,6 +52,11 @@ export default function App() {
         
         await initRBAC();
         await useSettingsStore.getState().loadSettings();
+
+        // 1. Process any pending side effects asynchronously
+        processPendingSideEffects().catch((err) => {
+          console.warn('[PendingSideEffects] Background worker failed:', err);
+        });
 
         // 2. Synchronize Firebase Auth with Store (Only if initialized)
         if (auth) {
