@@ -77,6 +77,11 @@ export function computeAccountMetricsFromTransactions(
   const activeCurrency = (currency as CurrencyCode) || 'YER';
 
   for (const trx of transactions) {
+    // Phase 2 Fix: Only POSTED transactions (and legacy without status) affect the balance.
+    // DRAFT and REVERSED are excluded from financial totals.
+    const status = trx.status || 'posted'; 
+    if (status !== 'posted') continue;
+
     let amountUnits: number;
 
     // 1. Primary Source: Existing valid amountMinor
@@ -147,6 +152,17 @@ export function computeStatementRunningBalances(
   const itemMap = new Map<string, { decimal: number; minor: number }>();
 
   for (const trx of chronological) {
+    // Phase 2 Fix: Only POSTED transactions affect the running balance.
+    const status = trx.status || 'posted';
+    if (status !== 'posted') {
+      // For non-posted items, the running balance remains what it was before this item
+      itemMap.set(trx.id, {
+        decimal: minorToDecimal(runningUnits, activeCurrency),
+        minor: runningUnits,
+      });
+      continue;
+    }
+
     let units: number;
 
     // 1. Primary Source: Existing valid amountMinor

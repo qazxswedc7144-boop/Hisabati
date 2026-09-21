@@ -83,8 +83,21 @@ export class FinancialTransactionEngine {
       updatedAt: now,
     };
 
-    await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, async (transaction) => {
+    await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, db.settings, async (transaction) => {
       await transaction.table('transactions').put(updatedTrx);
+      
+      // Phase 2 Fix: Atomic balance recalculation inside the same transaction
+      // We read settings from the same transaction to ensure consistency
+      const settingsTable = transaction.table('settings');
+      const currencyEntry = await settingsTable.get('currency');
+      const systemCurrency = currencyEntry?.value || 'YER';
+      
+      const activeCurrency = resolveRequiredCurrency({
+        transactionCurrency: updatedTrx.currency,
+        systemCurrency,
+      });
+      await this.recalculateAccountBalance(updatedTrx.accountId, activeCurrency, transaction);
+
       await financialAuditService.logFinancialEvent({
         eventType: 'TRANSACTION_POST',
         targetType: 'transaction',
@@ -180,7 +193,10 @@ export class FinancialTransactionEngine {
       // Atomic write transaction across all financial tables
       await db.transaction('rw', db.transactions, db.accounts, db.settings, db.financialAuditLogs, async (transaction) => {
         // Fetch FRESH settings inside the transaction to prevent race conditions
-        const freshSettingsInside = await settingsRepository.getSettings();
+        const settingsTable = transaction.table('settings');
+        const settingsEntries = await settingsTable.toArray();
+        const freshSettingsInside: any = { ...DEFAULT_SETTINGS };
+        for (const e of settingsEntries) freshSettingsInside[e.key] = e.value;
 
         // Check if explicit operationId exists in DB
         if (explicitOpId) {
@@ -389,7 +405,7 @@ export class FinancialTransactionEngine {
     const executionPromise = (async () => {
       const createdTransactions: Transaction[] = [];
 
-      await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, async (transaction) => {
+      await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, db.settings, async (transaction) => {
         // Check idempotency in DB
         const existing = await transaction.table('transactions').where('operationId').equals(operationId).first();
         if (existing) {
@@ -404,6 +420,7 @@ export class FinancialTransactionEngine {
 
         for (const leg of validatedLegs) {
           const id = 'trx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+          const trxStatus = dto.status || 'posted';
           const trx: Transaction = {
             id,
             accountId: leg.accountId,
@@ -415,14 +432,15 @@ export class FinancialTransactionEngine {
             note: leg.note || dto.note,
             receiptNumber: leg.receiptNumber || dto.receiptNumber,
             operationId,
-            status: 'posted',
-            postedAt: new Date().toISOString(),
-            postedBy: currentActor.id,
+            status: trxStatus,
+            postedAt: trxStatus === 'posted' ? new Date().toISOString() : undefined,
+            postedBy: trxStatus === 'posted' ? currentActor.id : undefined,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           };
 
           await transaction.table('transactions').add(trx);
+          // Recalculate balance inside the same transaction
           await this.recalculateAccountBalance(leg.accountId, currency, transaction);
 
           await financialAuditService.logFinancialEvent({
@@ -533,7 +551,7 @@ export class FinancialTransactionEngine {
     };
 
     await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, async (transaction) => {
-      await db.transactions.put(updatedTrx);
+      await transaction.table('transactions').put(updatedTrx);
       await this.recalculateAccountBalance(oldAccountId, activeCurrency, transaction);
       if (targetAccountId !== oldAccountId) {
         await this.recalculateAccountBalance(targetAccountId, activeCurrency, transaction);

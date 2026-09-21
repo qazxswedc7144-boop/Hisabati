@@ -87,6 +87,7 @@ export interface CreateDoubleEntryDTO {
   currency?: CurrencyCode;
   note?: string;
   receiptNumber?: string;
+  status?: TransactionStatus;
   entries: JournalEntryLeg[];
 }
 
