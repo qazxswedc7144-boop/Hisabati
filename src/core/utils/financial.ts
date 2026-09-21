@@ -72,6 +72,7 @@ export function computeAccountMetricsFromTransactions(
 ): CalculatedAccountMetrics {
   let debitUnits = 0;
   let creditUnits = 0;
+  let postedCount = 0;
   let lastDate: string | undefined = undefined;
 
   const activeCurrency = (currency as CurrencyCode) || 'YER';
@@ -82,6 +83,7 @@ export function computeAccountMetricsFromTransactions(
     const status = trx.status || 'posted'; 
     if (status !== 'posted') continue;
 
+    postedCount++;
     let amountUnits: number;
 
     // 1. Primary Source: Existing valid amountMinor
@@ -118,7 +120,7 @@ export function computeAccountMetricsFromTransactions(
     totalDebitMinor: debitUnits,
     totalCreditMinor: creditUnits,
     currentBalanceMinor: currentBalanceUnits,
-    transactionCount: transactions.length,
+    transactionCount: postedCount,
     lastTransactionDate: lastDate,
   };
 }

@@ -244,6 +244,10 @@ export class ReportService {
     const periodTransactions: Transaction[] = [];
 
     for (const trx of allTransactions) {
+      // Phase 2 Fix: Only POSTED transactions (and legacy) affect financial reports
+      const status = trx.status || 'posted';
+      if (status !== 'posted') continue;
+
       const trxAmountMinor = getTrxAmountMinor(trx);
 
       if (trx.date < dateRange.startDate) {
@@ -350,10 +354,13 @@ export class ReportService {
       endDate: options.endDate,
     });
 
-    const [accounts, periodTransactions] = await Promise.all([
+    const [accounts, allPeriodTransactions] = await Promise.all([
       accountRepository.getAll(true),
       transactionRepository.getByDateRange(dateRange.startDate, dateRange.endDate),
     ]);
+
+    // Phase 2 Fix: Filter for POSTED transactions only for financial summary
+    const periodTransactions = allPeriodTransactions.filter(trx => (trx.status || 'posted') === 'posted');
 
     const { decimals } = await resolveReportDecimals({ transactions: periodTransactions });
 
