@@ -80,8 +80,8 @@ export class FinancialHealthEngine {
       }
     }
 
-    let totalReceivablesMinor = 0;
-    let totalPayablesMinor = 0;
+    let totalReceivables = 0;
+    let totalPayables = 0;
     let debtorCount = 0;
     let creditorCount = 0;
     let balancedCount = 0;
@@ -98,32 +98,31 @@ export class FinancialHealthEngine {
 
     // 1. Use pre-calculated metrics from accounts, or derive them if using custom data
     for (const acc of accounts) {
-      let metrics: { currentBalanceMinor: number; totalDebitMinor: number; totalCreditMinor: number };
+      let currentBalance = 0;
+      let debitMinor = 0;
+      let creditMinor = 0;
 
       if (customTransactions) {
         // [BI-FIX]: Derive truth from provided transactions to satisfy "Transactions are the absolute Source of Truth"
         // This ensures tests with mock accounts pass even if they don't have pre-calculated balance fields.
         const accTxs = accountTransactionsMap.get(acc.id) || [];
         const calculated = computeAccountMetricsFromTransactions(accTxs);
-        metrics = {
-          currentBalanceMinor: calculated.currentBalanceMinor,
-          totalDebitMinor: calculated.totalDebitMinor,
-          totalCreditMinor: calculated.totalCreditMinor,
-        };
+        currentBalance = calculated.currentBalance;
+        debitMinor = calculated.totalDebitMinor;
+        creditMinor = calculated.totalCreditMinor;
       } else {
-        metrics = {
-          currentBalanceMinor: acc.currentBalanceMinor || 0,
-          totalDebitMinor: acc.totalDebitMinor || 0,
-          totalCreditMinor: acc.totalCreditMinor || 0,
-        };
+        currentBalance = acc.currentBalance || 0;
+        debitMinor = acc.totalDebitMinor || 0;
+        creditMinor = acc.totalCreditMinor || 0;
       }
 
-      const balanceMinor = metrics.currentBalanceMinor;
-      totalDebitsIssuedMinor += metrics.totalDebitMinor;
-      totalCreditsCollectedMinor += metrics.totalCreditMinor;
+      totalDebitsIssuedMinor += debitMinor;
+      totalCreditsCollectedMinor += creditMinor;
 
-      if (balanceMinor > 0) {
-        totalReceivablesMinor += balanceMinor;
+      const balanceMinor = toMinorUnits(currentBalance, activeCurrency);
+
+      if (currentBalance > 0) {
+        totalReceivables += currentBalance;
         debtorCount++;
         
         // Filter transactions for this account from our sampled list
@@ -135,25 +134,20 @@ export class FinancialHealthEngine {
           balanceMinor,
           transactions: accTxs,
         });
-      } else if (balanceMinor < 0) {
-        totalPayablesMinor += Math.abs(balanceMinor);
+      } else if (currentBalance < 0) {
+        totalPayables += Math.abs(currentBalance);
         creditorCount++;
       } else {
         balancedCount++;
       }
     }
 
-    // [FIX]: Determine consistent decimal scale for reporting totals
-    // If the currency has 0 decimals (like YER) but we have fractional legacy data, 
-    // we use 2 decimals to accurately represent the decimal fields.
-    const hasFractionsInSet = transactions.some(t => t.amount !== undefined && !Number.isInteger(t.amount));
-    const displayDecimals = Math.max(decimals, hasFractionsInSet ? 2 : 0);
+    const totalReceivablesMinor = toMinorUnits(totalReceivables, activeCurrency);
+    const totalPayablesMinor = toMinorUnits(totalPayables, activeCurrency);
 
     // Net Financial Position
+    const netPosition = totalReceivables - totalPayables;
     const netPositionMinor = totalReceivablesMinor - totalPayablesMinor;
-    const totalReceivables = fromMinorUnits(totalReceivablesMinor, displayDecimals);
-    const totalPayables = fromMinorUnits(totalPayablesMinor, displayDecimals);
-    const netPosition = fromMinorUnits(netPositionMinor, displayDecimals);
 
     // 3. Collection Rate
     let collectionRate = 100;

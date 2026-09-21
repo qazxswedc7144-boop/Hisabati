@@ -144,7 +144,7 @@ export class DualRepresentationTestSuite {
       const resolvedMinor = getAmountMinor(legacyTx, 'SAR');
       if (resolvedMinor !== 35075) throw new Error(`getAmountMinor لم يحسب القيمة بشكل صحيح: ${resolvedMinor}`);
 
-      const metrics = computeAccountMetricsFromTransactions([legacyTx]);
+      const metrics = computeAccountMetricsFromTransactions([legacyTx], 'SAR');
       if (metrics.currentBalance !== 350.75) throw new Error(`الرصيد المحسوب غير صحيح: ${metrics.currentBalance}`);
       if (metrics.currentBalanceMinor !== 35075) throw new Error(`الرصيد الأصغر غير صحيح: ${metrics.currentBalanceMinor}`);
     });

@@ -48,7 +48,7 @@ export const APPLICATION_NAV_ITEMS: NavItemConfig[] = [
   },
   {
     to: '/bi',
-    fallbackLabel: 'الصحة المالية (BI)',
+    fallbackLabel: 'الصحة المالية',
     icon: Activity,
   },
   {
@@ -60,12 +60,12 @@ export const APPLICATION_NAV_ITEMS: NavItemConfig[] = [
   },
   {
     to: '/ai',
-    fallbackLabel: 'المساعد الذكي (AI)',
+    fallbackLabel: 'المساعد الذكي',
     icon: Sparkles,
   },
   {
     to: '/team',
-    fallbackLabel: 'الفريق والتدقيق (RBAC)',
+    fallbackLabel: 'الفريق والصلاحيات',
     icon: ShieldCheck,
   },
   {

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowUpRight,
@@ -32,8 +32,17 @@ export const DashboardPage: React.FC = () => {
 
   const accounts = useAccountStore((state) => state.accounts);
   const recentTransactions = useTransactionStore((state) => state.recentTransactions);
-  const summary = useTransactionStore((state) => state.summary);
   const currency = useSettingsStore((state) => state.settings.currency);
+
+  const summary = useMemo(() => {
+    let totalFor = 0, totalAgainst = 0;
+    for (const acc of accounts) {
+      if (acc.archived === 1 || (acc as any).deletedAt) continue;
+      const b = acc.currentBalance ?? 0;
+      if (b > 0) totalFor += b; else if (b < 0) totalAgainst += b;
+    }
+    return { totalFor, totalAgainst, netBalance: totalFor + totalAgainst };
+  }, [accounts]);
   const openQuickAdd = useUIStore((state) => state.openQuickAddTransaction);
   const openAddAccount = useUIStore((state) => state.openAddAccount);
   const openScannerModal = useOCRStore((state) => state.openScannerModal);
@@ -95,7 +104,7 @@ export const DashboardPage: React.FC = () => {
           id="stat-owed-to-me"
           title={t('dashboard.owedToMe')}
           subtitle={t('dashboard.owedToMeSubtitle')}
-          amount={summary.totalDebit}
+          amount={summary.totalFor}
           currencyCode={currency}
           variant="emerald"
           icon={ArrowUpRight}
@@ -107,7 +116,7 @@ export const DashboardPage: React.FC = () => {
           id="stat-owed-by-me"
           title={t('dashboard.owedByMe')}
           subtitle={t('dashboard.owedByMeSubtitle')}
-          amount={summary.totalCredit}
+          amount={Math.abs(summary.totalAgainst)}
           currencyCode={currency}
           variant="rose"
           icon={ArrowDownLeft}
