@@ -40,6 +40,11 @@ export const TeamAccessSection: React.FC = () => {
   };
 
   const handleSwitchActor = (member: TeamMember) => {
+    // ✅ حماية: DEV فقط
+    const isDevMode = import.meta.env?.DEV === true;
+    if (!isDevMode) {
+      throw new Error('تبديل المستخدم النشط متاح في وضع التطوير فقط');
+    }
     const newActor: AuditActor = {
       id: member.userId,
       name: member.name,
@@ -119,56 +124,58 @@ export const TeamAccessSection: React.FC = () => {
       </div>
 
       {/* Team Members List (Quick Switch for Demo/Testing) */}
-      <div className="space-y-3 pt-2">
-        <div className="flex items-center justify-between px-1">
-          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">أعضاء الفريق (تبديل سريع للمعاينة)</h4>
-          {isLoading && <div className="w-3 h-3 rounded-full border-2 border-teal-500 border-t-transparent animate-spin" />}
-        </div>
-        <div className="space-y-2">
-          {members.map((member) => {
-            const isActive = member.userId === currentActor.id;
-            return (
-              <div 
-                key={member.id}
-                className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${
-                  isActive 
-                    ? 'bg-white dark:bg-slate-900 border-teal-500 dark:border-teal-600 shadow-md ring-1 ring-teal-500/10' 
-                    : 'bg-slate-50/50 dark:bg-slate-800/30 border-slate-200 dark:border-slate-800'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                    isActive ? 'bg-teal-100 dark:bg-teal-900/40 text-teal-600' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
-                  }`}>
-                    <UserCircle className="w-5 h-5" />
+      {import.meta.env?.DEV === true && (
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center justify-between px-1">
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">أعضاء الفريق (تبديل سريع للمعاينة)</h4>
+            {isLoading && <div className="w-3 h-3 rounded-full border-2 border-teal-500 border-t-transparent animate-spin" />}
+          </div>
+          <div className="space-y-2">
+            {members.map((member) => {
+              const isActive = member.userId === currentActor.id;
+              return (
+                <div 
+                  key={member.id}
+                  className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${
+                    isActive 
+                      ? 'bg-white dark:bg-slate-900 border-teal-500 dark:border-teal-600 shadow-md ring-1 ring-teal-500/10' 
+                      : 'bg-slate-50/50 dark:bg-slate-800/30 border-slate-200 dark:border-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                      isActive ? 'bg-teal-100 dark:bg-teal-900/40 text-teal-600' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
+                    }`}>
+                      <UserCircle className="w-5 h-5" />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[12px] font-bold text-slate-900 dark:text-slate-100">{member.name}</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400">{rbacGuard.getRoleLabel(member.role)}</span>
+                    </div>
                   </div>
-                  <div className="flex flex-col">
-                    <span className="text-[12px] font-bold text-slate-900 dark:text-slate-100">{member.name}</span>
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400">{rbacGuard.getRoleLabel(member.role)}</span>
-                  </div>
+                  
+                  {!isActive && (
+                    <button
+                      onClick={() => handleSwitchActor(member)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+                    >
+                      <ArrowLeftRight className="w-3 h-3" />
+                      <span>تبديل</span>
+                    </button>
+                  )}
+                  
+                  {isActive && (
+                    <div className="flex items-center gap-1 text-[10px] font-bold text-teal-600 dark:text-teal-400">
+                      <ShieldCheck className="w-3 h-3" />
+                      <span>نشط حالياً</span>
+                    </div>
+                  )}
                 </div>
-                
-                {!isActive && (
-                  <button
-                    onClick={() => handleSwitchActor(member)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
-                  >
-                    <ArrowLeftRight className="w-3 h-3" />
-                    <span>تبديل</span>
-                  </button>
-                )}
-                
-                {isActive && (
-                  <div className="flex items-center gap-1 text-[10px] font-bold text-teal-600 dark:text-teal-400">
-                    <ShieldCheck className="w-3 h-3" />
-                    <span>نشط حالياً</span>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Security Warning */}
       <div className="p-4 rounded-2xl bg-slate-900 dark:bg-slate-800 text-white space-y-2">
