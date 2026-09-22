@@ -537,7 +537,8 @@ export class SettingsTestSuite {
             throw new Error(`لم يتم زيادة الرقم التالي للفاتورة. القيمة الحالية: ${updatedSettings.nextInvoiceNumber}`);
           }
         } finally {
-          await accountRepository.delete(acc.id);
+          await db.transactions.where('accountId').equals(acc.id).delete();
+          await db.accounts.delete(acc.id);
         }
       },
       results
@@ -603,7 +604,8 @@ export class SettingsTestSuite {
             throw new Error('لا يزال هناك تعارض في البيانات بعد عملية الإصلاح');
           }
         } finally {
-          await accountRepository.delete(acc.id);
+          await db.transactions.where('accountId').equals(acc.id).delete();
+          await db.accounts.delete(acc.id);
         }
       },
       results
@@ -643,7 +645,8 @@ export class SettingsTestSuite {
             throw new Error(`الأرقام المولدة غير متسلسلة بشكل صحيح: ${numbers.join(', ')}`);
           }
         } finally {
-          await accountRepository.delete(acc.id);
+          await db.transactions.where('accountId').equals(acc.id).delete();
+          await db.accounts.delete(acc.id);
         }
       },
       results
