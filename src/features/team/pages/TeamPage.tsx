@@ -54,7 +54,7 @@ export const TeamPage: React.FC = () => {
 
         {/* Action Controls & Active Actor Switcher */}
         <div className="flex flex-wrap items-center gap-2.5">
-          <ActiveActorSwitcher />
+          {import.meta.env?.DEV === true && <ActiveActorSwitcher />}
 
           {canAddMembers && (
             <button

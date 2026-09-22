@@ -25,6 +25,11 @@ export const ActiveActorSwitcher: React.FC = () => {
     }
   };
 
+  const isDevMode = import.meta.env?.DEV === true;
+  if (!isDevMode) {
+    return null;  // ✅ لا يُعرض في الإنتاج
+  }
+
   return (
     <div className="relative inline-block text-start">
       <button

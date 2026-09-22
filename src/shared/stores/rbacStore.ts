@@ -103,6 +103,12 @@ export const useRBACStore = create<RBACState>((set, get) => ({
   },
 
   switchActor: (member: TeamMember) => {
+    // ✅ حماية: مسموح فقط في وضع التطوير أو للمالك الحقيقي
+    const isDevMode = import.meta.env?.DEV === true;
+    if (!isDevMode) {
+      throw new Error('تبديل المستخدم النشط متاح في وضع التطوير فقط');
+    }
+
     const newActor: AuditActor = {
       id: member.userId,
       name: member.name,
