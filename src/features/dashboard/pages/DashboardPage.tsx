@@ -74,12 +74,12 @@ export const DashboardPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Quick Actions (Secondary: مسح, Tertiary: حساب جديد) */}
+        {/* Quick Actions (Secondary: مسح, Tertiary: إضافة حساب) */}
         <div className="flex flex-row items-center gap-2 flex-nowrap shrink-0">
           <button
             id="btn-dash-scan-ocr"
             onClick={() => openScannerModal()}
-            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-sky-200 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-xs sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[44px] whitespace-nowrap"
+            className="w-fit inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-sky-200 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-xs sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[44px] whitespace-nowrap shrink-0"
           >
             <ScanLine className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
             <span>مسح فاتورة</span>
@@ -88,11 +88,11 @@ export const DashboardPage: React.FC = () => {
           <button
             id="btn-dash-add-acc"
             onClick={() => openAddAccount()}
-            title="حساب جديد"
-            className="inline-flex items-center justify-center p-2.5 sm:px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-xs active:scale-[0.98] transition min-h-[44px] min-w-[44px] shrink-0"
+            title="إضافة حساب"
+            className="w-fit inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[44px] whitespace-nowrap shrink-0"
           >
             <UserPlus className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
-            <span className="hidden sm:inline ms-2">حساب جديد</span>
+            <span>إضافة حساب</span>
           </button>
         </div>
       </div>
