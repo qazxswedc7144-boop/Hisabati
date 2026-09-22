@@ -984,6 +984,20 @@ private async _performFullSyncInternal(): Promise<{
       SyncContextRegistry.beginSyncApply();
       try {
         if (conflict.entityType === 'transaction') {
+          const { db } = await import('../database/db');
+          const existingTrx = await db.transactions.get(conflict.entityId);
+
+          if (existingTrx) {
+            const currentStatus = existingTrx.status || 'posted';
+
+            if (currentStatus === 'posted' || currentStatus === 'reversed') {
+              throw new Error(
+                `لا يمكن حل التعارض المالي على قيد بحالة ${currentStatus.toUpperCase()} تلقائيًا. ` +
+                `يتطلب مراجعة يدوية وإنشاء قيد عكسي.`
+              );
+            }
+          }
+
           // [SYNC-08 FIX]: Go through TransactionEngine to ensure audit, snapshot, and amountMinor validation
           await transactionEngine.updateTransaction(conflict.entityId, conflict.remoteVersion.data, undefined, { isRemote: true });
         } else if (conflict.entityType === 'account') {

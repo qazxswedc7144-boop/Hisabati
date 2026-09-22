@@ -2,6 +2,7 @@ import { syncEngine } from '../services/syncEngine.service';
 import { googleDriveService } from '../services/googleDrive.service';
 import { transactionEngine } from '../services/transactionEngine.service';
 import { accountRepository } from '../repositories/account.repository';
+import { transactionRepository } from '../repositories/transaction.repository';
 import { integrityService } from '../services/integrity.service';
 import { db } from '../database/db';
 import { decimalToMinor } from '../money/converter';
@@ -760,88 +761,81 @@ export class CloudSyncTestSuite {
       await this.runTest(
         results,
         'SYNC-15',
-        'حل التعارض المالي التفاعلي وإعادة احتساب الأرصدة (Interactive Conflict Resolution)',
+        'رفض الحل التلقائي للتعارض المالي على قيد POSTED (يحتاج مراجعة يدوية)',
         async () => {
-          setupMocks();
-          await db.syncQueue.clear();
-
-          const acc = await accountRepository.create({
-            name: `حساب حل التعارض ${Date.now()}`,
+          const account = await accountRepository.create({
+            name: 'حساب تعارض POSTED',
+            category: 'customer',
           });
 
+          // إنشاء قيد POSTED
           const trx = await transactionEngine.createTransaction({
-            accountId: acc.id,
+            accountId: account.id,
             type: 'debit',
             amount: 1000,
-            date: '2026-09-08',
+            date: '2026-03-01',
             status: 'posted',
           });
 
-          // Construct conflict item
+          // الرصيد = 1000
+          let currentAcc = await accountRepository.getById(account.id);
+          if (currentAcc?.currentBalance !== 1000) {
+            throw new Error(`الرصيد الأولي غير مطابق: ${currentAcc?.currentBalance}`);
+          }
+
+          // محاكاة تعارض حيث النسخة البعيدة بمبلغ 1500
           const conflictItem: any = {
-            id: 'cf_test_resolve_' + trx.id,
+            id: `conflict_${Date.now()}`,
             entityType: 'transaction',
             entityId: trx.id,
             localVersion: {
               title: 'المعاملة محلياً',
-              updatedAt: '2026-09-08T12:00:00.000Z',
-              data: { ...trx, amount: 1000, amountMinor: decimalToMinor(1000, 'YER') },
+              updatedAt: new Date().toISOString(),
+              data: trx,
             },
             remoteVersion: {
               title: 'المعاملة في السحابة',
-              updatedAt: '2026-09-08T13:00:00.000Z',
-              data: { ...trx, amount: 1500, amountMinor: decimalToMinor(1500, 'YER') },
+              updatedAt: new Date().toISOString(),
+              data: {
+                ...trx,
+                amount: 1500,
+                amountMinor: 150000,
+                updatedAt: new Date().toISOString(),
+              },
             },
             detectedAt: new Date().toISOString(),
-            resolved: false,
+            status: 'pending',
           };
 
-          // Resolve choosing 'remote'
-          await syncEngine.resolveConflict(conflictItem, 'remote');
-
-          // Verify local transaction was updated to 1500
-          const updatedTrx = await db.transactions.get(trx.id);
-          if (!updatedTrx || updatedTrx.amount !== 1500) {
-            throw new Error(`لم يتم تطبيق النسخة السحابية المختارة: ${updatedTrx?.amount}`);
+          // محاولة الحل — يجب أن تُرفض
+          let rejectionCaught = false;
+          try {
+            await syncEngine.resolveConflict(conflictItem, 'remote');
+          } catch (e: any) {
+            rejectionCaught = e.message.includes('لا يمكن حل التعارض') ||
+                              e.message.includes('مراجعة يدوية');
           }
 
-          // Verify account balance was accurately recalculated to 1500
-          const updatedAcc = await db.accounts.get(acc.id);
-          if (!updatedAcc || updatedAcc.currentBalance !== 1500) {
-            throw new Error(`لم تتم إعادة احتساب رصيد الحساب بشكل سليم: ${updatedAcc?.currentBalance}`);
+          if (!rejectionCaught) {
+            throw new Error('لم يتم رفض حل التعارض على قيد POSTED');
           }
 
-          // Test resolving choosing 'local'
-          const localConflict: any = {
-            id: 'cf_test_local_' + trx.id,
-            entityType: 'transaction',
-            entityId: trx.id,
-            localVersion: {
-              title: 'المعاملة محلياً',
-              updatedAt: '2026-09-08T14:00:00.000Z',
-              data: { ...trx, amount: 1200, amountMinor: decimalToMinor(1200, 'YER') },
-            },
-            remoteVersion: {
-              title: 'المعاملة في السحابة',
-              updatedAt: '2026-09-08T15:00:00.000Z',
-              data: { ...trx, amount: 900, amountMinor: decimalToMinor(900, 'YER') },
-            },
-            detectedAt: new Date().toISOString(),
-            resolved: false,
-          };
-
-          await syncEngine.resolveConflict(localConflict, 'local');
-
-          // Verify UPDATE mutation was enqueued
-          const enqueued = await db.syncQueue
-            .where('entityId')
-            .equals(trx.id)
-            .filter((item) => item.operation === 'UPDATE')
-            .first();
-
-          if (!enqueued) {
-            throw new Error('لم يتم جدولة عملية UPDATE لمزامنة الاختيار المحلي مع السحابة');
+          // التحقق: القيد لم يتغير
+          const unchangedTrx = await transactionRepository.getById(trx.id);
+          if (unchangedTrx?.amount !== 1000 || (unchangedTrx?.amountMinor !== 100000 && unchangedTrx?.amountMinor !== trx.amountMinor)) {
+            throw new Error(`تغيّر القيد رغم رفض الحل: ${unchangedTrx?.amount}`);
           }
+
+          // التحقق: الرصيد لم يتغير
+          currentAcc = await accountRepository.getById(account.id);
+          if (currentAcc?.currentBalance !== 1000) {
+            throw new Error(`تغيّر الرصيد رغم رفض الحل: ${currentAcc?.currentBalance}`);
+          }
+
+          // Cleanup (حذف مباشر من DB لأن الحساب له حركات)
+          const { db } = await import('../database/db');
+          await db.transactions.where('accountId').equals(account.id).delete();
+          await db.accounts.delete(account.id);
         }
       );
 
