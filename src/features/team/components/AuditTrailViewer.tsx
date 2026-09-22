@@ -29,6 +29,8 @@ export const AuditTrailViewer: React.FC = () => {
   const [filterAction, setFilterAction] = useState<string>('all');
   const [filterRisk, setFilterRisk] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
 
   const filteredEntries = auditEntries.filter((entry) => {
@@ -40,6 +42,13 @@ export const AuditTrailViewer: React.FC = () => {
 
     // Risk filter
     if (filterRisk !== 'all' && entry.riskLevel !== filterRisk) return false;
+
+    // Date filters
+    if (dateFrom && entry.timestamp < dateFrom) return false;
+    if (dateTo) {
+      const dateToEnd = dateTo + 'T23:59:59.999Z';
+      if (entry.timestamp > dateToEnd) return false;
+    }
 
     // Search query
     if (searchQuery.trim()) {
@@ -184,6 +193,37 @@ export const AuditTrailViewer: React.FC = () => {
             <option value="MEDIUM">متوسط (MEDIUM)</option>
             <option value="LOW">منخفض (LOW)</option>
           </select>
+
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            placeholder="من تاريخ"
+            className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs min-h-[40px] bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300"
+          />
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            placeholder="إلى تاريخ"
+            className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs min-h-[40px] bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300"
+          />
+
+          {(filterAction !== 'all' || filterRisk !== 'all' || searchQuery || dateFrom || dateTo) && (
+            <button
+              onClick={() => {
+                setFilterAction('all');
+                setFilterRisk('all');
+                setSearchQuery('');
+                setDateFrom('');
+                setDateTo('');
+              }}
+              className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition min-h-[40px]"
+              title="مسح الفلاتر"
+            >
+              مسح الفلاتر
+            </button>
+          )}
 
           <button
             onClick={() => fetchAuditTrail()}
