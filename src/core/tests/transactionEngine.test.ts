@@ -151,75 +151,84 @@ export async function runFinancialEngineTests(): Promise<EngineTestSuiteResult> 
       unauthorizedCaught ? 'تم رمي الاستثناء بنجاح' : 'لم يتم رمي الاستثناء'
     );
 
-    // Test 5: Edit Transaction 2 (5,000 -> 8,000) -> Balance = 15,000
+    // Test 5: رفض تعديل قيد POSTED عبر isRemote
+    let rejectionCaught = false;
     transactionEngine.beginSyncApply();
     try {
       await transactionEngine.updateTransaction(trx2.id, {
         amount: 8000,
       }, undefined, { isRemote: true });
+    } catch (e: any) {
+      rejectionCaught = e.message.includes('لا يمكن تعديل الحقول المالية') ||
+                        e.message.includes('POSTED');
     } finally {
       transactionEngine.endSyncApply();
     }
-    const acc1AfterEdit = await db.accounts.get(testAcc1Id);
     addResult(
       5,
-      'تعديل قيمة العملية 2 من 5,000 إلى 8,000 وتحديث الرصيد',
-      acc1AfterEdit?.currentBalance === 15000,
-      'رصيد = 15000',
-      `رصيد = ${acc1AfterEdit?.currentBalance}`
+      'رفض تعديل مبلغ قيد POSTED عبر المزامنة (Immutable Ledger)',
+      rejectionCaught,
+      'استثناء برفض التعديل',
+      rejectionCaught ? 'تم الرفض' : 'تم السماح (خطأ)'
     );
 
-    // Test 6: Delete Transaction
-    transactionEngine.beginSyncApply();
-    try {
-      await transactionEngine.deleteTransaction(trx2.id, undefined, { isRemote: true });
-    } finally {
-      transactionEngine.endSyncApply();
-    }
-    const acc1AfterDelete = await db.accounts.get(testAcc1Id);
+    // Test 5b: التحقق من ثبات الرصيد
+    const accStateAfterEdit = await db.accounts.get(testAcc1Id);
+    addResult(
+      5.5,
+      'التحقق من ثبات الرصيد بعد رفض التعديل',
+      accStateAfterEdit?.currentBalance === 12000,
+      'رصيد = 12000',
+      `رصيد = ${accStateAfterEdit?.currentBalance}`
+    );
+
+    // Test 6: التحقق من ثبات بيانات الحركة بعد الرفض
+    const freshTrx2 = await db.transactions.get(trx2.id);
     addResult(
       6,
-      'حذف عملية وتحديث الرصيد بدقة',
-      acc1AfterDelete?.currentBalance === 7000,
-      'رصيد = 7000',
-      `رصيد = ${acc1AfterDelete?.currentBalance}`
+      'التحقق من ثبات بيانات الحركة بعد الرفض',
+      freshTrx2?.amount === 5000,
+      'المبلغ = 5000',
+      `المبلغ = ${freshTrx2?.amount}`
     );
 
-    // Test 7: Move Transaction 1 (10,000) to Account 2 -> Recalculates both
+    // Test 7: رفض حذف قيد POSTED عبر isRemote
+    let deleteRejectionCaught = false;
     transactionEngine.beginSyncApply();
     try {
-      await transactionEngine.updateTransaction(trx1.id, {
-        accountId: testAcc2Id,
-      }, undefined, { isRemote: true });
+      await transactionEngine.deleteTransaction(trx1.id, undefined, { isRemote: true });
+    } catch (e: any) {
+      deleteRejectionCaught = e.message.includes('لا يمكن حذف قيد مرحّل') ||
+                              e.message.includes('POSTED');
     } finally {
       transactionEngine.endSyncApply();
     }
-    const acc1AfterMove = await db.accounts.get(testAcc1Id);
-    const acc2AfterMove = await db.accounts.get(testAcc2Id);
     addResult(
       7,
-      'نقل عملية إلى حساب آخر وتحديث رصيد الحسابين بدقة',
-      acc1AfterMove?.currentBalance === -3000 && acc2AfterMove?.currentBalance === 10000,
-      'رصيد الحساب الأول = -3000، رصيد الحساب الثاني = 10000',
-      `رصيد الأول = ${acc1AfterMove?.currentBalance}، رصيد الثاني = ${acc2AfterMove?.currentBalance}`
+      'رفض حذف قيد POSTED عبر المزامنة (Immutable Ledger)',
+      deleteRejectionCaught,
+      'استثناء برفض الحذف',
+      deleteRejectionCaught ? 'تم الرفض' : 'تم السماح (خطأ)'
     );
 
-    // Test 8: Change Transaction 3 type from Credit to Debit
-    transactionEngine.beginSyncApply();
-    try {
-      await transactionEngine.updateTransaction(trx3.id, {
-        type: 'debit',
-      }, undefined, { isRemote: true });
-    } finally {
-      transactionEngine.endSyncApply();
-    }
-    const acc1AfterTypeChange = await db.accounts.get(testAcc1Id);
+    // Test 7b: التحقق من ثبات الرصيد بعد رفض الحذف
+    const accStateAfterDeleteAttempt = await db.accounts.get(testAcc1Id);
+    addResult(
+      7.5,
+      'التحقق من ثبات الرصيد بعد رفض الحذف',
+      accStateAfterDeleteAttempt?.currentBalance === 12000,
+      'رصيد = 12000',
+      `رصيد = ${accStateAfterDeleteAttempt?.currentBalance}`
+    );
+
+    // Test 8: التحقق من بقاء الحركة في قاعدة البيانات بعد رفض الحذف
+    const stillExistsTrx1 = await db.transactions.get(trx1.id);
     addResult(
       8,
-      'تغيير نوع العملية من دائن إلى مدين وتحديث الرصيد',
-      acc1AfterTypeChange?.currentBalance === 3000 && acc1AfterTypeChange?.totalCredit === 0,
-      'رصيد = 3000، إجمالي عليك = 0',
-      `رصيد = ${acc1AfterTypeChange?.currentBalance}، إجمالي عليك = ${acc1AfterTypeChange?.totalCredit}`
+      'التحقق من بقاء الحركة في قاعدة البيانات بعد رفض الحذف',
+      stillExistsTrx1 !== undefined && stillExistsTrx1?.amount === 10000,
+      'trx1 موجود بمبلغ 10000',
+      stillExistsTrx1 ? `موجود بمبلغ ${stillExistsTrx1.amount}` : 'محذوف (خطأ)'
     );
 
     // Test 9: Idempotency Key - duplicate operationId returns existing record
@@ -237,6 +246,14 @@ export async function runFinancialEngineTests(): Promise<EngineTestSuiteResult> 
       amount: 450,
       date: '2026-09-04',
       operationId: uniqueOpId,
+    });
+    // إضافة حركة ثانية للحساب 2 لضمان اختبار الرصيد التراكمي
+    await transactionEngine.createTransaction({
+      accountId: testAcc2Id,
+      type: 'credit',
+      amount: 150,
+      date: '2026-09-05',
+      operationId: `op_second_${Date.now()}`,
     });
     addResult(
       9,

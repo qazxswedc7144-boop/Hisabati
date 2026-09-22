@@ -60,6 +60,20 @@ export class FinancialTransactionEngine {
     return status === 'draft';
   }
 
+  private isOnlyMetadataChange(existing: Transaction, dto: UpdateTransactionDTO): boolean {
+    const changedFields: string[] = [];
+    const financialFields = ['amount', 'amountMinor', 'type', 'accountId', 'currency', 'date', 'status'];
+
+    for (const key of financialFields) {
+      const newVal = (dto as any)[key];
+      const oldVal = (existing as any)[key];
+      if (newVal !== undefined && newVal !== oldVal) {
+        changedFields.push(key);
+      }
+    }
+    return changedFields.length === 0;
+  }
+
   public validateStatusTransition(from: TransactionStatus | undefined, to: TransactionStatus): void {
     const current = from || 'posted';
     
@@ -94,11 +108,25 @@ export class FinancialTransactionEngine {
       updatedAt: now,
     };
 
+    let actualResult: Transaction = existing;  // ← القيمة النهائية الفعلية
+
     await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, db.settings, async (transaction) => {
+      // إعادة فحص الحالة داخل transaction
+      const freshTrx = await transaction.table('transactions').get(id);
+      if (!freshTrx) throw new Error('العملية اختفت أثناء الترحيل');
+      
+      const freshStatus = freshTrx.status || 'draft';
+      if (freshStatus === 'posted') {
+        // ترحيل مزدوج — أعِد النسخة الحديثة دون تعديل
+        actualResult = freshTrx;
+        return; // ينهي transaction بنجاح
+      }
+      if (freshStatus === 'reversed') {
+        throw new Error('لا يمكن ترحيل قيد معكوس');
+      }
+
       await transaction.table('transactions').put(updatedTrx);
       
-      // Phase 2 Fix: Atomic balance recalculation inside the same transaction
-      // We read settings from the same transaction to ensure consistency
       const settingsTable = transaction.table('settings');
       const currencyEntry = await settingsTable.get('currency');
       const systemCurrency = currencyEntry?.value || 'YER';
@@ -130,15 +158,21 @@ export class FinancialTransactionEngine {
         },
         tx: transaction
       });
+
+      actualResult = updatedTrx;
     });
 
-    try {
-      const account = await db.accounts.get(updatedTrx.accountId);
-      await this.postProcessTransaction(updatedTrx, 'UPDATE', currentActor, account);
-    } catch (e) {
-      console.warn('[postTransaction] Post-process side effects failed safely:', e);
+    // إن كان الترحيل قد حدث فعلًا، نفّذ post-process
+    if (actualResult.status === 'posted' && actualResult.postedAt === now) {
+      try {
+        const account = await db.accounts.get(actualResult.accountId);
+        await this.postProcessTransaction(actualResult, 'UPDATE', currentActor, account);
+      } catch (e) {
+        console.warn('[postTransaction] Post-process side effects failed safely:', e);
+      }
     }
-    return updatedTrx;
+    
+    return actualResult;
   }
 
   /**
@@ -544,6 +578,22 @@ export class FinancialTransactionEngine {
       throw new Error('لا يمكن تعديل عملية مرحلة (POSTED) أو معكوسة (REVERSED)');
     }
 
+    if (options?.isRemote) {
+      const currentStatus = existing.status || 'posted';
+      
+      // رفض مطلق لتعديل REVERSED
+      if (currentStatus === 'reversed') {
+        throw new Error('لا يمكن تعديل قيد معكوس (REVERSED) حتى من المزامنة');
+      }
+      
+      // POSTED: يُسمح فقط بتعديل الحقول الوصفية
+      if (currentStatus === 'posted') {
+        if (!this.isOnlyMetadataChange(existing, dto)) {
+          throw new Error('لا يمكن تعديل الحقول المالية لقيد مرحّل (POSTED) عبر المزامنة. الحقول المسموحة: الملاحظة، رقم الفاتورة، المستند');
+        }
+      }
+    }
+
     const oldAccountId = existing.accountId;
     const targetAccountId = dto.accountId || oldAccountId;
 
@@ -644,6 +694,18 @@ export class FinancialTransactionEngine {
 
     if (!this.canDeleteTransaction(existing) && !options?.isRemote) {
       throw new Error('لا يمكن حذف عملية مرحلة (POSTED) أو معكوسة (REVERSED)');
+    }
+
+    if (options?.isRemote) {
+      const currentStatus = existing.status || 'posted';
+      
+      if (currentStatus === 'posted') {
+        throw new Error('لا يمكن حذف قيد مرحّل (POSTED) عبر المزامنة. يجب إنشاء قيد عكسي بدلاً من ذلك');
+      }
+      if (currentStatus === 'reversed') {
+        throw new Error('لا يمكن حذف قيد معكوس (REVERSED)');
+      }
+      // DRAFT فقط يُسمح بحذفه من Sync
     }
 
     const accountId = existing.accountId;
