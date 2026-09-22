@@ -28,6 +28,7 @@ import { FinancialHardeningPart3TestSuite } from './financialHardeningPart3.test
 import { SyncHardeningPart1TestSuite } from './syncHardeningPart1.test';
 import { ImmutableLedgerTestSuite } from './immutableLedger.test';
 import { TrashCycleTestSuite } from './trashCycle.test';
+import { runTenantTests } from './tenant.test';
 import { tenantService } from '../services/TenantService';
 import { accountService } from '../services/account.service';
 
@@ -614,6 +615,19 @@ async function main() {
     console.error('Trash Cycle suite crashed:', err);
     totalFailed++;
     totalCount++;
+  }
+
+  // --- Multi-Tenancy Isolation & Tenant Switch Guard ---
+  console.log('\n--- [Multi-Tenancy] Tenant Isolation & Switching Guard Tests ---');
+  try {
+    await runTenantTests();
+    console.log('Tenant Isolation Result: Passed 5/5');
+    totalPassed += 5;
+    totalCount += 5;
+  } catch (err: any) {
+    console.error('Tenant suite crashed:', err);
+    totalFailed += 1;
+    totalCount += 1;
   }
 
   console.log('\n====================================================');

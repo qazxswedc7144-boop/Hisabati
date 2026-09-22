@@ -56,7 +56,7 @@ export async function runTenantTests() {
       updatedAt: new Date().toISOString(),
     };
 
-    await tenantService.switchOrganization(mockOrg, mockMembership);
+    await tenantService.switchOrganization(mockOrg, mockMembership, true);
     
     const storeAfter = useTenantStore.getState();
     if (storeAfter.activeOrganization?.id === 'org_123' && !storeAfter.isLocalMode) {
