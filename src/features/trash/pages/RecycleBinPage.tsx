@@ -55,7 +55,7 @@ export const RecycleBinPage: React.FC = () => {
             <span>سلة المهملات</span>
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-            إدارة الحسابات والعمليات المحذوفة مؤقتاً (تبقى لمدة 30-60 يوم)
+            الحسابات المحذوفة مؤقتًا. تُحذف نهائيًا بعد 60 يومًا أو عند تأكيدك.
           </p>
         </div>
 
@@ -72,7 +72,7 @@ export const RecycleBinPage: React.FC = () => {
         <div className="py-12">
           <EmptyState
             title="سلة المهملات فارغة"
-            description="لا توجد حسابات أو عمليات محذوفة حالياً. عند حذف حساب بشكل نهائي سيظهر هنا."
+            description="لا توجد حسابات في سلة المهملات حاليًا. عند حذف حساب مؤقتًا، سيظهر هنا لإمكانية استعادته."
           />
         </div>
       ) : (
@@ -101,7 +101,7 @@ export const RecycleBinPage: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-2">
-                    {item.entityType === 'account' ? 'سيتم استعادة الحساب ومعلوماته الأساسية.' : 'استعادة هذا البند.'}
+                    {item.entityType === 'account' ? 'سيتم استعادة الحساب مع رصيده وكافة حركاته.' : 'استعادة هذا البند.'}
                   </p>
                 </div>
               </div>
@@ -139,7 +139,7 @@ export const RecycleBinPage: React.FC = () => {
               تأكيد الحذف النهائي
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-5 leading-relaxed">
-              هل أنت متأكد من رغبتك في حذف هذا الحساب وكافة عملياته نهائياً؟
+              سيتم حذف الحساب نهائيًا من قاعدة البيانات. الحركات المالية المرتبطة تبقى محفوظة في الدفتر كأثر تاريخي.
               <br />
               <span className="font-bold text-rose-600 block mt-1">هذا الإجراء لا يمكن التراجع عنه.</span>
             </p>

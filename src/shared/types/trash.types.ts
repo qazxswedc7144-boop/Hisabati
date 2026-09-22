@@ -8,8 +8,10 @@
 
 import { Account } from './account.types';
 
-export type TrashEntityType = 'account' | 'transaction';
-export type TrashStatus = 'deleted' | 'restored' | 'purged';
+export type TrashEntityType = 'account';
+export type TrashStatus = 'pending' | 'restored' | 'purged';
+
+export type TrashReasonCode = 'USER_REQUEST' | 'DUPLICATE' | 'TEST_DATA' | 'OTHER';
 
 export const TRASH_RETENTION_DAYS = 60;
 
@@ -31,7 +33,7 @@ export interface TrashItem {
   deletedAt: string;
   deletedBy?: string;
   reason?: string;
-  reasonCode?: string;
+  reasonCode?: TrashReasonCode;
   
   expiresAt: string; // deletedAt + TRASH_RETENTION_DAYS
   

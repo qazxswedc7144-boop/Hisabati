@@ -43,8 +43,9 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     set({ isLoading: true });
     try {
       await seedMockDataIfEmpty();
-      const accounts = await accountRepository.getAll(includeArchived || get().filterType === 'archived');
-      set({ accounts, isLoading: false });
+      const allAccounts = await accountRepository.getAll(includeArchived || get().filterType === 'archived');
+      const activeAccounts = allAccounts.filter((a) => !a.deletedAt);
+      set({ accounts: activeAccounts, isLoading: false });
     } catch (e) {
       console.error('Failed to fetch accounts:', e);
       set({ isLoading: false });
@@ -155,8 +156,9 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     set({ isLoading: true });
     try {
       await accountRepository.recalculateAll();
-      const accounts = await accountRepository.getAll(get().filterType === 'archived');
-      set({ accounts, isLoading: false });
+      const allAccounts = await accountRepository.getAll(get().filterType === 'archived');
+      const activeAccounts = allAccounts.filter((a) => !a.deletedAt);
+      set({ accounts: activeAccounts, isLoading: false });
     } catch (e) {
       console.error('Failed to recalculate balances:', e);
       set({ isLoading: false });
@@ -173,6 +175,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   getFilteredAccounts: () => {
     const { accounts, searchQuery, filterType, sortField } = get();
     let result = [...accounts];
+    result = result.filter((a) => !a.deletedAt);
 
     // 1. Archive filtering
     if (filterType === 'archived') {

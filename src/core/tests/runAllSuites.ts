@@ -27,7 +27,9 @@ import { FinancialAuditPart2TestSuite } from './financialAuditPart2.test';
 import { FinancialHardeningPart3TestSuite } from './financialHardeningPart3.test';
 import { SyncHardeningPart1TestSuite } from './syncHardeningPart1.test';
 import { ImmutableLedgerTestSuite } from './immutableLedger.test';
+import { TrashCycleTestSuite } from './trashCycle.test';
 import { tenantService } from '../services/TenantService';
+import { accountService } from '../services/account.service';
 
 async function main() {
   console.log('====================================================');
@@ -138,6 +140,7 @@ async function main() {
   console.log('\n--- [Phase 4.2] Restore Security Hardening Tests ---');
   try {
     const pRes = await RestoreHardeningTestSuite.runAllTests();
+
     console.log(`Restore Hardening Result: Passed ${pRes.passedCount}/${pRes.totalCount}`);
     totalPassed += pRes.passedCount;
     totalFailed += pRes.failedCount;
@@ -252,6 +255,7 @@ async function main() {
   console.log('\n--- [Phase B: Part 1] Financial Money Model Foundation (Minor Units) Tests ---');
   try {
     const pMoney = await MoneyTestSuite.runAllTests();
+
     console.log(`Phase B Money Result: Passed ${pMoney.passedCount}/${pMoney.totalCount}`);
     totalPassed += pMoney.passedCount;
     totalFailed += pMoney.failedCount;
@@ -271,6 +275,7 @@ async function main() {
   console.log('\n--- [Phase B: Part 2] Dual Representation & Write Path Tests ---');
   try {
     const pDual = await DualRepresentationTestSuite.runAllTests();
+
     console.log(`Phase B Dual Rep Result: Passed ${pDual.passedCount}/${pDual.totalCount}`);
     totalPassed += pDual.passedCount;
     totalFailed += pDual.failedCount;
@@ -290,6 +295,7 @@ async function main() {
   console.log('\n--- [Phase B: Part 3] Minor Units Final Integration Tests (FIN-01 to FIN-20) ---');
   try {
     const pFin = await FinancialIntegrationTestSuite.runAllTests();
+
     console.log(`Phase B Final Integration Result: Passed ${pFin.passedCount}/${pFin.totalCount}`);
     totalPassed += pFin.passedCount;
     totalFailed += pFin.failedCount;
@@ -309,6 +315,7 @@ async function main() {
   console.log('\n--- [Phase F: Part 1] Settings Architecture, Profile & Currency Tests ---');
   try {
     const pSet = await SettingsTestSuite.runAll();
+
     console.log(`Phase F Part 1 Settings Result: Passed ${pSet.passedCount}/${pSet.totalCount} (${pSet.durationMs}ms)`);
     totalPassed += pSet.passedCount;
     totalFailed += pSet.failedCount;
@@ -588,6 +595,23 @@ async function main() {
     }
   } catch (err: any) {
     console.error('Immutable Ledger Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // --- [PHASE 2 — PART 1/3] Trash Cycle: Soft Delete → Restore → Purge ---
+  console.log('\n--- [PHASE 2 — PART 1/3] Trash Cycle: Soft Delete → Restore → Purge ---');
+  try {
+    const trash = await TrashCycleTestSuite.runAll();
+    console.log(`Trash Cycle Result: Passed ${trash.passed}/${trash.total}`);
+    totalPassed += trash.passed;
+    totalFailed += trash.failed;
+    totalCount += trash.total;
+    if (trash.failed > 0) {
+      console.error('Trash Cycle failures:', trash.results.filter((r: any) => !r.passed));
+    }
+  } catch (err) {
+    console.error('Trash Cycle suite crashed:', err);
     totalFailed++;
     totalCount++;
   }

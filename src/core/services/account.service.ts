@@ -7,6 +7,7 @@ import { rbacGuard } from './rbac/RBACGuard.service';
 import { resolveRequiredCurrency } from '../money/currency';
 import { settingsRepository } from '../repositories/settings.repository';
 import { SyncContextRegistry } from './syncContext';
+import { auditTrailService } from './rbac/AuditTrail.service';
 
 export class AccountService {
   public beginSyncApply(): void {
@@ -189,132 +190,265 @@ export class AccountService {
       throw new Error('isRemote ممنوع خارج محرك المزامنة (syncEngine)');
     }
 
-    // 0. RBAC Guard
-    await rbacGuard.assertPermission('accounts:delete', {
-      targetType: 'account',
-      targetId: id,
-    });
+    if (moveToTrash && !force) {
+      // [أ] Soft Delete (moveToTrash=true && !force)
+      // 1. RBAC Guard
+      await rbacGuard.assertPermission('accounts:delete', {
+        targetType: 'account',
+        targetId: id,
+      });
 
-    const existing = await this.getById(id);
-    if (!existing) return false;
+      // 2. existing check
+      const existing = await this.getById(id);
+      if (!existing) return false;
 
-    const trxCount = await db.transactions.where('accountId').equals(id).count();
+      // 3. existing.deletedAt check
+      if (existing.deletedAt) {
+        throw new Error('الحساب موجود في سلة المهملات مسبقًا');
+      }
 
-    if (trxCount > 0 && !force && !moveToTrash) {
-      // Safe guard: Suggest archiving instead of data loss
-      throw new Error(
-        `لا يمكن حذف هذا الحساب لوجود ${trxCount} عملية مالية مسجلة له. يرجى أرشفة الحساب للحفاظ على السجلات المالية.`
-      );
-    }
+      // 4. now and expiresAt
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
 
-    const childTrx = await db.transactions.where('accountId').equals(id).toArray();
+      // 5. actor
+      const actor = rbacGuard.getActiveActor();
 
-    await db.transaction('rw', db.accounts, db.transactions, db.settings, db.trash, async () => {
-      const activeDb = getDb(); // 0.4: Direct stable access
+      // 6. checksum
+      const checksum = await this.computeAccountChecksum(existing);
 
-      if (moveToTrash) {
-        // 0.3: Redesigned trash snapshot (Account only, no transactions)
-        const now = new Date();
-        const expiresAt = new Date(now);
-        expiresAt.setDate(now.getDate() + 60); // TRASH_RETENTION_DAYS = 60
+      // 7. database transaction (Soft delete — الحساب يبقى، الحركات تبقى)
+      await db.transaction('rw', db.accounts, db.trash, async () => {
+        const activeDb = getDb();
+
+        await activeDb.accounts.update(id, {
+          deletedAt: now.toISOString(),
+          deletedBy: actor.id,
+          deletedReason: 'تم الحذف إلى سلة المهملات',
+          updatedAt: now.toISOString(),
+        });
 
         await activeDb.trash.add({
           id: `trash_${Date.now()}_${id}`,
           entityType: 'account',
           entityId: id,
-          snapshot: {
-            account: existing,
-          },
-          status: 'deleted',
+          snapshot: { account: existing },
+          status: 'pending',
           deletedAt: now.toISOString(),
+          deletedBy: actor.id,
+          reasonCode: 'USER_REQUEST',
           expiresAt: expiresAt.toISOString(),
+          checksum,
         });
+      });
+
+      // 8. auditTrailService log
+      await auditTrailService.log({
+        actor,
+        action: 'ACCOUNT_DELETE', // Since 'ACCOUNT_SOFT_DELETE' is not in AuditAction union type, we use 'ACCOUNT_DELETE'
+        targetType: 'account',
+        targetId: id,
+        riskLevel: 'MEDIUM',
+        detailsAr: `حذف الحساب "${existing.name}" إلى سلة المهملات`,
+      });
+
+      // 9. enqueue sync mutation
+      if (!options?.isRemote) {
+        await this.enqueueSyncMutation(
+          'account',
+          id,
+          'UPDATE',
+          { deletedAt: now.toISOString(), deletedBy: actor.id },
+          id
+        );
       }
 
-      // 0.6: Permanent deletion of transactions if user confirmed (Permanent Delete)
-      await activeDb.transactions.where('accountId').equals(id).delete();
-      await activeDb.accounts.delete(id);
+      // 10. return true
+      return true;
+    } else if (force) {
+      // [ب] Hard Delete (force=true)
+      // 1. RBAC Guard
+      await rbacGuard.assertPermission('accounts:delete', {
+        targetType: 'account',
+        targetId: id,
+      });
 
-      // 0.5: Record Permanent Delete Marker inside transaction to prevent TOCTOU
-      const existingTombstones = await activeDb.settings.get('hisabati_permanent_tombstones');
-      const list = existingTombstones && Array.isArray(existingTombstones.value) ? existingTombstones.value : [];
-      let updated = false;
+      // 2. existing check
+      const existing = await this.getById(id);
+      if (!existing) return false;
 
-      if (!list.some((t: any) => t.id === id)) {
-        list.push({ id, entityType: 'account', deletedAt: new Date().toISOString() });
-        updated = true;
+      // 3. transaction count
+      const trxCount = await db.transactions.where('accountId').equals(id).count();
+
+      // 4. check if has any transactions
+      if (trxCount > 0) {
+        throw new Error(
+          `لا يمكن الحذف النهائي: يوجد ${trxCount} حركة مالية مرتبطة. الحركات المالية جزء من الدفتر ولا تُحذف.`
+        );
       }
-      for (const trx of childTrx) {
-        if (!list.some((t: any) => t.id === trx.id)) {
-          list.push({ id: trx.id, entityType: 'transaction', deletedAt: new Date().toISOString() });
-          updated = true;
+
+      // 5. delete account from db & permanent tombstone
+      await db.transaction('rw', db.accounts, db.trash, db.settings, async () => {
+        const activeDb = getDb();
+        await activeDb.accounts.delete(id);
+
+        const entry = await activeDb.settings.get('hisabati_permanent_tombstones');
+        const list = entry && Array.isArray(entry.value) ? entry.value : [];
+        if (!list.some((t: any) => t.id === id)) {
+          list.push({ id, entityType: 'account', deletedAt: new Date().toISOString() });
+          await activeDb.settings.put({
+            id: 'hisabati_permanent_tombstones',
+            key: 'hisabati_permanent_tombstones',
+            value: list,
+            updatedAt: new Date().toISOString(),
+          });
         }
+      });
+
+      // 6. audit trail log
+      const actor = rbacGuard.getActiveActor();
+      await auditTrailService.log({
+        actor,
+        action: 'ACCOUNT_DELETE', // Since 'ACCOUNT_HARD_DELETE' is not in AuditAction union type, we use 'ACCOUNT_DELETE'
+        targetType: 'account',
+        targetId: id,
+        riskLevel: 'HIGH',
+        detailsAr: `حذف الحساب النهائي "${existing.name}"`,
+      });
+
+      // 7. enqueue sync mutation
+      if (!options?.isRemote) {
+        await this.enqueueSyncMutation('account', id, 'DELETE', { id }, id);
       }
 
-      if (updated) {
-        await activeDb.settings.put({
-          id: 'hisabati_permanent_tombstones',
-          key: 'hisabati_permanent_tombstones',
-          value: list,
-          updatedAt: new Date().toISOString(),
-        });
-      }
-    });
-
-    // Safe offline-first sync mutation enqueueing (tombstone)
-    if (!options?.isRemote) {
-      await this.enqueueSyncMutation('account', id, 'DELETE', { id }, id);
-      for (const trx of childTrx) {
-        await this.enqueueSyncMutation('transaction', trx.id, 'DELETE', { id: trx.id }, trx.id);
-      }
+      // 8. return true
+      return true;
+    } else {
+      // [ج] الرفض (بدون force وبدون moveToTrash)
+      const trxCount = await db.transactions.where('accountId').equals(id).count();
+      throw new Error(
+        `لا يمكن حذف حساب له ${trxCount} حركة مالية مباشرة. استخدم الأرشفة أو سلة المهملات.`
+      );
     }
+  }
 
-    return true;
+  private async computeAccountChecksum(account: Account): Promise<string> {
+    const { calculateSHA256 } = await import('../utils/crypto');
+    return await calculateSHA256(JSON.stringify({
+      id: account.id,
+      name: account.name,
+      phone: account.phone ?? null,
+      currentBalanceMinor: account.currentBalanceMinor ?? 0,
+      createdAt: account.createdAt,
+      updatedAt: account.updatedAt,
+    }));
   }
 
   /**
    * Restores an account and its transactions from trash.
    */
   async restoreFromTrash(trashId: string): Promise<boolean> {
-    // 0. RBAC Guard (usually accounts:create permission is enough for restore)
+    // 1. RBAC Guard
     await rbacGuard.assertPermission('accounts:create', {
       targetType: 'account',
       details: 'استعادة حساب من سلة المهملات',
     });
 
+    // 2. Get trash item
     const trashItem = await db.trash.get(trashId);
-    if (!trashItem) throw new Error('البند غير موجود في سلة المهملات');
+    if (!trashItem) {
+      throw new Error('البند غير موجود في سلة المهملات');
+    }
 
-    // 0.3: New snapshot structure
-    const account = trashItem.snapshot.account;
-    if (!account) throw new Error('بيانات الحساب غير موجودة في هذه اللقطة');
+    // 3. Check status
+    if (trashItem.status !== 'pending') {
+      throw new Error(`لا يمكن استعادة عنصر بحالة ${trashItem.status}`);
+    }
 
-    await db.transaction('rw', db.accounts, db.transactions, db.trash, db.settings, async () => {
-      const activeDb = getDb(); // 0.4: Direct stable access
+    // 4. Extract account from snapshot
+    const account = trashItem.snapshot?.account;
+    if (!account) {
+      throw new Error('بيانات الحساب غير موجودة في اللقطة');
+    }
 
-      // 1. Re-insert account
-      await activeDb.accounts.add(account);
+    // 5. Checksum verification
+    const expected = await this.computeAccountChecksum(account);
+    if (trashItem.checksum && trashItem.checksum !== expected) {
+      throw new Error('فشل التحقق من سلامة اللقطة — تم رفض الاستعادة');
+    }
 
-      // 2. Remove from trash
-      await activeDb.trash.delete(trashId);
+    // 6. Name uniqueness conflict check
+    const conflicting = await db.accounts
+      .where('name').equals(account.name)
+      .filter(a => a.id !== account.id && !a.deletedAt)
+      .count();
+    if (conflicting > 0) {
+      throw new Error(`يوجد حساب آخر بنفس الاسم "${account.name}". أعد تسميته قبل الاستعادة.`);
+    }
 
-      // 3. Remove from tombstones
-      const existingTombstones = await activeDb.settings.get('hisabati_permanent_tombstones');
-      if (existingTombstones && Array.isArray(existingTombstones.value)) {
-        const newList = existingTombstones.value.filter(
-          (t: any) => t.id !== account.id
-        );
-        await activeDb.settings.put({
-          ...existingTombstones,
-          value: newList,
-          updatedAt: new Date().toISOString(),
+    // 7. Actor and Timestamp
+    const actor = rbacGuard.getActiveActor();
+    const now = new Date().toISOString();
+
+    // 8. DB Transaction
+    await db.transaction('rw', db.accounts, db.trash, async () => {
+      const activeDb = getDb();
+
+      // تحقق مزدوج
+      const freshTrash = await activeDb.trash.get(trashId);
+      if (!freshTrash || freshTrash.status !== 'pending') {
+        throw new Error('تغيرت حالة العنصر أثناء الاستعادة');
+      }
+
+      // إن كان الحساب موجودًا (soft-deleted) ⇒ أزل deletedAt
+      const current = await activeDb.accounts.get(account.id);
+      if (current) {
+        await activeDb.accounts.update(account.id, {
+          deletedAt: undefined,
+          deletedBy: undefined,
+          deletedReason: undefined,
+          updatedAt: now,
+        });
+      } else {
+        // الحالة النادرة: الحساب حُذف فعليًا — أعده من snapshot
+        await activeDb.accounts.add({
+          ...account,
+          deletedAt: undefined,
+          deletedBy: undefined,
+          deletedReason: undefined,
+          updatedAt: now,
         });
       }
+
+      await activeDb.trash.update(trashId, {
+        status: 'restored',
+        restoredAt: now,
+        restoredBy: actor.id,
+      });
     });
 
-    // Enqueue sync (CREATE)
-    await this.enqueueSyncMutation('account', account.id, 'CREATE', account, account.id);
+    // 9. Audit trail logging
+    await auditTrailService.log({
+      actor,
+      action: 'ACCOUNT_UPDATE', // ACCOUNT_UPDATE is the valid existing AuditAction
+      targetType: 'account',
+      targetId: account.id,
+      riskLevel: 'MEDIUM',
+      detailsAr: `استعادة الحساب "${account.name}" من سلة المهملات`,
+    });
 
+    // 10. Enqueue Sync Mutation
+    if (!this.isInsideSyncApply()) {
+      await this.enqueueSyncMutation(
+        'account',
+        account.id,
+        'UPDATE',
+        { deletedAt: undefined, deletedBy: undefined },
+        account.id
+      );
+    }
+
+    // 11. Return true
     return true;
   }
 
@@ -323,7 +457,102 @@ export class AccountService {
   }
 
   async deletePermanentlyFromTrash(trashId: string): Promise<void> {
-    await db.trash.delete(trashId);
+    // 1. RBAC Guard
+    await rbacGuard.assertPermission('accounts:delete', {
+      targetType: 'account',
+      details: 'حذف نهائي من سلة المهملات',
+    });
+
+    // 2. Get trash item
+    const trashItem = await db.trash.get(trashId);
+    if (!trashItem) {
+      throw new Error('العنصر غير موجود');
+    }
+    if (trashItem.status !== 'pending') {
+      throw new Error(`لا يمكن إعدام عنصر بحالة ${trashItem.status}`);
+    }
+
+    // 3. Extract entity ID
+    const entityId = trashItem.entityId;
+
+    // 4. Transaction check
+    const trxCount = await db.transactions.where('accountId').equals(entityId).count();
+    if (trxCount > 0) {
+      throw new Error(
+        `لا يمكن الحذف النهائي: يوجد ${trxCount} حركة مالية مرتبطة. الحركات المالية جزء من الدفتر ولا تُحذف.`
+      );
+    }
+
+    // 5. Checksum verification
+    const account = trashItem.snapshot?.account;
+    if (account) {
+      const expected = await this.computeAccountChecksum(account);
+      if (trashItem.checksum && trashItem.checksum !== expected) {
+        throw new Error('فشل التحقق من سلامة اللقطة قبل الإعدام');
+      }
+    }
+
+    // 6. Actor & timestamp
+    const actor = rbacGuard.getActiveActor();
+    const now = new Date().toISOString();
+
+    // 7. DB Transaction
+    await db.transaction('rw', db.accounts, db.trash, db.settings, db.transactions, async () => {
+      const activeDb = getDb();
+
+      // double-check داخل transaction
+      const insideTx = await activeDb.transactions.where('accountId').equals(entityId).count();
+      if (insideTx > 0) {
+        throw new Error('ظهرت حركات مرتبطة أثناء العملية — تم إلغاء الإعدام تلقائيًا.');
+      }
+
+      const freshTrash = await activeDb.trash.get(trashId);
+      if (!freshTrash || freshTrash.status !== 'pending') {
+        throw new Error('تغيرت حالة العنصر أثناء الإعدام');
+      }
+
+      // احذف الحساب فعليًا
+      await activeDb.accounts.delete(entityId);
+
+      // حدّث trash (لا تحذفه — للتدقيق)
+      await activeDb.trash.update(trashId, {
+        status: 'purged',
+        purgedAt: now,
+        purgedBy: actor.id,
+      });
+
+      // tombstone دائم
+      const entry = await activeDb.settings.get('hisabati_permanent_tombstones');
+      const list = entry && Array.isArray(entry.value) ? entry.value : [];
+      if (!list.some((t: any) => t.id === entityId)) {
+        list.push({
+          id: entityId,
+          entityType: 'account',
+          purgedAt: now,
+          purgedBy: actor.id,
+        });
+        await activeDb.settings.put({
+          id: 'hisabati_permanent_tombstones',
+          key: 'hisabati_permanent_tombstones',
+          value: list,
+          updatedAt: now,
+        });
+      }
+    });
+
+    // 8. Audit trail log
+    await auditTrailService.log({
+      actor,
+      action: 'ACCOUNT_DELETE', // القيمة القياسية
+      targetType: 'account',
+      targetId: entityId,
+      riskLevel: 'HIGH',
+      detailsAr: `حذف نهائي للحساب "${account?.name || entityId}" من سلة المهملات`,
+      metadata: { trashId, purgedAt: now },
+    });
+
+    // 9. Sync mutation
+    await this.enqueueSyncMutation('account', entityId, 'DELETE', { id: entityId }, entityId);
   }
 
   async search(query: string, filter?: AccountFilterType): Promise<Account[]> {

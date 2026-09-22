@@ -26,6 +26,13 @@ export interface Account {
   totalCreditMinor?: number; // Phase B: Canonical integer minor units
   transactionCount: number;
   lastTransactionDate?: string;
+
+  /** ISO timestamp when soft-deleted to trash. Undefined if active. */
+  deletedAt?: string;
+  /** Actor ID who soft-deleted. */
+  deletedBy?: string;
+  /** Optional reason. */
+  deletedReason?: string;
 }
 
 export interface CreateAccountDTO {
