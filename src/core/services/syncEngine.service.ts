@@ -5,7 +5,7 @@
  * synchronization with exponential backoff, and financial data integrity preservation.
  */
 
-import { db } from '../database/db';
+import { db, getDb } from '../database/db';
 import { tenantDbManager } from '../database/TenantDatabaseManager';
 const SETTINGS_WHITELIST = ["currency", "appLanguage", "themeMode", "dateFormat", "invoiceDefaultNotes", "businessName", "businessPhone", "businessAddress", "businessTaxId"];
 
@@ -260,9 +260,10 @@ export class SyncEngine {
     const leaseTimeMs = 45000; // 45 second lease
     const now = Date.now();
     const deviceId = getDeviceId();
+    const activeDb = getDb();
 
-    return await db.transaction('rw', db.settings, async () => {
-      const existing = await db.settings.get(SETTINGS_SYNC_LOCK);
+    return await activeDb.transaction('rw', activeDb.settings, async () => {
+      const existing = await activeDb.settings.get(SETTINGS_SYNC_LOCK);
       
       if (existing && existing.value) {
         const lock = existing.value as { expiresAt: number; tabId: string; deviceId: string };
@@ -273,7 +274,7 @@ export class SyncEngine {
       }
 
       // Acquire or renew lock
-      await db.settings.put({
+      await activeDb.settings.put({
         id: SETTINGS_SYNC_LOCK,
         key: SETTINGS_SYNC_LOCK,
         value: {
@@ -288,11 +289,12 @@ export class SyncEngine {
   }
 
   private async releaseDistributedLock(): Promise<void> {
-    await db.transaction('rw', db.settings, async () => {
-      const existing = await db.settings.get(SETTINGS_SYNC_LOCK);
+    const activeDb = getDb();
+    await activeDb.transaction('rw', activeDb.settings, async () => {
+      const existing = await activeDb.settings.get(SETTINGS_SYNC_LOCK);
       const val = existing?.value as { tabId?: string } | undefined;
       if (val && val.tabId === TAB_INSTANCE_ID) {
-        await db.settings.delete(SETTINGS_SYNC_LOCK);
+        await activeDb.settings.delete(SETTINGS_SYNC_LOCK);
       }
     });
   }
@@ -742,11 +744,12 @@ private async _performFullSyncInternal(): Promise<{
       }
 
       // 8. POST-UPLOAD SUCCESS: Mark items as completed & update local revision
-      await db.transaction('rw', [db.syncQueue, db.settings], async () => {
+      const activeDb = getDb();
+      await activeDb.transaction('rw', [activeDb.syncQueue, activeDb.settings], async () => {
         for (const item of inFlightPendingItems) {
-          await db.syncQueue.update(item.id, { status: 'completed' });
+          await activeDb.syncQueue.update(item.id, { status: 'completed' });
         }
-        await db.settings.put({
+        await activeDb.settings.put({
           id: SETTINGS_SYNC_METADATA,
           key: SETTINGS_SYNC_METADATA,
           value: {
@@ -822,11 +825,12 @@ private async _performFullSyncInternal(): Promise<{
       };
     } catch (err: any) {
       // Revert processing items safely with exponential retry tracking
-      await db.transaction('rw', db.syncQueue, async () => {
+      const activeDb = getDb();
+      await activeDb.transaction('rw', activeDb.syncQueue, async () => {
         for (const item of inFlightPendingItems) {
           const nextRetry = (item.retryCount || 0) + 1;
           const nextStatus = nextRetry >= MAX_RETRIES ? 'failed' : 'pending';
-          await db.syncQueue.update(item.id, {
+          await activeDb.syncQueue.update(item.id, {
             retryCount: nextRetry,
             status: nextStatus,
             lastError: err?.message || 'فشلت المزامنة',
@@ -847,11 +851,12 @@ private async _performFullSyncInternal(): Promise<{
    */
   private async notifyStatusAtomic(status: SyncStatusType): Promise<void> {
     try {
-      await db.transaction('rw', db.settings, async () => {
-        const metaEntry = await db.settings.get(SETTINGS_SYNC_METADATA);
+      const activeDb = getDb();
+      await activeDb.transaction('rw', activeDb.settings, async () => {
+        const metaEntry = await activeDb.settings.get(SETTINGS_SYNC_METADATA);
         const localMeta = (metaEntry?.value as Record<string, any>) || { lastRevision: 0 };
         
-        await db.settings.put({
+        await activeDb.settings.put({
           id: SETTINGS_SYNC_METADATA,
           key: SETTINGS_SYNC_METADATA,
           value: { ...localMeta, status },

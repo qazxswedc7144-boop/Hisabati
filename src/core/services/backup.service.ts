@@ -486,7 +486,7 @@ export class BackupService {
     // 7. ATOMIC RESTORE (DEXIE TRANSACTION)
     // All-or-nothing rollback on any write failure
     await activeDb.transaction('rw', [activeDb.accounts, activeDb.transactions, activeDb.settings, activeDb.trash, activeDb.auditTrail, activeDb.debts], async () => {
-      const txDb = getDb(); // Direct access within transaction
+      const txDb = activeDb; // Pinned database instance within transaction
 
       if (mode === 'replace') {
         await txDb.transactions.clear();

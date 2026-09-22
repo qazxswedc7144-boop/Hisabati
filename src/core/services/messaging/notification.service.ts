@@ -98,10 +98,10 @@ export class NotificationService {
    */
   async createNotification(dto: CreateInAppNotificationDTO): Promise<InAppNotification> {
     const idempotencyKey = this.buildIdempotencyKey(dto);
-    const db = getDb();
+    const activeDb = getDb();
 
-    return await db.transaction('rw', db.inAppNotifications, async () => {
-      const existing = await db.inAppNotifications
+    return await activeDb.transaction('rw', activeDb.inAppNotifications, async () => {
+      const existing = await activeDb.inAppNotifications
         .where('[type+idempotencyKey]')
         .equals([dto.type, idempotencyKey])
         .first();
@@ -124,7 +124,7 @@ export class NotificationService {
         idempotencyKey,
       };
 
-      await db.inAppNotifications.add(notification);
+      await activeDb.inAppNotifications.add(notification);
 
       // Web notification is a side effect, but we keep it here for UX consistency
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {

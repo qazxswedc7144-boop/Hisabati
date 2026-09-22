@@ -1,4 +1,4 @@
-import { db } from '../database/db';
+import { db, getDb } from '../database/db';
 import {
   Transaction,
   TransactionType,
@@ -110,7 +110,8 @@ export class FinancialTransactionEngine {
 
     let actualResult: Transaction = existing;  // ← القيمة النهائية الفعلية
 
-    await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, db.settings, async (transaction) => {
+    const activeDb = getDb();
+    await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, activeDb.settings, async (transaction) => {
       // إعادة فحص الحالة داخل transaction
       const freshTrx = await transaction.table('transactions').get(id);
       if (!freshTrx) throw new Error('العملية اختفت أثناء الترحيل');
@@ -240,7 +241,8 @@ export class FinancialTransactionEngine {
       const id = 'trx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
 
       // Atomic write transaction across all financial tables
-      await db.transaction('rw', db.transactions, db.accounts, db.settings, db.financialAuditLogs, async (transaction) => {
+      const activeDb = getDb();
+      await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.settings, activeDb.financialAuditLogs, async (transaction) => {
         // Fetch FRESH settings inside the transaction to prevent race conditions
         const settingsTable = transaction.table('settings');
         const settingsEntries = await settingsTable.toArray();
@@ -468,7 +470,8 @@ export class FinancialTransactionEngine {
     const executionPromise = (async () => {
       const createdTransactions: Transaction[] = [];
 
-      await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, db.settings, async (transaction) => {
+      const activeDb = getDb();
+      await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, activeDb.settings, async (transaction) => {
         // Check idempotency in DB
         const existing = await transaction.table('transactions').where('operationId').equals(operationId).first();
         if (existing) {
@@ -633,7 +636,8 @@ export class FinancialTransactionEngine {
       updatedAt: new Date().toISOString(),
     };
 
-    await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, async (transaction) => {
+    const activeDb = getDb();
+    await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, async (transaction) => {
       await transaction.table('transactions').put(updatedTrx);
       await this.recalculateAccountBalance(oldAccountId, activeCurrency, transaction);
       if (targetAccountId !== oldAccountId) {
@@ -718,7 +722,8 @@ export class FinancialTransactionEngine {
     });
 
     let deleted = false;
-    await db.transaction('rw', db.transactions, db.accounts, db.financialAuditLogs, db.settings, async (transaction) => {
+    const activeDb = getDb();
+    await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, activeDb.settings, async (transaction) => {
       // Re-verify existence inside transaction to prevent concurrent double-delete/recalculate race
       const trxToDelete = await transaction.table('transactions').get(id);
       if (!trxToDelete) return;

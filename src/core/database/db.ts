@@ -347,6 +347,9 @@ import { tenantDbManager } from './TenantDatabaseManager';
  * 0.4: Stable database accessor for use inside transactions.
  */
 export function getDb(): HisabatiDatabase {
+  if (tenantDbManager.getIsSwitching()) {
+    throw new Error('Database is currently switching tenants. Access denied.');
+  }
   return tenantDbManager.getActiveDatabase();
 }
 

@@ -218,8 +218,8 @@ export class AccountService {
       const checksum = await this.computeAccountChecksum(existing);
 
       // 7. database transaction (Soft delete — الحساب يبقى، الحركات تبقى)
-      await db.transaction('rw', db.accounts, db.trash, async () => {
-        const activeDb = getDb();
+      const activeDb = getDb();
+      await activeDb.transaction('rw', activeDb.accounts, activeDb.trash, async () => {
 
         await activeDb.accounts.update(id, {
           deletedAt: now.toISOString(),
@@ -288,8 +288,8 @@ export class AccountService {
       }
 
       // 5. delete account from db & permanent tombstone
-      await db.transaction('rw', db.accounts, db.trash, db.settings, async () => {
-        const activeDb = getDb();
+      const activeDb = getDb();
+      await activeDb.transaction('rw', activeDb.accounts, activeDb.trash, activeDb.settings, async () => {
         await activeDb.accounts.delete(id);
 
         const entry = await activeDb.settings.get('hisabati_permanent_tombstones');
@@ -391,8 +391,8 @@ export class AccountService {
     const now = new Date().toISOString();
 
     // 8. DB Transaction
-    await db.transaction('rw', db.accounts, db.trash, async () => {
-      const activeDb = getDb();
+    const activeDb = getDb();
+    await activeDb.transaction('rw', activeDb.accounts, activeDb.trash, async () => {
 
       // تحقق مزدوج
       const freshTrash = await activeDb.trash.get(trashId);
@@ -497,8 +497,8 @@ export class AccountService {
     const now = new Date().toISOString();
 
     // 7. DB Transaction
-    await db.transaction('rw', db.accounts, db.trash, db.settings, db.transactions, async () => {
-      const activeDb = getDb();
+    const activeDb = getDb();
+    await activeDb.transaction('rw', activeDb.accounts, activeDb.trash, activeDb.settings, activeDb.transactions, async () => {
 
       // double-check داخل transaction
       const insideTx = await activeDb.transactions.where('accountId').equals(entityId).count();
