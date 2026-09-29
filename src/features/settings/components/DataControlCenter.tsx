@@ -296,6 +296,12 @@ export const DataControlCenter: React.FC = () => {
   };
 
   const handleClearDatabase = async () => {
+    const isDevMode = import.meta.env?.DEV === true;
+    if (!isDevMode) {
+      showToast('هذا الإجراء متاح في وضع التطوير فقط.', 'error');
+      setShowClearConfirm(false);
+      return;
+    }
     try {
       await db.transactions.clear();
       await db.accounts.clear();
@@ -710,14 +716,16 @@ export const DataControlCenter: React.FC = () => {
             <span>إعادة تحميل البيانات التجريبية الافتراضية</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setShowClearConfirm(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/70 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs font-bold hover:bg-rose-100 dark:hover:bg-rose-900/40 transition min-h-[44px]"
-          >
-            <Trash2 className="w-4 h-4" />
-            <span>مسح جميع البيانات والبدء من الصفر</span>
-          </button>
+          {import.meta.env?.DEV === true && (
+            <button
+              type="button"
+              onClick={() => setShowClearConfirm(true)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/70 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs font-bold hover:bg-rose-100 dark:hover:bg-rose-900/40 transition min-h-[44px]"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>مسح جميع البيانات والبدء من الصفر (وضع التطوير)</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -984,7 +992,7 @@ export const DataControlCenter: React.FC = () => {
       )}
 
       {/* 6. Clear Database Confirm Dialog */}
-      {showClearConfirm && (
+      {import.meta.env?.DEV === true && showClearConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in">
           <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 text-center space-y-4 my-auto">
             <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">

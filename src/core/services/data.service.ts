@@ -43,6 +43,10 @@ export class DataService {
   }
 
   async clearData(): Promise<void> {
+    const isDevMode = import.meta.env?.DEV === true;
+    if (!isDevMode) {
+      throw new Error('[Security] clearData ممنوع في الإنتاج.');
+    }
     await clearAllData();
   }
 

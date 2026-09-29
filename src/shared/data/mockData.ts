@@ -224,6 +224,13 @@ export async function resetToMockData(): Promise<void> {
 }
 
 export async function clearAllData(): Promise<void> {
+  // ✅ حماية: مسح البيانات متاح في وضع التطوير فقط
+  const isDevMode = import.meta.env?.DEV === true;
+  if (!isDevMode) {
+    throw new Error(
+      '[Security] clearAllData ممنوع في الإنتاج. استخدم الاستعادة من نسخة احتياطية بدلًا من المسح المباشر.'
+    );
+  }
   await db.transactions.clear();
   await db.accounts.clear();
 }
