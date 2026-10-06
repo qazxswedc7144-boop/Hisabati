@@ -185,15 +185,13 @@ export class SecurityP0TestSuite {
         },
       },
 
-      // P0-07: Direct Deletion Production Guard
+      // P0-07: Production Guard — clearAllData PROD guard check
       {
         id: 'P0-07',
-        title: 'Production Guard: clearAllData Block',
-        description: 'التحقق من حماية clearAllData ومنع الحذف المباشر في الإنتاج',
+        title: 'Production Guard: clearAllData PROD guard',
+        description: 'التحقق من وجود حماية clearAllData عبر import.meta.env.PROD',
         fn: async () => {
           const { clearAllData } = await import('@/shared/data/mockData');
-          // In test environment, DEV is true, so calling clearAllData might clear or work if DB is empty/safe.
-          // But we verify the function is protected with import.meta.env?.DEV check.
           if (typeof clearAllData !== 'function') {
             throw new Error('clearAllData is not a function');
           }

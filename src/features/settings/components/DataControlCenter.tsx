@@ -296,8 +296,7 @@ export const DataControlCenter: React.FC = () => {
   };
 
   const handleClearDatabase = async () => {
-    const isDevMode = import.meta.env?.DEV === true;
-    if (!isDevMode) {
+    if (import.meta.env.PROD) {
       showToast('هذا الإجراء متاح في وضع التطوير فقط.', 'error');
       setShowClearConfirm(false);
       return;
