@@ -620,10 +620,11 @@ async function main() {
   // --- Multi-Tenancy Isolation & Tenant Switch Guard ---
   console.log('\n--- [Multi-Tenancy] Tenant Isolation & Switching Guard Tests ---');
   try {
-    await runTenantTests();
-    console.log('Tenant Isolation Result: Passed 5/5');
-    totalPassed += 5;
-    totalCount += 5;
+    const tenantResult = await runTenantTests();
+    console.log(`Tenant Isolation Result: Passed ${tenantResult.passed}/${tenantResult.total}`);
+    totalPassed += tenantResult.passed;
+    totalFailed += (tenantResult.total - tenantResult.passed);
+    totalCount += tenantResult.total;
   } catch (err: any) {
     console.error('Tenant suite crashed:', err);
     totalFailed += 1;

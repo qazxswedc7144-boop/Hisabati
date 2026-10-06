@@ -1,5 +1,5 @@
 import { tenantDbManager } from '../database/TenantDatabaseManager';
-import { useTenantStore } from '@/shared/stores/tenantStore';
+import { useTenantStore, resetTenantScopedStores } from '@/shared/stores/tenantStore';
 import { Organization, OrganizationMembership, CapabilityLease } from '@/shared/types/tenant.types';
 import { authService } from './rbac/AuthService.service';
 import {
@@ -104,6 +104,7 @@ export class TenantService {
       isLocalMode: true,
       authMembershipStatus: 'offline_cached',
     });
+    await resetTenantScopedStores();
   }
 
   /**
@@ -243,6 +244,7 @@ export class TenantService {
         isLocalMode: false,
         authMembershipStatus: 'online_verified',
       });
+      await resetTenantScopedStores();
 
       store.setError(null);
       return result;
@@ -333,6 +335,7 @@ export class TenantService {
         isLocalMode: false,
         authMembershipStatus: 'offline_cached',
       });
+      await resetTenantScopedStores();
 
       store.setError(null);
       return { success: true, lease: validLease };
@@ -405,6 +408,7 @@ export class TenantService {
         isLocalMode: false,
         authMembershipStatus: 'online_verified',
       });
+      await resetTenantScopedStores();
 
       return { success: true, verified: true };
     } catch (err) {
