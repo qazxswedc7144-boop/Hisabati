@@ -28,6 +28,7 @@ import {
   getBackupSchemaVersion,
   migrateBackupPayload,
 } from './backup/backup-migrator';
+import { decimalToMinor, minorToDecimal, isValidMinorUnit } from '../money/converter';
 
 const APP_VERSION = '2.0.0';
 
@@ -73,16 +74,29 @@ export class BackupService {
     const auditTrail = await db.auditTrail.toArray(); // 1.6
     const debts = await db.debts.toArray(); // [1.6 T-A]
 
-    // 1.4: Compute sums with fixed point precision
-    let totalDebitSum = 0;
-    let totalCreditSum = 0;
+    // 1.4: Compute sums with currency-aware minor units precision & status filtering
+    let totalDebitUnits = 0;
+    let totalCreditUnits = 0;
+    const defaultCurrency = settings.find(s => s.key === 'currency')?.value || 'YER';
+
     for (const trx of transactions) {
+      const status = trx.status || 'posted';
+      if (status !== 'posted') continue;
+
+      const trxCurrency = (trx.currency as any) || defaultCurrency;
+      const amountUnits = trx.amountMinor !== undefined && isValidMinorUnit(trx.amountMinor)
+        ? Math.abs(trx.amountMinor)
+        : Math.abs(decimalToMinor(trx.amount, trxCurrency));
+
       if (trx.type === 'debit') {
-        totalDebitSum = Math.round((totalDebitSum + trx.amount) * 100) / 100;
+        totalDebitUnits += amountUnits;
       } else if (trx.type === 'credit') {
-        totalCreditSum = Math.round((totalCreditSum + trx.amount) * 100) / 100;
+        totalCreditUnits += amountUnits;
       }
     }
+
+    const totalDebitSum = minorToDecimal(totalDebitUnits, defaultCurrency as any);
+    const totalCreditSum = minorToDecimal(totalCreditUnits, defaultCurrency as any);
 
     const backupId = 'bck_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const createdAt = new Date().toISOString();

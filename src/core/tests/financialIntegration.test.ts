@@ -343,14 +343,14 @@ export class FinancialIntegrationTestSuite {
       }
     });
 
-    // FIN-15: Backup Snapshot Integrity and Schema Version 5 Preservation
-    await run('FIN-15', 'النسخ الاحتياطي يحفظ amountMinor وثبات BACKUP_SCHEMA_VERSION=5', async () => {
-      if (BACKUP_SCHEMA_VERSION !== 5) {
-        throw new Error(`إصدار النسخ الاحتياطي غير مطابق: المتوقع 5 الفعلي ${BACKUP_SCHEMA_VERSION}`);
+    // FIN-15: Backup Snapshot Integrity and Schema Version 6 Preservation
+    await run('FIN-15', 'النسخ الاحتياطي يحفظ amountMinor وثبات BACKUP_SCHEMA_VERSION=6', async () => {
+      if (BACKUP_SCHEMA_VERSION !== 6) {
+        throw new Error(`إصدار النسخ الاحتياطي غير مطابق: المتوقع 6 الفعلي ${BACKUP_SCHEMA_VERSION}`);
       }
       const payload = await backupService.generateBackupPayload();
-      if (payload.metadata.backupSchemaVersion !== 5) {
-        throw new Error('لقطة النسخ الاحتياطي لم تستخدم BACKUP_SCHEMA_VERSION=5');
+      if (payload.metadata.backupSchemaVersion !== 6) {
+        throw new Error('لقطة النسخ الاحتياطي لم تستخدم BACKUP_SCHEMA_VERSION=6');
       }
       if (!Array.isArray(payload.transactions)) {
         throw new Error('بيانات المعاملات في النسخة الاحتياطية غير صالحة');

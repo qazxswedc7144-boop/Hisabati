@@ -289,8 +289,8 @@ export class MoneyTestSuite {
       if (DATABASE_SCHEMA_VERSION !== 12) {
         throw new Error(`DATABASE_SCHEMA_VERSION must remain 12, found ${DATABASE_SCHEMA_VERSION}`);
       }
-      if (BACKUP_SCHEMA_VERSION !== 5) {
-        throw new Error(`BACKUP_SCHEMA_VERSION must remain 5, found ${BACKUP_SCHEMA_VERSION}`);
+      if (BACKUP_SCHEMA_VERSION !== 6) {
+        throw new Error(`BACKUP_SCHEMA_VERSION must remain 6, found ${BACKUP_SCHEMA_VERSION}`);
       }
       if (FINANCIAL_FORMAT_VERSION !== 1) {
         throw new Error(`FINANCIAL_FORMAT_VERSION must remain 1, found ${FINANCIAL_FORMAT_VERSION}`);

@@ -6,7 +6,7 @@
  */
 
 export const DATABASE_SCHEMA_VERSION: number = 12;
-export const BACKUP_SCHEMA_VERSION = 5;
+export const BACKUP_SCHEMA_VERSION = 6;
 export const FINANCIAL_FORMAT_VERSION = 1;
 
 export const MIN_SUPPORTED_BACKUP_VERSION = 1;

@@ -197,6 +197,35 @@ export function migrateBackupV4ToV5(payload: any): any {
 }
 
 /**
+ * Migrates a V5 backup payload to V6 format in memory.
+ * Ensures metadata fields are updated for V6.
+ */
+export function migrateBackupV5ToV6(payload: any): any {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('هيكل ملف النسخة الاحتياطية غير صالح (Invalid Payload)');
+  }
+
+  if (!payload.metadata || typeof payload.metadata !== 'object') {
+    throw new Error('بيانات النسخة الاحتياطية الوصفية غير موجودة (Metadata Missing)');
+  }
+
+  const migrated = structuredClone(payload);
+  
+  if (Array.isArray(migrated.accounts)) {
+    migrated.accounts = migrated.accounts.map((a: any) => ({
+      ...a,
+      archived: a.archived === true ? 1 : a.archived === false ? 0 : a.archived,
+    }));
+  }
+
+  migrated.metadata.backupSchemaVersion = 6;
+  migrated.metadata.schemaVersion = 6;
+  migrated.metadata.databaseSchemaVersion = DATABASE_SCHEMA_VERSION;
+
+  return migrated;
+}
+
+/**
  * Validates, gate-checks, and sequentially migrates a raw backup payload to the current BACKUP_SCHEMA_VERSION.
  * Operates strictly in memory with zero database interactions.
  */
@@ -244,6 +273,10 @@ export async function migrateBackupPayload(payload: any): Promise<any> {
 
   if (getBackupSchemaVersion(migrated.metadata) === 4) {
     migrated = migrateBackupV4ToV5(migrated);
+  }
+
+  if (getBackupSchemaVersion(migrated.metadata) === 5) {
+    migrated = migrateBackupV5ToV6(migrated);
   }
 
   // Ensure default fields exist if already at current version
