@@ -91,7 +91,16 @@ export default defineConfig(() => {
         output: {
           manualChunks: {
             'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-            'vendor-utils': ['dexie', 'xlsx', 'zustand', 'motion'],
+            'vendor-firebase': [
+              'firebase/app',
+              'firebase/auth',
+              'firebase/firestore',
+            ],
+            'vendor-ui': ['lucide-react'],
+            'vendor-dexie': ['dexie'],
+            'vendor-ai': ['@google/genai'],
+            'vendor-xlsx': ['xlsx'],
+            'vendor-utils': ['zustand', 'motion'],
           },
         },
       },

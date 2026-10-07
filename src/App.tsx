@@ -1,16 +1,15 @@
 import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { MainLayout } from '@/shared/layouts/MainLayout';
-import {
-  DashboardPage,
-  AccountsPage,
-  AccountDetailsPage,
-} from '@/features';
+import { DashboardPage } from '@/features/dashboard/pages/DashboardPage';
+import { AccountsPage } from '@/features/accounts/pages/AccountsPage';
+import { AccountDetailsPage } from '@/features/accounts/pages/AccountDetailsPage';
 import { ErrorBoundary } from '@/shared/components/ErrorBoundary';
 import { seedInitialMockData } from '@/shared/data/mockData';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/core/database/firebase';
-import { useSettingsStore, useRBACStore } from '@/shared/stores';
+import { useSettingsStore } from '@/shared/stores/settingsStore';
+import { useRBACStore } from '@/shared/stores/rbacStore';
 import { AuditActor } from '@/shared/types';
 import { tenantService } from '@/core/services/TenantService';
 import { processPendingSideEffects } from '@/core/services/pendingSideEffects.worker';

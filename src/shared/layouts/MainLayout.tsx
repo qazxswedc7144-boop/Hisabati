@@ -10,8 +10,15 @@ import { Toast } from '@/shared/components/Toast';
 import { OfflineIndicator } from '@/shared/components/OfflineIndicator';
 import { SendMessageModal } from '@/features/messaging/components/SendMessageModal';
 import { ScheduleCollectionModal } from '@/features/messaging/components/ScheduleCollectionModal';
-import { OCRReceiptScannerModal, SmartReceiptReviewModal, ReceiptToTransactionModal } from '@/features/ocr';
-import { useSettingsStore, useAccountStore, useTransactionStore, useOCRStore } from '@/shared/stores';
+
+const OCRReceiptScannerModal = React.lazy(() => import('@/features/ocr/components/OCRReceiptScannerModal').then(m => ({ default: m.OCRReceiptScannerModal })));
+const SmartReceiptReviewModal = React.lazy(() => import('@/features/ocr/components/SmartReceiptReviewModal').then(m => ({ default: m.SmartReceiptReviewModal })));
+const ReceiptToTransactionModal = React.lazy(() => import('@/features/ocr/components/ReceiptToTransactionModal').then(m => ({ default: m.ReceiptToTransactionModal })));
+
+import { useSettingsStore } from '@/shared/stores/settingsStore';
+import { useAccountStore } from '@/shared/stores/accountStore';
+import { useTransactionStore } from '@/shared/stores/transactionStore';
+import { useOCRStore } from '@/shared/stores/ocrStore';
 
 export const MainLayout: React.FC = () => {
   const loadSettings = useSettingsStore((state) => state.loadSettings);
@@ -49,13 +56,15 @@ export const MainLayout: React.FC = () => {
         <AddAccountModal />
         <SendMessageModal />
         <ScheduleCollectionModal />
-        <OCRReceiptScannerModal />
-        <SmartReceiptReviewModal />
-        <ReceiptToTransactionModal
-          isOpen={isConversionModalOpen}
-          onClose={closeConversionModal}
-          draft={draftToConvert}
-        />
+        <React.Suspense fallback={null}>
+          <OCRReceiptScannerModal />
+          <SmartReceiptReviewModal />
+          <ReceiptToTransactionModal
+            isOpen={isConversionModalOpen}
+            onClose={closeConversionModal}
+            draft={draftToConvert}
+          />
+        </React.Suspense>
         <Toast />
         <OfflineIndicator />
       </div>

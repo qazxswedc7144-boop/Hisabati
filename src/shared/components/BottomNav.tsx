@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { Home, Users, BarChart3, Settings, Plus } from 'lucide-react';
-import { useUIStore } from '@/shared/stores';
+import { useUIStore } from '@/shared/stores/uiStore';
 import { useI18n } from '@/shared/hooks/useI18n';
 
 export const BottomNav: React.FC = () => {

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { LogIn, LogOut, User, Shield, CloudOff, Cloud } from 'lucide-react';
-import { useRBACStore } from '@/shared/stores';
+import { useRBACStore } from '@/shared/stores/rbacStore';
 
 export const UserAuthSection: React.FC = () => {
   const { authStatus, currentActor, logout, login } = useRBACStore();

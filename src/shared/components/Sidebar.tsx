@@ -1,7 +1,8 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { Users, Plus, Wallet2 } from 'lucide-react';
-import { useUIStore, useMessagingStore } from '@/shared/stores';
+import { useUIStore } from '@/shared/stores/uiStore';
+import { useMessagingStore } from '@/shared/stores/messagingStore';
 import { useI18n } from '@/shared/hooks/useI18n';
 import { APPLICATION_NAV_ITEMS } from '@/shared/config/navigation';
 import { UserAuthSection } from './UserAuthSection';

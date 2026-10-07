@@ -12,15 +12,15 @@ import {
   ScanLine,
   PlusCircle,
 } from 'lucide-react';
-import {
-  useAccountStore,
-  useTransactionStore,
-  useSettingsStore,
-  useUIStore,
-  useOCRStore,
-  useBIStore,
-} from '@/shared/stores';
-import { StatCard, BalanceBadge, EmptyState } from '@/shared/components';
+import { useAccountStore } from '@/shared/stores/accountStore';
+import { useTransactionStore } from '@/shared/stores/transactionStore';
+import { useSettingsStore } from '@/shared/stores/settingsStore';
+import { useUIStore } from '@/shared/stores/uiStore';
+import { useOCRStore } from '@/shared/stores/ocrStore';
+import { useBIStore } from '@/shared/stores/biStore';
+import { StatCard } from '@/shared/components/StatCard';
+import { BalanceBadge } from '@/shared/components/BalanceBadge';
+import { EmptyState } from '@/shared/components/EmptyState';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
 import { useI18n } from '@/shared/hooks/useI18n';
 import { FinancialHealthCard } from '../components/FinancialHealthCard';

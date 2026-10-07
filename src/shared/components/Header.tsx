@@ -13,7 +13,9 @@ import {
   SlidersHorizontal,
   Menu,
 } from 'lucide-react';
-import { useSettingsStore, useOCRStore, useUIStore } from '@/shared/stores';
+import { useSettingsStore } from '@/shared/stores/settingsStore';
+import { useOCRStore } from '@/shared/stores/ocrStore';
+import { useUIStore } from '@/shared/stores/uiStore';
 import { PWAInstallPrompt } from './PWAInstallPrompt';
 import { SyncStatusIndicator } from './SyncStatusIndicator';
 import { NotificationCenterDrawer } from '@/features/messaging/components/NotificationCenterDrawer';
