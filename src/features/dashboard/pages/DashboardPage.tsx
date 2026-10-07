@@ -17,14 +17,14 @@ import { useTransactionStore } from '@/shared/stores/transactionStore';
 import { useSettingsStore } from '@/shared/stores/settingsStore';
 import { useUIStore } from '@/shared/stores/uiStore';
 import { useOCRStore } from '@/shared/stores/ocrStore';
-import { useBIStore } from '@/shared/stores/biStore';
 import { StatCard } from '@/shared/components/StatCard';
 import { BalanceBadge } from '@/shared/components/BalanceBadge';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
 import { useI18n } from '@/shared/hooks/useI18n';
-import { FinancialHealthCard } from '../components/FinancialHealthCard';
 import { DueDebtsAlertCard } from '../components/DueDebtsAlertCard';
+
+const FinancialHealthCard = React.lazy(() => import('../components/FinancialHealthCard').then(m => ({ default: m.FinancialHealthCard })));
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -46,20 +46,6 @@ export const DashboardPage: React.FC = () => {
   const openQuickAdd = useUIStore((state) => state.openQuickAddTransaction);
   const openAddAccount = useUIStore((state) => state.openAddAccount);
   const openScannerModal = useOCRStore((state) => state.openScannerModal);
-
-  const healthSummary = useBIStore((state) => state.healthSummary);
-  const insights = useBIStore((state) => state.insights);
-  const loadBIData = useBIStore((state) => state.loadBIData);
-
-  const proactiveInsight =
-    insights.find((i) => i.impact === 'CRITICAL' || i.impact === 'WARNING') ||
-    insights[0];
-
-  useEffect(() => {
-    if (!healthSummary) {
-      loadBIData();
-    }
-  }, [healthSummary, loadBIData]);
 
   return (
     <div id="dashboard-page" className="space-y-5 sm:space-y-6 animate-in fade-in duration-200">
@@ -148,11 +134,9 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {/* Financial Health Card (Responsive: Vertical on Mobile, Horizontal on Desktop) */}
-      <FinancialHealthCard
-        healthSummary={healthSummary}
-        proactiveInsight={proactiveInsight}
-        currency={currency}
-      />
+      <React.Suspense fallback={<div className="h-48 w-full bg-slate-50 dark:bg-slate-900 rounded-2xl animate-pulse" />}>
+        <FinancialHealthCard />
+      </React.Suspense>
 
       {/* Date-based Due Debts Notification Card */}
       <DueDebtsAlertCard />

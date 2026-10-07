@@ -1,15 +1,22 @@
-import arTranslations from './ar.json';
-import enTranslations from './en.json';
 import { LanguageCode } from '@/shared/types';
 
-export type TranslationSchema = typeof arTranslations;
-
-const translations: Record<LanguageCode, Record<string, unknown>> = {
-  ar: arTranslations,
-  en: enTranslations,
+let translations: Record<LanguageCode, Record<string, unknown>> = {
+  ar: {},
+  en: {},
 };
 
 let currentLanguage: LanguageCode = 'ar';
+
+export async function initI18n() {
+  try {
+    const ar = await import('./ar.json');
+    const en = await import('./en.json');
+    translations.ar = ar.default;
+    translations.en = en.default;
+  } catch (err) {
+    console.error('Failed to load translations:', err);
+  }
+}
 
 export function setLanguage(lang: LanguageCode) {
   currentLanguage = lang;

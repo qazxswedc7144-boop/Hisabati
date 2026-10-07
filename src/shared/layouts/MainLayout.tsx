@@ -8,9 +8,9 @@ import { QuickAddTransactionModal } from '@/shared/components/QuickAddTransactio
 import { AddAccountModal } from '@/shared/components/AddAccountModal';
 import { Toast } from '@/shared/components/Toast';
 import { OfflineIndicator } from '@/shared/components/OfflineIndicator';
-import { SendMessageModal } from '@/features/messaging/components/SendMessageModal';
-import { ScheduleCollectionModal } from '@/features/messaging/components/ScheduleCollectionModal';
 
+const SendMessageModal = React.lazy(() => import('@/features/messaging/components/SendMessageModal').then(m => ({ default: m.SendMessageModal })));
+const ScheduleCollectionModal = React.lazy(() => import('@/features/messaging/components/ScheduleCollectionModal').then(m => ({ default: m.ScheduleCollectionModal })));
 const OCRReceiptScannerModal = React.lazy(() => import('@/features/ocr/components/OCRReceiptScannerModal').then(m => ({ default: m.OCRReceiptScannerModal })));
 const SmartReceiptReviewModal = React.lazy(() => import('@/features/ocr/components/SmartReceiptReviewModal').then(m => ({ default: m.SmartReceiptReviewModal })));
 const ReceiptToTransactionModal = React.lazy(() => import('@/features/ocr/components/ReceiptToTransactionModal').then(m => ({ default: m.ReceiptToTransactionModal })));
@@ -54,9 +54,9 @@ export const MainLayout: React.FC = () => {
         <BottomNav />
         <QuickAddTransactionModal />
         <AddAccountModal />
-        <SendMessageModal />
-        <ScheduleCollectionModal />
         <React.Suspense fallback={null}>
+          <SendMessageModal />
+          <ScheduleCollectionModal />
           <OCRReceiptScannerModal />
           <SmartReceiptReviewModal />
           <ReceiptToTransactionModal

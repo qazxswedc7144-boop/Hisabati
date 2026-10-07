@@ -1,22 +1,26 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Activity, ChevronLeft, TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { FinancialHealthSummary, FinancialInsight } from '@/shared/types/bi.types';
-import { CurrencyCode } from '@/shared/types';
+import { useBIStore } from '@/shared/stores/biStore';
+import { useSettingsStore } from '@/shared/stores/settingsStore';
 import { formatCurrency } from '@/core/utils/formatters';
 
-interface FinancialHealthCardProps {
-  healthSummary: FinancialHealthSummary | null;
-  proactiveInsight?: FinancialInsight | null;
-  currency: CurrencyCode;
-}
-
-export const FinancialHealthCard: React.FC<FinancialHealthCardProps> = ({
-  healthSummary,
-  proactiveInsight,
-  currency,
-}) => {
+export const FinancialHealthCard: React.FC = () => {
   const navigate = useNavigate();
+  const healthSummary = useBIStore((state) => state.healthSummary);
+  const insights = useBIStore((state) => state.insights);
+  const loadBIData = useBIStore((state) => state.loadBIData);
+  const currency = useSettingsStore((state) => state.settings.currency);
+
+  const proactiveInsight =
+    insights.find((i) => i.impact === 'CRITICAL' || i.impact === 'WARNING') ||
+    insights[0];
+
+  useEffect(() => {
+    if (!healthSummary) {
+      loadBIData();
+    }
+  }, [healthSummary, loadBIData]);
 
   const score = healthSummary?.healthScore ?? 85;
   const grade = healthSummary?.healthGrade ?? 'A';

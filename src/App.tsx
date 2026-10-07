@@ -5,14 +5,13 @@ import { DashboardPage } from '@/features/dashboard/pages/DashboardPage';
 import { AccountsPage } from '@/features/accounts/pages/AccountsPage';
 import { AccountDetailsPage } from '@/features/accounts/pages/AccountDetailsPage';
 import { ErrorBoundary } from '@/shared/components/ErrorBoundary';
-import { seedInitialMockData } from '@/shared/data/mockData';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/core/database/firebase';
 import { useSettingsStore } from '@/shared/stores/settingsStore';
 import { useRBACStore } from '@/shared/stores/rbacStore';
 import { AuditActor } from '@/shared/types';
 import { tenantService } from '@/core/services/TenantService';
-import { processPendingSideEffects } from '@/core/services/pendingSideEffects.worker';
+import { initI18n } from '@/core/i18n';
 
 // Lazy loaded features
 const ReportsPage = lazy(() => import('@/features/reports/pages/ReportsPage').then(m => ({ default: m.ReportsPage })));
@@ -40,12 +39,16 @@ export default function App() {
         const isProduction = import.meta.env.PROD;
         const enableDemoData = import.meta.env.VITE_ENABLE_DEMO_DATA === 'true';
 
+        // 0. Initialize i18n
+        await initI18n();
+
         // 0. Initialize Tenant Database (CRITICAL: Must be first)
         await tenantService.initialize();
 
         // PRODUCTION SECURITY: Never seed mock data in production
         // Only seed in non-production environments if explicitly enabled via flag
         if (!isProduction && enableDemoData) {
+          const { seedInitialMockData } = await import('@/shared/data/mockData');
           await seedInitialMockData(false);
         }
         
@@ -53,8 +56,10 @@ export default function App() {
         await useSettingsStore.getState().loadSettings();
 
         // 1. Process any pending side effects asynchronously
-        processPendingSideEffects().catch((err) => {
-          console.warn('[PendingSideEffects] Background worker failed:', err);
+        import('@/core/services/pendingSideEffects.worker').then(m => {
+          m.processPendingSideEffects().catch((err) => {
+            console.warn('[PendingSideEffects] Background worker failed:', err);
+          });
         });
 
         // 2. Synchronize Firebase Auth with Store (Only if initialized)

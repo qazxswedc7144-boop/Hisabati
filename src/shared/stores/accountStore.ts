@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { Account, AccountFilterType, AccountSortField, CreateAccountDTO, UpdateAccountDTO, TrashItem } from '@/shared/types';
 import { accountRepository } from '@/core/repositories/account.repository';
-import { seedMockDataIfEmpty } from '@/shared/data/mockData';
 import { decimalToMinor } from '@/core/money/converter';
 
 interface AccountState {
@@ -42,6 +41,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   fetchAccounts: async (includeArchived = false) => {
     set({ isLoading: true });
     try {
+      const { seedMockDataIfEmpty } = await import('@/shared/data/mockData');
       await seedMockDataIfEmpty();
       const allAccounts = await accountRepository.getAll(includeArchived || get().filterType === 'archived');
       const activeAccounts = allAccounts.filter((a) => !a.deletedAt);
