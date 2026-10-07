@@ -34,6 +34,8 @@ function buildCanonicalContent(payload: {
   transactionsLength: number;
   totalDebitSum: number;
   totalCreditSum: number;
+  totalDebitMinor?: number;
+  totalCreditMinor?: number;
   accounts: any[];
   transactions: any[];
   settings?: any[];
@@ -41,6 +43,7 @@ function buildCanonicalContent(payload: {
   auditTrail?: any[];
   debts?: any[];
 }): string {
+  // V1-V5: canonical content WITHOUT minor units (preserve legacy hashes)
   const base: any = {
     schemaVersion: payload.schemaVersion,
     appVersion: payload.appVersion,
@@ -55,26 +58,20 @@ function buildCanonicalContent(payload: {
       id: a.id,
       name: a.name,
       currentBalance: a.currentBalance,
-      currentBalanceMinor: a.currentBalanceMinor,
-      currency: a.currency,
-      archived: a.archived,
       updatedAt: a.updatedAt,
     })),
     transactions: (payload.transactions || []).map((t) => ({
       id: t.id,
       accountId: t.accountId,
       amount: t.amount,
-      amountMinor: t.amountMinor,
       type: t.type,
-      status: t.status,
-      currency: t.currency,
       date: t.date,
       operationId: t.operationId,
       updatedAt: t.updatedAt,
     })),
   };
 
-  // 0.1: Support for settings, trash, and auditTrail in V4+
+  // V4+: settings, trash, auditTrail
   if (payload.schemaVersion >= 4) {
     base.settings = (payload.settings || []).map(s => ({
       id: s.id,
@@ -95,17 +92,42 @@ function buildCanonicalContent(payload: {
     }));
   }
 
-  // 1.6: Support for debts in V5+
+  // V5+: debts
   if (payload.schemaVersion >= 5) {
     base.debts = (payload.debts || []).map(d => ({
       id: d.id,
       accountId: d.accountId,
       amountMinor: d.amountMinor,
-      paidMinor: d.paidMinor,
-      remainingMinor: d.remainingMinor,
-      status: d.status,
       dueDate: d.dueDate,
       updatedAt: d.updatedAt
+    }));
+  }
+
+  // V6+: enhanced integrity (Minor units + status + currency + archived)
+  if (payload.schemaVersion >= 6) {
+    base.totalDebitMinor = payload.totalDebitMinor;
+    base.totalCreditMinor = payload.totalCreditMinor;
+    base.accounts = (payload.accounts || []).map((a) => ({
+      id: a.id,
+      name: a.name,
+      currentBalance: a.currentBalance,
+      currentBalanceMinor: a.currentBalanceMinor,
+      currency: a.currency,
+      archived: a.archived,
+      updatedAt: a.updatedAt,
+    }));
+    base.transactions = (payload.transactions || []).map((t) => ({
+      id: t.id,
+      accountId: t.accountId,
+      amount: t.amount,
+      amountMinor: t.amountMinor,
+      type: t.type,
+      status: t.status,
+      currency: t.currency,
+      date: t.date,
+      operationId: t.operationId,
+      postedAt: t.postedAt,
+      updatedAt: t.updatedAt,
     }));
   }
 
@@ -130,6 +152,8 @@ export async function calculateBackupPayloadHash(payloadWithoutHash: {
     transactionCount: number;
     totalDebitSum: number;
     totalCreditSum: number;
+    totalDebitMinor?: number;
+    totalCreditMinor?: number;
     isEncrypted?: boolean;
   };
   accounts: any[];
@@ -154,6 +178,8 @@ export async function calculateBackupPayloadHash(payloadWithoutHash: {
     transactionsLength: payloadWithoutHash.transactions.length,
     totalDebitSum: payloadWithoutHash.metadata.totalDebitSum,
     totalCreditSum: payloadWithoutHash.metadata.totalCreditSum,
+    totalDebitMinor: payloadWithoutHash.metadata.totalDebitMinor,
+    totalCreditMinor: payloadWithoutHash.metadata.totalCreditMinor,
     accounts: payloadWithoutHash.accounts,
     transactions: payloadWithoutHash.transactions,
     settings: payloadWithoutHash.settings,
@@ -190,6 +216,8 @@ export async function calculateLegacyBackupPayloadHash(
     transactionsLength: (payloadWithoutHash.transactions || []).length,
     totalDebitSum: payloadWithoutHash.metadata.totalDebitSum,
     totalCreditSum: payloadWithoutHash.metadata.totalCreditSum,
+    totalDebitMinor: payloadWithoutHash.metadata.totalDebitMinor,
+    totalCreditMinor: payloadWithoutHash.metadata.totalCreditMinor,
     accounts: payloadWithoutHash.accounts,
     transactions: payloadWithoutHash.transactions,
     settings: payloadWithoutHash.settings,

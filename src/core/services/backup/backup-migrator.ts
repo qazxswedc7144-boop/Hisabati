@@ -204,13 +204,12 @@ export function migrateBackupV5ToV6(payload: any): any {
   if (!payload || typeof payload !== 'object') {
     throw new Error('هيكل ملف النسخة الاحتياطية غير صالح (Invalid Payload)');
   }
-
   if (!payload.metadata || typeof payload.metadata !== 'object') {
     throw new Error('بيانات النسخة الاحتياطية الوصفية غير موجودة (Metadata Missing)');
   }
 
   const migrated = structuredClone(payload);
-  
+
   if (Array.isArray(migrated.accounts)) {
     migrated.accounts = migrated.accounts.map((a: any) => ({
       ...a,
@@ -218,6 +217,22 @@ export function migrateBackupV5ToV6(payload: any): any {
     }));
   }
 
+  // V6: Compute Minor sums from POSTED transactions
+  let totalDebitMinor = 0;
+  let totalCreditMinor = 0;
+  const txs = Array.isArray(migrated.transactions) ? migrated.transactions : [];
+  for (const t of txs) {
+    const status = t.status || 'posted';
+    if (status !== 'posted') continue;
+    const minor = (typeof t.amountMinor === 'number' && isFinite(t.amountMinor))
+      ? t.amountMinor
+      : Math.round((t.amount || 0) * 100);
+    if (t.type === 'debit') totalDebitMinor += minor;
+    else if (t.type === 'credit') totalCreditMinor += minor;
+  }
+
+  migrated.metadata.totalDebitMinor = totalDebitMinor;
+  migrated.metadata.totalCreditMinor = totalCreditMinor;
   migrated.metadata.backupSchemaVersion = 6;
   migrated.metadata.schemaVersion = 6;
   migrated.metadata.databaseSchemaVersion = DATABASE_SCHEMA_VERSION;

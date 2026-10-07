@@ -98,13 +98,16 @@ export class BackupService {
     const totalDebitSum = minorToDecimal(totalDebitUnits, defaultCurrency as any);
     const totalCreditSum = minorToDecimal(totalCreditUnits, defaultCurrency as any);
 
+    const totalDebitMinor = totalDebitUnits;
+    const totalCreditMinor = totalCreditUnits;
+
     const backupId = 'bck_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const createdAt = new Date().toISOString();
     const deviceId = getDeviceId();
     const deviceName = getDeviceName();
     const keyFingerprint = await getMasterKeyFingerprint(); // 2.1
 
-    const rawMetadata: Omit<BackupMetadata, 'integrityHash'> = {
+    const rawMetadata: any = {
       backupSchemaVersion: BACKUP_SCHEMA_VERSION,
       databaseSchemaVersion: DATABASE_SCHEMA_VERSION,
       financialFormatVersion: FINANCIAL_FORMAT_VERSION,
@@ -118,6 +121,8 @@ export class BackupService {
       transactionCount: transactions.length,
       totalDebitSum,
       totalCreditSum,
+      totalDebitMinor,
+      totalCreditMinor,
       keyFingerprint,
     };
 
@@ -659,6 +664,16 @@ export class BackupService {
     const rawData = await googleDriveService.downloadJsonFile<any>(fileId);
     let payload: BackupPayload;
     if (rawData && rawData.isEncrypted && rawData.data && rawData.iv) {
+      // V6: Compare keyFingerprint BEFORE decrypting
+      const remoteFp = rawData.keyFingerprint || rawData.metadata?.keyFingerprint;
+      if (remoteFp) {
+        const currentFp = await getMasterKeyFingerprint();
+        if (remoteFp !== currentFp) {
+          throw new Error(
+            'النسخة مشفرة بمفتاح مختلف. يرجى استيراد المفتاح الصحيح قبل الاستعادة.'
+          );
+        }
+      }
       payload = await decryptBackupPayload(rawData.data, rawData.iv);
     } else {
       payload = rawData as BackupPayload; // Legacy fallback
