@@ -491,8 +491,6 @@ export class TenantService {
         isLocalMode: false,
         authMembershipStatus: 'online_verified',
       });
-
-      console.log(`TenantService: Successfully switched to organization ${org.name} with status online_verified`);
     } catch (error: any) {
       store.setError(error.message);
       throw error;
