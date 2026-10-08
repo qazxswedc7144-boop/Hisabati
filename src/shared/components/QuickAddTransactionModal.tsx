@@ -13,12 +13,10 @@ import {
   Coins,
   Camera,
 } from 'lucide-react';
-import {
-  useUIStore,
-  useAccountStore,
-  useTransactionStore,
-  useSettingsStore,
-} from '@/shared/stores';
+import { useUIStore } from '@/shared/stores/uiStore';
+import { useAccountStore } from '@/shared/stores/accountStore';
+import { useTransactionStore } from '@/shared/stores/transactionStore';
+import { useSettingsStore } from '@/shared/stores/settingsStore';
 import { TransactionType, Account } from '@/shared/types';
 import { formatCurrency } from '@/core/utils/formatters';
 import { validateTransactionForm } from '@/core/utils/validators';

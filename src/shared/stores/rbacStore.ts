@@ -9,10 +9,7 @@ import {
   AuditIntegrityVerificationResult,
 } from '@/shared/types';
 import { rbacGuard } from '@/core/services/rbac/RBACGuard.service';
-import { auditTrailService } from '@/core/services/rbac/AuditTrail.service';
-import { teamManagementService } from '@/core/services/rbac/TeamManagement.service';
-
-import { authService, AuthStatus } from '@/core/services/rbac/AuthService.service';
+import { AuthStatus } from '@/core/services/rbac/AuthService.service';
 
 interface RBACState {
   currentActor: AuditActor;
@@ -40,8 +37,13 @@ interface RBACState {
 }
 
 export const useRBACStore = create<RBACState>((set, get) => ({
-  currentActor: rbacGuard.getActiveActor(),
-  authStatus: authService.getStatus(),
+  currentActor: {
+    id: 'user_local_default',
+    name: 'مستخدم محلي',
+    role: 'owner',
+    email: 'local@hisabati.app',
+  },
+  authStatus: 'loading',
   team: null,
   members: [],
   auditEntries: [],
@@ -53,7 +55,42 @@ export const useRBACStore = create<RBACState>((set, get) => ({
   initialize: async () => {
     set({ isLoading: true, error: null });
     try {
-      // Initialize existing local state
+      const { teamManagementService } = await import('@/core/services/rbac/TeamManagement.service');
+      const { auditTrailService } = await import('@/core/services/rbac/AuditTrail.service');
+      const { authService } = await import('@/core/services/rbac/AuthService.service');
+      const { rbacGuard } = await import('@/core/services/rbac/RBACGuard.service');
+
+      // 1. Initialize Auth Listener (Lazily)
+      const { auth } = await import('@/core/database/firebase');
+      const { onAuthStateChanged } = await import('firebase/auth');
+
+      if (auth) {
+        onAuthStateChanged(auth, async (user) => {
+          if (user) {
+            const actor: AuditActor = {
+              id: user.uid,
+              name: user.displayName || user.email?.split('@')[0] || 'مستخدم',
+              email: user.email || undefined,
+              role: 'pending_membership',
+            };
+            get().updateAuthStatus('authenticated', actor);
+          } else {
+            const defaultActor: AuditActor = {
+              id: 'user_local_default',
+              name: 'مستخدم محلي',
+              role: 'owner',
+              email: 'local@hisabati.app',
+            };
+            get().updateAuthStatus('unauthenticated', defaultActor);
+          }
+          
+          // Re-initialize tenant context on auth change (switches DB if needed)
+          const { tenantService } = await import('@/core/services/TenantService');
+          await tenantService.initialize();
+        });
+      }
+
+      // 2. Initialize existing local state
       const { team, members } = await teamManagementService.initializeDefaultTeamIfNeeded();
       const currentActor = rbacGuard.getActiveActor();
       const authStatus = authService.getStatus();
@@ -77,11 +114,13 @@ export const useRBACStore = create<RBACState>((set, get) => ({
 
   updateAuthStatus: (status, actor) => {
     set({ authStatus: status, currentActor: actor });
+    rbacGuard._setCachedActor(actor);
   },
 
   login: async (email, password) => {
     set({ isLoading: true, error: null });
     try {
+      const { authService } = await import('@/core/services/rbac/AuthService.service');
       await authService.login(email, password);
       // Status will be updated by onAuthStateChanged listener in AuthService
       // which we will connect in App.tsx or a provider
@@ -95,6 +134,7 @@ export const useRBACStore = create<RBACState>((set, get) => ({
   logout: async () => {
     set({ isLoading: true });
     try {
+      const { authService } = await import('@/core/services/rbac/AuthService.service');
       await authService.logout();
       set({ isLoading: false });
     } catch (err) {
@@ -127,6 +167,9 @@ export const useRBACStore = create<RBACState>((set, get) => ({
   addMember: async (params) => {
     set({ isLoading: true, error: null });
     try {
+      const { teamManagementService } = await import('@/core/services/rbac/TeamManagement.service');
+      const { auditTrailService } = await import('@/core/services/rbac/AuditTrail.service');
+
       await teamManagementService.addMember(params);
       const members = await teamManagementService.getTeamMembers();
       const auditEntries = await auditTrailService.getRecentEntries(50);
@@ -140,6 +183,9 @@ export const useRBACStore = create<RBACState>((set, get) => ({
   updateMemberRole: async (memberId: string, role: UserRole) => {
     set({ isLoading: true, error: null });
     try {
+      const { teamManagementService } = await import('@/core/services/rbac/TeamManagement.service');
+      const { auditTrailService } = await import('@/core/services/rbac/AuditTrail.service');
+
       await teamManagementService.updateMemberRole(memberId, role);
       const members = await teamManagementService.getTeamMembers();
       const auditEntries = await auditTrailService.getRecentEntries(50);
@@ -163,6 +209,9 @@ export const useRBACStore = create<RBACState>((set, get) => ({
   removeMember: async (memberId: string) => {
     set({ isLoading: true, error: null });
     try {
+      const { teamManagementService } = await import('@/core/services/rbac/TeamManagement.service');
+      const { auditTrailService } = await import('@/core/services/rbac/AuditTrail.service');
+
       await teamManagementService.removeMember(memberId);
       const members = await teamManagementService.getTeamMembers();
       const auditEntries = await auditTrailService.getRecentEntries(50);
@@ -175,6 +224,7 @@ export const useRBACStore = create<RBACState>((set, get) => ({
 
   fetchAuditTrail: async (limit: number = 100) => {
     try {
+      const { auditTrailService } = await import('@/core/services/rbac/AuditTrail.service');
       const auditEntries = await auditTrailService.getRecentEntries(limit);
       set({ auditEntries });
     } catch (err) {
@@ -185,6 +235,7 @@ export const useRBACStore = create<RBACState>((set, get) => ({
   verifyAuditIntegrity: async () => {
     set({ isVerifying: true });
     try {
+      const { auditTrailService } = await import('@/core/services/rbac/AuditTrail.service');
       const result = await auditTrailService.verifyIntegrity();
       set({ verificationResult: result, isVerifying: false });
       return result;

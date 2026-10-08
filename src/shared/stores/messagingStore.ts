@@ -11,14 +11,6 @@ import {
   Account,
 } from '@/shared/types';
 import {
-  messagingService,
-  notificationService,
-  schedulerService,
-  reminderService,
-  templateRenderer,
-} from '@/core/services/messaging';
-import { CreateScheduledDTO } from '@/core/services/messaging/scheduler.service';
-import {
   ScheduleDebtCollectionAlertDTO,
   OverdueDebtSummary,
   DueDebtsOverview,
@@ -91,6 +83,7 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
 
   fetchNotifications: async (filter) => {
     try {
+      const { notificationService } = await import('@/core/services/messaging');
       const notifications = await notificationService.getAllNotifications(filter);
       const unreadCount = await notificationService.getUnreadCount();
       set({ notifications, unreadNotificationsCount: unreadCount });
@@ -102,6 +95,7 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
   fetchMessages: async (filter) => {
     try {
       set({ isLoading: true });
+      const { messagingService } = await import('@/core/services/messaging');
       const messages = await messagingService.getAllMessages(filter);
       set({ messages, isLoading: false });
     } catch (e) {
@@ -112,6 +106,7 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
 
   fetchTemplates: async () => {
     try {
+      const { messagingService } = await import('@/core/services/messaging');
       const templates = await messagingService.getAllTemplates();
       set({ templates });
     } catch (e) {
@@ -121,6 +116,7 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
 
   fetchScheduledMessages: async () => {
     try {
+      const { schedulerService } = await import('@/core/services/messaging');
       const scheduledMessages = await schedulerService.getAllScheduledMessages();
       set({ scheduledMessages });
     } catch (e) {
@@ -130,6 +126,7 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
 
   markNotificationRead: async (id: string) => {
     try {
+      const { notificationService } = await import('@/core/services/messaging');
       await notificationService.markAsRead(id);
       await get().fetchNotifications();
     } catch (e) {
@@ -139,6 +136,7 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
 
   markAllNotificationsRead: async () => {
     try {
+      const { notificationService } = await import('@/core/services/messaging');
       await notificationService.markAllAsRead();
       await get().fetchNotifications();
     } catch (e) {
@@ -148,6 +146,7 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
 
   markAllAsRead: async () => {
     try {
+      const { notificationService } = await import('@/core/services/messaging');
       await notificationService.markAllAsRead();
       await get().fetchNotifications();
     } catch (e) {
@@ -157,6 +156,7 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
 
   deleteNotification: async (id: string) => {
     try {
+      const { notificationService } = await import('@/core/services/messaging');
       await notificationService.deleteNotification(id);
       await get().fetchNotifications();
     } catch (e) {
@@ -166,6 +166,7 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
 
   clearAllNotifications: async () => {
     try {
+      const { notificationService } = await import('@/core/services/messaging');
       await notificationService.clearAllNotifications();
       await get().fetchNotifications();
     } catch (e) {
@@ -213,18 +214,21 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
   },
 
   sendMessage: async (dto: SendMessageDTO) => {
+    const { messagingService } = await import('@/core/services/messaging');
     const res = await messagingService.sendMessage(dto);
     await get().fetchMessages();
     return res;
   },
 
-  scheduleMessage: async (dto: CreateScheduledDTO) => {
+  scheduleMessage: async (dto: any) => {
+    const { schedulerService } = await import('@/core/services/messaging');
     const res = await schedulerService.scheduleMessage(dto);
     await get().fetchScheduledMessages();
     return res;
   },
 
   scheduleDebtCollectionAlert: async (dto: ScheduleDebtCollectionAlertDTO) => {
+    const { reminderService } = await import('@/core/services/messaging');
     const res = await reminderService.scheduleDebtCollectionAlert(dto);
     await get().fetchScheduledMessages();
     return res;
@@ -240,6 +244,7 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
         __dueDebtsPendingResolvers = [];
         set({ isLoadingDueDebts: true });
         try {
+          const { reminderService } = await import('@/core/services/messaging');
           const overview = await reminderService.getDueDebtAlerts(daysAhead);
           set({ dueDebtsOverview: overview, isLoadingDueDebts: false });
           resolvers.forEach(r => r(overview));
@@ -254,6 +259,7 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
 
   syncDueDebtNotifications: async (daysAhead = 3) => {
     try {
+      const { reminderService } = await import('@/core/services/messaging');
       const createdCount = await reminderService.syncDueDebtNotifications(daysAhead);
       if (createdCount > 0) {
         await get().fetchNotifications();
@@ -266,10 +272,12 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
   },
 
   scanOverdueDebts: async (daysThreshold = 30) => {
+    const { reminderService } = await import('@/core/services/messaging');
     return await reminderService.scanOverdueDebts(daysThreshold);
   },
 
   triggerOverdueDebtAlerts: async (daysThreshold = 14) => {
+    const { reminderService } = await import('@/core/services/messaging');
     const res = await reminderService.triggerOverdueDebtNotifications(daysThreshold);
     if (res.createdCount > 0) {
       await get().fetchNotifications();
@@ -278,25 +286,30 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
   },
 
   fetchSchedulesForAccount: async (accountId: string) => {
+    const { reminderService } = await import('@/core/services/messaging');
     return await reminderService.getSchedulesForAccount(accountId);
   },
 
   cancelSchedule: async (id: string) => {
+    const { schedulerService } = await import('@/core/services/messaging');
     await schedulerService.cancelSchedule(id);
     await get().fetchScheduledMessages();
   },
 
   pauseSchedule: async (id: string) => {
+    const { schedulerService } = await import('@/core/services/messaging');
     await schedulerService.pauseSchedule(id);
     await get().fetchScheduledMessages();
   },
 
   resumeSchedule: async (id: string) => {
+    const { schedulerService } = await import('@/core/services/messaging');
     await schedulerService.resumeSchedule(id);
     await get().fetchScheduledMessages();
   },
 
   checkDueSchedules: async () => {
+    const { schedulerService } = await import('@/core/services/messaging');
     const res = await schedulerService.checkAndTriggerDueMessages();
     if (res.triggeredCount > 0) {
       await get().fetchScheduledMessages();

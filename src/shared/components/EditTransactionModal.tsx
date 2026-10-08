@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { X, ArrowUpRight, ArrowDownLeft, Calendar, FileText, Hash, Check } from 'lucide-react';
 import { Transaction, TransactionType } from '@/shared/types';
-import { useAccountStore, useTransactionStore, useSettingsStore, useUIStore } from '@/shared/stores';
+import { useAccountStore } from '@/shared/stores/accountStore';
+import { useTransactionStore } from '@/shared/stores/transactionStore';
+import { useSettingsStore } from '@/shared/stores/settingsStore';
+import { useUIStore } from '@/shared/stores/uiStore';
 import { useLockBody } from '@/shared/hooks';
 
 interface EditTransactionModalProps {

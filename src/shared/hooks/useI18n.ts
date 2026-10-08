@@ -1,4 +1,4 @@
-import { useSettingsStore } from '@/shared/stores';
+import { useSettingsStore } from '@/shared/stores/settingsStore';
 import { t, setLanguage as setLangCore } from '@/core/i18n';
 import { LanguageCode } from '@/shared/types';
 

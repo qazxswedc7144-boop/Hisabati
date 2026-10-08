@@ -17,13 +17,10 @@ import {
   Phone,
   CalendarDays,
 } from 'lucide-react';
-import {
-  useMessagingStore,
-  useUIStore,
-  useAccountStore,
-  useSettingsStore,
-  flushDueDebtsDebounce,
-} from '@/shared/stores';
+import { useMessagingStore, flushDueDebtsDebounce } from '@/shared/stores/messagingStore';
+import { useUIStore } from '@/shared/stores/uiStore';
+import { useAccountStore } from '@/shared/stores/accountStore';
+import { useSettingsStore } from '@/shared/stores/settingsStore';
 import { DueDebtAlert, DueDebtUrgency } from '@/shared/types';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
 import { fromMinor } from '@/core/utils/money.utils';

@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { Transaction, TransactionSummary, CreateTransactionDTO, UpdateTransactionDTO } from '@/shared/types';
-import { transactionRepository } from '@/core/repositories/transaction.repository';
 import { useAccountStore } from './accountStore';
 import { useSettingsStore } from './settingsStore';
 import { formatInvoiceNumber } from '@/core/utils/formatters';
@@ -40,6 +39,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   fetchRecentTransactions: async (limit = 10) => {
     set({ isLoading: true });
     try {
+      const { transactionRepository } = await import('@/core/repositories/transaction.repository');
       const recent = await transactionRepository.getRecent(limit);
       const summary = await transactionRepository.getSummary();
       set({ recentTransactions: recent, summary, isLoading: false });
@@ -52,6 +52,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   fetchAccountTransactions: async (accountId: string, reset = true) => {
     set({ isLoading: true });
     try {
+      const { transactionRepository } = await import('@/core/repositories/transaction.repository');
       const limit = 20;
       const offset = reset ? 0 : get().accountOffset;
       const list = await transactionRepository.getByAccountIdPaginated(accountId, offset, limit);
@@ -75,6 +76,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
   fetchSummary: async () => {
     try {
+      const { transactionRepository } = await import('@/core/repositories/transaction.repository');
       const summary = await transactionRepository.getSummary();
       set({ summary });
       return summary;
@@ -85,6 +87,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   },
 
   addTransaction: async (dto: CreateTransactionDTO) => {
+    const { transactionRepository } = await import('@/core/repositories/transaction.repository');
     const newTrx = await transactionRepository.create(dto);
     
     // Refresh account list and summary
@@ -101,6 +104,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   },
 
   updateTransaction: async (id: string, dto: UpdateTransactionDTO) => {
+    const { transactionRepository } = await import('@/core/repositories/transaction.repository');
     const updated = await transactionRepository.update(id, dto);
     
     useAccountStore.getState().fetchAccounts();
@@ -112,6 +116,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   },
 
   deleteTransaction: async (id: string, accountId?: string) => {
+    const { transactionRepository } = await import('@/core/repositories/transaction.repository');
     const success = await transactionRepository.delete(id);
     if (success) {
       useAccountStore.getState().fetchAccounts();

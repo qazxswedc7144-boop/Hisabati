@@ -1,6 +1,6 @@
 import React from 'react';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
-import { useUIStore } from '@/shared/stores';
+import { useUIStore } from '@/shared/stores/uiStore';
 
 export const Toast: React.FC = () => {
   const message = useUIStore((state) => state.toastMessage);

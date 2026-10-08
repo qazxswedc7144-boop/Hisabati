@@ -1,7 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, UserPlus, Phone, FileText, Tag, UserCheck, ChevronDown, Contact, Search, Check, ExternalLink } from 'lucide-react';
-import { useUIStore, useAccountStore, useSettingsStore } from '@/shared/stores';
+import { useUIStore } from '@/shared/stores/uiStore';
+import { useAccountStore } from '@/shared/stores/accountStore';
+import { useSettingsStore } from '@/shared/stores/settingsStore';
 import { validateAccountForm } from '@/core/utils/validators';
 import { useLockBody } from '@/shared/hooks';
 

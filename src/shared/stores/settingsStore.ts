@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { AppSettings, CurrencyCode, LanguageCode, ThemeMode } from '@/shared/types';
-import { settingsRepository } from '@/core/repositories/settings.repository';
 import { setLanguage } from '@/core/i18n';
 
 interface SettingsState {
@@ -46,6 +45,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadSettings: async () => {
     try {
+      const { settingsRepository } = await import('@/core/repositories/settings.repository');
       const settings = await settingsRepository.getSettings();
       set({ settings, isLoading: false });
       
@@ -72,6 +72,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
 
     try {
+      const { settingsRepository } = await import('@/core/repositories/settings.repository');
       const updated = await settingsRepository.updateSettings(partial);
       set({ settings: updated });
     } catch (e) {

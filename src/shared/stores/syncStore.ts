@@ -8,9 +8,6 @@ import {
   SyncConflictItem,
   DriveFileInfo,
 } from '@/shared/types';
-import { googleDriveService } from '@/core/services/googleDrive.service';
-import { syncEngine } from '@/core/services/syncEngine.service';
-import { backupService } from '@/core/services/backup.service';
 
 interface SyncStoreState {
   isDriveConnected: boolean;
@@ -49,9 +46,9 @@ interface SyncStoreState {
 }
 
 export const useSyncStore = create<SyncStoreState>((set, get) => ({
-  isDriveConnected: googleDriveService.isConnected(),
-  userEmail: googleDriveService.getUserInfo()?.email || null,
-  userName: googleDriveService.getUserInfo()?.name || null,
+  isDriveConnected: false, // Will be updated in checkDriveConnection
+  userEmail: null,
+  userName: null,
   syncStatus: 'idle',
   lastSyncTime: typeof localStorage !== 'undefined' ? localStorage.getItem('hisabati_last_sync_time') : null,
   pendingQueueCount: 0,
@@ -63,7 +60,8 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
   isRestoring: false,
   isBackingUp: false,
 
-  checkDriveConnection: () => {
+  checkDriveConnection: async () => {
+    const { googleDriveService } = await import('@/core/services/googleDrive.service');
     const connected = googleDriveService.isConnected();
     const user = googleDriveService.getUserInfo();
     set({
@@ -75,6 +73,7 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
   },
 
   connectGoogleDrive: async () => {
+    const { googleDriveService } = await import('@/core/services/googleDrive.service');
     const success = await googleDriveService.requestGoogleAuth();
     get().checkDriveConnection();
     if (success) {
@@ -84,7 +83,8 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
     return success;
   },
 
-  disconnectGoogleDrive: () => {
+  disconnectGoogleDrive: async () => {
+    const { googleDriveService } = await import('@/core/services/googleDrive.service');
     googleDriveService.disconnect();
     set({
       isDriveConnected: false,
@@ -96,6 +96,7 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
 
   updatePendingCount: async () => {
     try {
+      const { syncEngine } = await import('@/core/services/syncEngine.service');
       const [count, stats] = await Promise.all([
         syncEngine.getPendingCount(),
         syncEngine.getQueueStats(),
@@ -108,6 +109,7 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
 
   retryFailedQueue: async () => {
     try {
+      const { syncEngine } = await import('@/core/services/syncEngine.service');
       const retriedCount = await syncEngine.retryFailedQueueItems();
       await get().updatePendingCount();
       return retriedCount;
@@ -119,6 +121,7 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
 
   clearCompletedQueue: async () => {
     try {
+      const { syncEngine } = await import('@/core/services/syncEngine.service');
       const clearedCount = await syncEngine.clearCompletedQueue();
       await get().updatePendingCount();
       return clearedCount;
@@ -130,6 +133,7 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
 
   triggerManualSync: async () => {
     try {
+      const { syncEngine } = await import('@/core/services/syncEngine.service');
       const res = await syncEngine.performFullSync();
       set({
         lastSyncTime: new Date().toISOString(),
@@ -145,6 +149,7 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
   triggerManualBackup: async () => {
     set({ isBackingUp: true });
     try {
+      const { backupService } = await import('@/core/services/backup.service');
       await backupService.uploadBackupToGoogleDrive();
       await get().fetchCloudBackups();
     } finally {
@@ -153,6 +158,7 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
   },
 
   fetchCloudBackups: async () => {
+    const { googleDriveService } = await import('@/core/services/googleDrive.service');
     if (!googleDriveService.isConnected()) return;
     set({ isLoadingBackups: true });
     try {
@@ -169,6 +175,7 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
 
   deleteCloudBackup: async (fileId: string) => {
     try {
+      const { googleDriveService } = await import('@/core/services/googleDrive.service');
       await googleDriveService.deleteFile(fileId);
       await get().fetchCloudBackups();
     } catch (err) {
@@ -180,13 +187,15 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
   restoreFromDriveFile: async (fileId: string, mode = 'replace') => {
     set({ isRestoring: true });
     try {
-      await backupService.restoreBackupFromGoogleDrive(fileId, mode);
+      const { backupService } = await import('@/core/services/backup.service');
+      await backupService.restoreBackupFromGoogleDrive(fileId, (mode as any));
     } finally {
       set({ isRestoring: false });
     }
   },
 
   resolveConflict: async (conflict: SyncConflictItem, choice: 'local' | 'remote') => {
+    const { syncEngine } = await import('@/core/services/syncEngine.service');
     await syncEngine.resolveConflict(conflict, choice);
     set((state) => ({
       conflicts: state.conflicts.filter((c) => c.id !== conflict.id),
@@ -194,15 +203,23 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
   },
 }));
 
-// Subscribe to syncEngine events after store initialization
-syncEngine.subscribeStatus((status) => {
-  useSyncStore.setState({ syncStatus: status });
-  const updatePending = useSyncStore.getState().updatePendingCount;
-  if (typeof updatePending === 'function') {
-    updatePending();
-  }
-});
+// Delayed subscription to syncEngine to keep index clean
+setTimeout(async () => {
+  try {
+    const { syncEngine } = await import('@/core/services/syncEngine.service');
+    syncEngine.subscribeStatus((status) => {
+      useSyncStore.setState({ syncStatus: status });
+      const updatePending = useSyncStore.getState().updatePendingCount;
+      if (typeof updatePending === 'function') {
+        updatePending();
+      }
+    });
 
-syncEngine.subscribeConflicts((conflicts) => {
-  useSyncStore.setState({ conflicts });
-});
+    syncEngine.subscribeConflicts((conflicts) => {
+      useSyncStore.setState({ conflicts });
+    });
+
+    // Initial check
+    useSyncStore.getState().checkDriveConnection();
+  } catch { /* ignore */ }
+}, 2000);

@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { Account, AccountFilterType, AccountSortField, CreateAccountDTO, UpdateAccountDTO, TrashItem } from '@/shared/types';
-import { accountRepository } from '@/core/repositories/account.repository';
 import { decimalToMinor } from '@/core/money/converter';
 
 interface AccountState {
@@ -43,6 +42,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     try {
       const { seedMockDataIfEmpty } = await import('@/shared/data/mockData');
       await seedMockDataIfEmpty();
+      const { accountRepository } = await import('@/core/repositories/account.repository');
       const allAccounts = await accountRepository.getAll(includeArchived || get().filterType === 'archived');
       const activeAccounts = allAccounts.filter((a) => !a.deletedAt);
       set({ accounts: activeAccounts, isLoading: false });
@@ -54,6 +54,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
 
   fetchAccountById: async (id: string) => {
     try {
+      const { accountRepository } = await import('@/core/repositories/account.repository');
       const account = await accountRepository.getById(id);
       set({ selectedAccount: account || null });
       return account;
@@ -64,12 +65,14 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   },
 
   addAccount: async (dto: CreateAccountDTO) => {
+    const { accountRepository } = await import('@/core/repositories/account.repository');
     const newAccount = await accountRepository.create(dto);
     set((state) => ({ accounts: [newAccount, ...state.accounts] }));
     return newAccount;
   },
 
   updateAccount: async (id: string, dto: UpdateAccountDTO) => {
+    const { accountRepository } = await import('@/core/repositories/account.repository');
     const updated = await accountRepository.update(id, dto);
     if (updated) {
       set((state) => ({
@@ -81,6 +84,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   },
 
   archiveAccount: async (id: string) => {
+    const { accountRepository } = await import('@/core/repositories/account.repository');
     const updated = await accountRepository.archive(id);
     if (updated) {
       set((state) => ({
@@ -93,6 +97,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   },
 
   unarchiveAccount: async (id: string) => {
+    const { accountRepository } = await import('@/core/repositories/account.repository');
     const updated = await accountRepository.unarchive(id);
     if (updated) {
       set((state) => ({
@@ -105,6 +110,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   },
 
   deleteAccount: async (id: string, force = false, moveToTrash = false) => {
+    const { accountRepository } = await import('@/core/repositories/account.repository');
     const success = await accountRepository.delete(id, force, moveToTrash);
     if (success) {
       set((state) => ({
@@ -120,6 +126,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
 
   fetchTrashItems: async () => {
     try {
+      const { accountRepository } = await import('@/core/repositories/account.repository');
       const items = await accountRepository.getTrashItems();
       set({ trashItems: items });
     } catch (e) {
@@ -129,6 +136,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
 
   restoreFromTrash: async (trashId: string) => {
     try {
+      const { accountRepository } = await import('@/core/repositories/account.repository');
       const success = await accountRepository.restoreFromTrash(trashId);
       if (success) {
         await get().fetchAccounts();
@@ -143,6 +151,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
 
   deletePermanentlyFromTrash: async (trashId: string) => {
     try {
+      const { accountRepository } = await import('@/core/repositories/account.repository');
       await accountRepository.deletePermanentlyFromTrash(trashId);
       set((state) => ({
         trashItems: state.trashItems.filter((item) => item.id !== trashId),
@@ -155,6 +164,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   recalculateAll: async () => {
     set({ isLoading: true });
     try {
+      const { accountRepository } = await import('@/core/repositories/account.repository');
       await accountRepository.recalculateAll();
       const allAccounts = await accountRepository.getAll(get().filterType === 'archived');
       const activeAccounts = allAccounts.filter((a) => !a.deletedAt);

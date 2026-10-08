@@ -5,11 +5,8 @@ import { DashboardPage } from '@/features/dashboard/pages/DashboardPage';
 import { AccountsPage } from '@/features/accounts/pages/AccountsPage';
 import { AccountDetailsPage } from '@/features/accounts/pages/AccountDetailsPage';
 import { ErrorBoundary } from '@/shared/components/ErrorBoundary';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '@/core/database/firebase';
 import { useSettingsStore } from '@/shared/stores/settingsStore';
 import { useRBACStore } from '@/shared/stores/rbacStore';
-import { AuditActor } from '@/shared/types';
 import { tenantService } from '@/core/services/TenantService';
 import { initI18n } from '@/core/i18n';
 
@@ -31,7 +28,7 @@ const PageLoader = () => (
 
 export default function App() {
   const [isReady, setIsReady] = useState(false);
-  const { initialize: initRBAC, updateAuthStatus } = useRBACStore();
+  const { initialize: initRBAC } = useRBACStore();
 
   useEffect(() => {
     async function initApp() {
@@ -62,41 +59,6 @@ export default function App() {
           });
         });
 
-        // 2. Synchronize Firebase Auth with Store (Only if initialized)
-        if (auth) {
-          onAuthStateChanged(auth, async (user) => {
-            if (user) {
-              const actor: AuditActor = {
-                id: user.uid,
-                name: user.displayName || user.email?.split('@')[0] || 'مستخدم',
-                email: user.email || undefined,
-                role: 'pending_membership', // P1.2-B-H: Firebase auth != owner
-              };
-              updateAuthStatus('authenticated', actor);
-            } else {
-              const defaultActor: AuditActor = {
-                id: 'user_local_default',
-                name: 'مستخدم محلي',
-                role: 'owner',
-                email: 'local@hisabati.app',
-              };
-              updateAuthStatus('unauthenticated', defaultActor);
-            }
-
-            // Re-initialize tenant context on auth change (switches DB if needed)
-            await tenantService.initialize();
-          });
-        } else {
-          // If Firebase is not initialized, we stay in local mode
-          const defaultActor: AuditActor = {
-            id: 'user_local_default',
-            name: 'مستخدم محلي',
-            role: 'owner',
-            email: 'local@hisabati.app',
-          };
-          updateAuthStatus('unauthenticated', defaultActor);
-        }
-
       } catch (e) {
         console.error('Failed initializing app data:', e);
       } finally {
@@ -104,7 +66,7 @@ export default function App() {
       }
     }
     initApp();
-  }, [initRBAC, updateAuthStatus]);
+  }, [initRBAC]);
 
   if (!isReady) {
     return (

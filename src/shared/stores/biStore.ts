@@ -7,12 +7,6 @@ import {
   CashFlowForecast,
   CashFlowInterval,
 } from '@/shared/types/bi.types';
-import {
-  financialHealthEngine,
-  cashFlowAnalyzer,
-  financialRiskDetector,
-  financialIntelligenceEngine,
-} from '@/core/services/bi';
 
 interface BIState {
   healthSummary: FinancialHealthSummary | null;
@@ -47,6 +41,7 @@ export const useBIStore = create<BIState>((set, get) => ({
     set({ isLoading: true, error: null });
 
     try {
+      const { financialIntelligenceEngine } = await import('@/core/services/bi');
       const report = await financialIntelligenceEngine.generateFullReport(interval);
 
       set({
@@ -71,6 +66,7 @@ export const useBIStore = create<BIState>((set, get) => ({
   setInterval: async (interval: CashFlowInterval) => {
     set({ selectedInterval: interval, isLoading: true, error: null });
     try {
+      const { cashFlowAnalyzer, financialIntelligenceEngine } = await import('@/core/services/bi');
       const flow = await cashFlowAnalyzer.analyze(interval);
       const summary = get().healthSummary;
       const forecast = summary

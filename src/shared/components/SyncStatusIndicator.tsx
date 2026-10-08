@@ -14,7 +14,8 @@ import {
   X,
   RotateCw,
 } from 'lucide-react';
-import { useSyncStore, useUIStore } from '@/shared/stores';
+import { useSyncStore } from '@/shared/stores/syncStore';
+import { useUIStore } from '@/shared/stores/uiStore';
 import { useOnlineStatus } from '@/shared/hooks/useOnlineStatus';
 import { formatDate } from '@/core/utils/formatters';
 import { SyncStatusType } from '@/shared/types';

@@ -229,3 +229,30 @@ export interface InvoiceAuditReport {
   isOfflineFallback: boolean;
 }
 
+export interface ReceiptReviewValidationResult {
+  isValid: boolean;
+  errors: Record<string, string>;
+  warnings: string[];
+}
+
+export interface EditableReceiptState {
+  partyType: 'vendor' | 'customer';
+  partyName: string;
+  matchedAccountId?: string;
+  invoiceNumber: string;
+  date: string;
+  dueDate?: string;
+  currency: CurrencyCode;
+  totalAmount: number | string;
+  subtotal: number | string;
+  tax: number | string;
+  lineItems: Array<{
+    id: string;
+    name: string;
+    quantity: number | string;
+    unitPrice: number | string;
+    totalPrice: number | string;
+  }>;
+  notes: string;
+}
+

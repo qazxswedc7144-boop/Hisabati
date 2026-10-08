@@ -1,6 +1,5 @@
 import { create } from 'zustand';
-import { OCRResult, StructuredReceiptDraft } from '@/shared/types';
-import { EditableReceiptState, ReceiptReviewService } from '@/core/services/ocr/ReceiptReviewService';
+import { OCRResult, StructuredReceiptDraft, EditableReceiptState } from '@/shared/types';
 
 interface OCRStoreState {
   // Processing & Scanning State
@@ -121,7 +120,8 @@ export const useOCRStore = create<OCRStoreState>((set, get) => ({
       scanProgress: 0,
     }),
 
-  openReviewModal: (ocrResult: OCRResult) => {
+  openReviewModal: async (ocrResult: OCRResult) => {
+    const { ReceiptReviewService } = await import('@/core/services/ocr/ReceiptReviewService');
     const editable = ReceiptReviewService.mapOCRResultToEditableState(ocrResult);
     set({
       currentOCRResult: ocrResult,
@@ -159,7 +159,7 @@ export const useOCRStore = create<OCRStoreState>((set, get) => ({
     });
   },
 
-  updateLineItem: (index, field, value) => {
+  updateLineItem: async (index, field, value) => {
     const { editableState } = get();
     if (!editableState) return;
     const updatedItems = [...editableState.lineItems];
@@ -171,6 +171,7 @@ export const useOCRStore = create<OCRStoreState>((set, get) => ({
 
       // Recalculate item total if quantity or price changed
       if (field === 'quantity' || field === 'unitPrice') {
+        const { ReceiptReviewService } = await import('@/core/services/ocr/ReceiptReviewService');
         const qty = ReceiptReviewService.parseNumericInput(
           field === 'quantity' ? value : updatedItems[index].quantity
         );
@@ -219,12 +220,13 @@ export const useOCRStore = create<OCRStoreState>((set, get) => ({
     });
   },
 
-  confirmReview: (andOpenConvert?: boolean) => {
+  confirmReview: async (andOpenConvert?: boolean) => {
     const { editableState, currentOCRResult, savedDrafts } = get();
     if (!editableState) {
       throw new Error('لا توجد بيانات فاتورة قيد المراجعة');
     }
 
+    const { ReceiptReviewService } = await import('@/core/services/ocr/ReceiptReviewService');
     const structuredDraft = ReceiptReviewService.createStructuredDraft(
       editableState,
       currentOCRResult || undefined
@@ -244,9 +246,10 @@ export const useOCRStore = create<OCRStoreState>((set, get) => ({
     return structuredDraft;
   },
 
-  resetReview: () => {
+  resetReview: async () => {
     const { currentOCRResult } = get();
     if (currentOCRResult) {
+      const { ReceiptReviewService } = await import('@/core/services/ocr/ReceiptReviewService');
       const resetState = ReceiptReviewService.mapOCRResultToEditableState(currentOCRResult);
       set({ editableState: resetState });
     }

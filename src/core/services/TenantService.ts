@@ -3,7 +3,6 @@ import { useTenantStore, resetTenantScopedStores } from '@/shared/stores/tenantS
 import { Organization, OrganizationMembership, CapabilityLease } from '@/shared/types/tenant.types';
 import { authService } from './rbac/AuthService.service';
 import {
-  ServerMembershipVerifier,
   VerifyMembershipResponse,
 } from './tenant/ServerMembershipVerifier';
 import { capabilityLeaseService } from './tenant/CapabilityLeaseService';
@@ -171,6 +170,7 @@ export class TenantService {
           }
         } catch {
           // Direct fallback for isomorphic / headless test environments
+          const { ServerMembershipVerifier } = await import('./tenant/ServerMembershipVerifier');
           result = await ServerMembershipVerifier.verifyMembership({
             idToken,
             organizationId,
@@ -180,6 +180,7 @@ export class TenantService {
         }
       } else {
         // Direct execution in Node.js / unit tests
+        const { ServerMembershipVerifier } = await import('./tenant/ServerMembershipVerifier');
         result = await ServerMembershipVerifier.verifyMembership({
           idToken,
           organizationId,
@@ -359,6 +360,7 @@ export class TenantService {
     }
 
     try {
+      const { ServerMembershipVerifier } = await import('./tenant/ServerMembershipVerifier');
       const result = await ServerMembershipVerifier.verifyMembership({
         idToken,
         organizationId: activeOrg.id,
