@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useAccountStore, useTransactionStore, useSettingsStore, useUIStore, useMessagingStore } from '@/shared/stores';
 import { BalanceBadge, EmptyState, EditTransactionModal } from '@/shared/components';
-import { AccountStatementModal } from '@/features/reports/components';
+import { AccountStatementModal } from '@/features/reports/components/AccountStatementModal';
 import { PdfXlsExportIcon } from '@/shared/components/icons/PdfXlsExportIcon';
 import { ReceiptDocumentModal } from '@/features/ocr';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';

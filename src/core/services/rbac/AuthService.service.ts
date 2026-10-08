@@ -100,7 +100,7 @@ export class AuthService {
    * Updates the active session actor (Local/Testing switching)
    * This updates the UI state/Cache but doesn't change Firebase Auth.
    */
-  public async setActiveActor(actor: AuditActor): Promise<void> {
+  public setActiveActor(actor: AuditActor): void {
     this.currentActor = { ...actor };
   }
 

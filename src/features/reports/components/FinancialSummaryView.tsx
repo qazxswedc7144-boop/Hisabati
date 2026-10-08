@@ -22,7 +22,8 @@ import {
 } from 'lucide-react';
 import { PdfXlsExportIcon } from '@/shared/components/icons/PdfXlsExportIcon';
 import { useSettingsStore, useUIStore } from '@/shared/stores';
-import { reportService, excelGenerator } from '@/core/services';
+import { reportService } from '@/core/services/report.service';
+import { excelGenerator } from '@/core/services/excelGenerator.service';
 import { FinancialSummaryReport, DatePreset, DateRange } from '@/shared/types';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
 import { decimalToMinor } from '@/core/money/converter';

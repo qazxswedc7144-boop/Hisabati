@@ -7,6 +7,10 @@ import {
   ReceiptReviewValidationResult,
   EditableReceiptState,
 } from '@/shared/types';
+import { toMinorUnits } from '@/core/utils/financial';
+import { ArabicNumberParser } from '@/core/services/ai/ArabicNumberParser';
+
+export type { ReceiptReviewValidationResult };
 
 /**
  * ReceiptReviewService

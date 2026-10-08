@@ -203,23 +203,25 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
   },
 }));
 
-// Delayed subscription to syncEngine to keep index clean
-setTimeout(async () => {
-  try {
-    const { syncEngine } = await import('@/core/services/syncEngine.service');
-    syncEngine.subscribeStatus((status) => {
-      useSyncStore.setState({ syncStatus: status });
-      const updatePending = useSyncStore.getState().updatePendingCount;
-      if (typeof updatePending === 'function') {
-        updatePending();
-      }
-    });
+// Delayed subscription to syncEngine to keep index clean (browser only, not in test runners)
+if (typeof window !== 'undefined' && !(import.meta as any).env?.TEST) {
+  setTimeout(async () => {
+    try {
+      const { syncEngine } = await import('@/core/services/syncEngine.service');
+      syncEngine.subscribeStatus((status) => {
+        useSyncStore.setState({ syncStatus: status });
+        const updatePending = useSyncStore.getState().updatePendingCount;
+        if (typeof updatePending === 'function') {
+          updatePending();
+        }
+      });
 
-    syncEngine.subscribeConflicts((conflicts) => {
-      useSyncStore.setState({ conflicts });
-    });
+      syncEngine.subscribeConflicts((conflicts) => {
+        useSyncStore.setState({ conflicts });
+      });
 
-    // Initial check
-    useSyncStore.getState().checkDriveConnection();
-  } catch { /* ignore */ }
-}, 2000);
+      // Initial check
+      useSyncStore.getState().checkDriveConnection();
+    } catch { /* ignore */ }
+  }, 2000);
+}

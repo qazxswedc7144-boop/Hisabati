@@ -4,11 +4,11 @@ import { Header } from '@/shared/components/Header';
 import { BottomNav } from '@/shared/components/BottomNav';
 import { Sidebar } from '@/shared/components/Sidebar';
 import { MobileNavDrawer } from '@/shared/components/MobileNavDrawer';
-import { QuickAddTransactionModal } from '@/shared/components/QuickAddTransactionModal';
 import { AddAccountModal } from '@/shared/components/AddAccountModal';
 import { Toast } from '@/shared/components/Toast';
 import { OfflineIndicator } from '@/shared/components/OfflineIndicator';
 
+const QuickAddTransactionModal = React.lazy(() => import('@/shared/components/QuickAddTransactionModal').then(m => ({ default: m.QuickAddTransactionModal })));
 const SendMessageModal = React.lazy(() => import('@/features/messaging/components/SendMessageModal').then(m => ({ default: m.SendMessageModal })));
 const ScheduleCollectionModal = React.lazy(() => import('@/features/messaging/components/ScheduleCollectionModal').then(m => ({ default: m.ScheduleCollectionModal })));
 const OCRReceiptScannerModal = React.lazy(() => import('@/features/ocr/components/OCRReceiptScannerModal').then(m => ({ default: m.OCRReceiptScannerModal })));
@@ -52,9 +52,9 @@ export const MainLayout: React.FC = () => {
         {/* Floating Global Components */}
         <MobileNavDrawer />
         <BottomNav />
-        <QuickAddTransactionModal />
         <AddAccountModal />
         <React.Suspense fallback={null}>
+          <QuickAddTransactionModal />
           <SendMessageModal />
           <ScheduleCollectionModal />
           <OCRReceiptScannerModal />

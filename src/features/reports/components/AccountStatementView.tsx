@@ -34,12 +34,10 @@ import {
 import { PdfXlsExportIcon } from '@/shared/components/icons/PdfXlsExportIcon';
 
 import { useAccountStore, useSettingsStore, useUIStore } from '@/shared/stores';
-import {
-  reportService,
-  excelGenerator,
-  pdfGenerator,
-  shareService,
-} from '@/core/services';
+import { reportService } from '@/core/services/report.service';
+import { excelGenerator } from '@/core/services/excelGenerator.service';
+import { pdfGenerator } from '@/core/services/pdfGenerator.service';
+import { shareService } from '@/core/services/share.service';
 
 import {
   Account,

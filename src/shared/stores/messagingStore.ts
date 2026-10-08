@@ -4,6 +4,7 @@ import {
   InAppNotification,
   MessageTemplate,
   ScheduledMessage,
+  CreateScheduledDTO,
   SendMessageDTO,
   MessageChannel,
   MessageStatus,

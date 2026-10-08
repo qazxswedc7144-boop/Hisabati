@@ -167,6 +167,8 @@ const ROLE_LABELS_AR: Record<UserRole, string> = {
   authenticated_no_membership: 'مصادق بدون عضوية (Authenticated No Membership)',
 };
 
+import { authService } from './AuthService.service';
+
 export class RBACGuardService {
   private static instance: RBACGuardService;
 
@@ -180,8 +182,7 @@ export class RBACGuardService {
   /**
    * Sets the active session actor (Legacy wrapper for AuthService).
    */
-  public async setActiveActor(actor: AuditActor): Promise<void> {
-    const { authService } = await import('./AuthService.service');
+  public setActiveActor(actor: AuditActor): void {
     authService.setActiveActor(actor);
   }
 
@@ -189,21 +190,7 @@ export class RBACGuardService {
    * Returns the current active session actor from AuthService.
    */
   public getActiveActor(): AuditActor {
-    // This is called synchronously in many places. 
-    // We should probably rely on a local cache or a way to get it without pulling in heavy Firebase.
-    // However, AuthService itself might be heavy.
-    // For now, let's keep it as is if it's strictly needed synchronously, 
-    // or try to dynamic import if possible.
-    return (this as any)._cachedActor || {
-      id: 'user_local_default',
-      name: 'مستخدم محلي',
-      role: 'owner',
-      email: 'local@hisabati.app',
-    };
-  }
-
-  public _setCachedActor(actor: AuditActor): void {
-    (this as any)._cachedActor = actor;
+    return authService.getActiveActor();
   }
 
   /**

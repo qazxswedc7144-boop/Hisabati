@@ -114,7 +114,7 @@ export const useRBACStore = create<RBACState>((set, get) => ({
 
   updateAuthStatus: (status, actor) => {
     set({ authStatus: status, currentActor: actor });
-    rbacGuard._setCachedActor(actor);
+    rbacGuard.setActiveActor(actor);
   },
 
   login: async (email, password) => {

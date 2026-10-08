@@ -22,9 +22,9 @@ import { BalanceBadge } from '@/shared/components/BalanceBadge';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
 import { useI18n } from '@/shared/hooks/useI18n';
-import { DueDebtsAlertCard } from '../components/DueDebtsAlertCard';
 
 const FinancialHealthCard = React.lazy(() => import('../components/FinancialHealthCard').then(m => ({ default: m.FinancialHealthCard })));
+const DueDebtsAlertCard = React.lazy(() => import('../components/DueDebtsAlertCard').then(m => ({ default: m.DueDebtsAlertCard })));
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -139,7 +139,9 @@ export const DashboardPage: React.FC = () => {
       </React.Suspense>
 
       {/* Date-based Due Debts Notification Card */}
-      <DueDebtsAlertCard />
+      <React.Suspense fallback={<div className="h-32 w-full bg-slate-50 dark:bg-slate-900 rounded-2xl animate-pulse" />}>
+        <DueDebtsAlertCard />
+      </React.Suspense>
 
       {/* Latest Operations & Top Accounts Overview */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">

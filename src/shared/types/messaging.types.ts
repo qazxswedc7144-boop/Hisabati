@@ -104,6 +104,21 @@ export interface ScheduledMessage {
   updatedAt: string;
 }
 
+export interface CreateScheduledDTO {
+  templateId?: string;
+  channel: MessageChannel;
+  recipient: string;
+  recipientName?: string;
+  subject?: string;
+  bodyTemplate: string;
+  variables: Record<string, string | number>;
+  scheduledAt: string; // ISO String
+  repeatRule?: RepeatRule;
+  relatedEntityType?: 'account' | 'transaction' | 'system';
+  relatedEntityId?: string;
+  operationId?: string;
+}
+
 export interface MessageQueueItem {
   id: string;
   messageId: string;

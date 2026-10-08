@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { MainLayout } from '@/shared/layouts/MainLayout';
 import { DashboardPage } from '@/features/dashboard/pages/DashboardPage';
 import { AccountsPage } from '@/features/accounts/pages/AccountsPage';
-import { AccountDetailsPage } from '@/features/accounts/pages/AccountDetailsPage';
 import { ErrorBoundary } from '@/shared/components/ErrorBoundary';
 import { useSettingsStore } from '@/shared/stores/settingsStore';
 import { useRBACStore } from '@/shared/stores/rbacStore';
@@ -11,6 +10,7 @@ import { tenantService } from '@/core/services/TenantService';
 import { initI18n } from '@/core/i18n';
 
 // Lazy loaded features
+const AccountDetailsPage = lazy(() => import('@/features/accounts/pages/AccountDetailsPage').then(m => ({ default: m.AccountDetailsPage })));
 const ReportsPage = lazy(() => import('@/features/reports/pages/ReportsPage').then(m => ({ default: m.ReportsPage })));
 const SettingsPage = lazy(() => import('@/features/settings/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const MessagingPage = lazy(() => import('@/features/messaging/pages/MessagingPage').then(m => ({ default: m.MessagingPage })));
