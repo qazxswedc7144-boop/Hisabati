@@ -23,6 +23,7 @@ import { googleDriveService } from './googleDrive.service';
 import { transactionEngine } from './transactionEngine.service';
 import { integrityService } from './integrity.service';
 import { decimalToMinor } from '../money/converter';
+import { resolveRequiredCurrency, isSupportedCurrency } from '../money/currency';
 import { SyncContextRegistry } from './syncContext';
 
 const TAB_INSTANCE_ID = 'tab_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
@@ -697,6 +698,8 @@ private async _performFullSyncInternal(): Promise<{
 
       const localSettings = await db.settings.toArray();
       const syncableSettings = localSettings.filter(s => SETTINGS_WHITELIST.includes(s.key));
+      const systemCurrencySetting = localSettings.find(s => s.key === 'currency')?.value;
+      const accountCurrencyMap = new Map(updatedAccounts.map(a => [a.id, a.currency]));
 
       // SYNC-07: Increment revision for push
       const nextRevision = Math.max(remoteRevision, localMeta.lastRevision) + (pushedCount > 0 ? 1 : 0);
@@ -708,10 +711,31 @@ private async _performFullSyncInternal(): Promise<{
         deviceName: getDeviceName(),
         lastModified: new Date().toISOString(),
         accounts: updatedAccounts,
-        transactions: updatedTransactions.map((t) => ({
-          ...t,
-          amountMinor: t.amountMinor !== undefined ? t.amountMinor : decimalToMinor(t.amount, t.currency),
-        })),
+        transactions: updatedTransactions.map((t) => {
+          let resolvedAmountMinor = t.amountMinor;
+          if (resolvedAmountMinor === undefined) {
+            try {
+              const accountCurrency = t.accountId ? accountCurrencyMap.get(t.accountId) : undefined;
+              const resolvedCurrency = resolveRequiredCurrency({
+                transactionCurrency: t.currency,
+                accountCurrency,
+                systemCurrency: typeof systemCurrencySetting === 'string' ? systemCurrencySetting : undefined,
+              });
+              resolvedAmountMinor = decimalToMinor(t.amount, resolvedCurrency);
+            } catch (currencyErr: any) {
+              console.error(
+                `[SyncEngine Safety] Failed to resolve valid currency for transaction "${t.id}" (amount: ${t.amount}): ${currencyErr?.message}`
+              );
+              // Safely preserve transaction without fabricating invalid financial values
+              resolvedAmountMinor = undefined;
+            }
+          }
+
+          return {
+            ...t,
+            amountMinor: resolvedAmountMinor,
+          };
+        }),
         tombstones: combinedTombstones,
         settings: syncableSettings,
       };

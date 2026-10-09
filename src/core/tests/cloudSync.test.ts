@@ -839,6 +839,367 @@ export class CloudSyncTestSuite {
         }
       );
 
+      // -------------------------------------------------------------
+      // SYNC-CURRENCY-RES: التحقق الصارم من استنتاج العملة عند الرفع للسحابة
+      // -------------------------------------------------------------
+      await this.runTest(
+        results,
+        'SYNC-CURRENCY-RES-01',
+        'مزامنة آمنة: معاملة لها amountMinor ولا تحتوي currency تحافظ على amountMinor دون تعديل',
+        async () => {
+          setupMocks();
+          const { db } = await import('../database/db');
+          const testAccId = 'acc_curr_test_01';
+          const testTrxId = 'trx_curr_test_01';
+
+          await db.accounts.put({
+            id: testAccId,
+            name: 'حساب اختبار 1',
+            type: 'customer',
+            balance: 0,
+            currency: 'USD',
+            isActive: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as any);
+
+          await db.transactions.put({
+            id: testTrxId,
+            accountId: testAccId,
+            type: 'credit',
+            amount: 150,
+            amountMinor: 15000,
+            currency: undefined as any,
+            date: new Date().toISOString(),
+            description: 'معاملة بدون عملة ولكن لها amountMinor',
+            status: 'posted',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as any);
+
+          let uploadedPayload: any = null;
+          const origUpload = googleDriveService.uploadJsonFile;
+          const origUpdate = googleDriveService.updateJsonFile;
+          googleDriveService.uploadJsonFile = async (name: string, content: any) => {
+            uploadedPayload = content;
+            return origUpload(name, content);
+          };
+          googleDriveService.updateJsonFile = async (id: string, name: string, content: any) => {
+            uploadedPayload = content;
+            return origUpdate(id, name, content);
+          };
+
+          try {
+            await syncEngine.performFullSync();
+            const pushedTrx = uploadedPayload?.transactions?.find((t: any) => t.id === testTrxId);
+            if (!pushedTrx) {
+              throw new Error('لم يتم رفع المعاملة للسحابة');
+            }
+            if (pushedTrx.amountMinor !== 15000) {
+              throw new Error(`تم التلاعب بـ amountMinor: ${pushedTrx.amountMinor} بدلاً من 15000`);
+            }
+          } finally {
+            googleDriveService.uploadJsonFile = origUpload;
+            googleDriveService.updateJsonFile = origUpdate;
+            await db.transactions.delete(testTrxId);
+            await db.accounts.delete(testAccId);
+          }
+        }
+      );
+
+      await this.runTest(
+        results,
+        'SYNC-CURRENCY-RES-02',
+        'مزامنة آمنة: معاملة تفتقد amountMinor لكن عملة الحساب معروفة تُحوّل المبلغ بدقة عملة الحساب',
+        async () => {
+          setupMocks();
+          const { db } = await import('../database/db');
+          const testAccId = 'acc_curr_test_02';
+          const testTrxId = 'trx_curr_test_02';
+
+          await db.accounts.put({
+            id: testAccId,
+            name: 'حساب اختبار 2',
+            type: 'customer',
+            balance: 0,
+            currency: 'KWD', // 3 decimals (factor 1000)
+            isActive: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as any);
+
+          await db.transactions.put({
+            id: testTrxId,
+            accountId: testAccId,
+            type: 'credit',
+            amount: 25.5,
+            amountMinor: undefined as any,
+            currency: undefined as any,
+            date: new Date().toISOString(),
+            description: 'معاملة تفتقد amountMinor وعملة الحساب KWD',
+            status: 'posted',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as any);
+
+          let uploadedPayload: any = null;
+          const origUpload = googleDriveService.uploadJsonFile;
+          const origUpdate = googleDriveService.updateJsonFile;
+          googleDriveService.uploadJsonFile = async (name: string, content: any) => {
+            uploadedPayload = content;
+            return origUpload(name, content);
+          };
+          googleDriveService.updateJsonFile = async (id: string, name: string, content: any) => {
+            uploadedPayload = content;
+            return origUpdate(id, name, content);
+          };
+
+          try {
+            await syncEngine.performFullSync();
+            const pushedTrx = uploadedPayload?.transactions?.find((t: any) => t.id === testTrxId);
+            if (!pushedTrx) {
+              throw new Error('لم يتم رفع المعاملة للسحابة');
+            }
+            if (pushedTrx.amountMinor !== 25500) {
+              throw new Error(`حساب خاطئ لـ amountMinor: ${pushedTrx.amountMinor} بدلاً من 25500`);
+            }
+          } finally {
+            googleDriveService.uploadJsonFile = origUpload;
+            googleDriveService.updateJsonFile = origUpdate;
+            await db.transactions.delete(testTrxId);
+            await db.accounts.delete(testAccId);
+          }
+        }
+      );
+
+      await this.runTest(
+        results,
+        'SYNC-CURRENCY-RES-03',
+        'مزامنة آمنة: غياب عملة المعاملة والحساب مع وجود عملة نظام صالحة تُحوّل المبلغ بدقة عملة النظام',
+        async () => {
+          setupMocks();
+          const { db } = await import('../database/db');
+          const testAccId = 'acc_curr_test_03';
+          const testTrxId = 'trx_curr_test_03';
+
+          // Ensure system currency is SAR (2 decimals, factor 100)
+          const origSysCurrency = await db.settings.get('currency');
+          await db.settings.put({
+            id: 'currency',
+            key: 'currency',
+            value: 'SAR',
+            updatedAt: new Date().toISOString(),
+          });
+
+          await db.accounts.put({
+            id: testAccId,
+            name: 'حساب اختبار 3',
+            type: 'customer',
+            balance: 0,
+            currency: undefined as any,
+            isActive: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as any);
+
+          await db.transactions.put({
+            id: testTrxId,
+            accountId: testAccId,
+            type: 'debit',
+            amount: 50,
+            amountMinor: undefined as any,
+            currency: undefined as any,
+            date: new Date().toISOString(),
+            description: 'معاملة بدون عملة وبدون عملة حساب ولكن مع عملة نظام SAR',
+            status: 'posted',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as any);
+
+          let uploadedPayload: any = null;
+          const origUpload = googleDriveService.uploadJsonFile;
+          const origUpdate = googleDriveService.updateJsonFile;
+          googleDriveService.uploadJsonFile = async (name: string, content: any) => {
+            uploadedPayload = content;
+            return origUpload(name, content);
+          };
+          googleDriveService.updateJsonFile = async (id: string, name: string, content: any) => {
+            uploadedPayload = content;
+            return origUpdate(id, name, content);
+          };
+
+          try {
+            await syncEngine.performFullSync();
+            const pushedTrx = uploadedPayload?.transactions?.find((t: any) => t.id === testTrxId);
+            if (!pushedTrx) {
+              throw new Error('لم يتم رفع المعاملة للسحابة');
+            }
+            if (pushedTrx.amountMinor !== 5000) {
+              throw new Error(`حساب خاطئ لـ amountMinor: ${pushedTrx.amountMinor} بدلاً من 5000`);
+            }
+          } finally {
+            googleDriveService.uploadJsonFile = origUpload;
+            googleDriveService.updateJsonFile = origUpdate;
+            if (origSysCurrency) {
+              await db.settings.put(origSysCurrency);
+            } else {
+              await db.settings.delete('currency');
+            }
+            await db.transactions.delete(testTrxId);
+            await db.accounts.delete(testAccId);
+          }
+        }
+      );
+
+      await this.runTest(
+        results,
+        'SYNC-CURRENCY-RES-04',
+        'مزامنة آمنة: غياب العملات الثلاث أو عدم صلاحيتها لا يُسقط المعاملة بصمت ولا يلفّق قيماً مالية خاطئة',
+        async () => {
+          setupMocks();
+          const { db } = await import('../database/db');
+          const testAccId = 'acc_curr_test_04';
+          const testTrxId = 'trx_curr_test_04';
+
+          const origSysCurrency = await db.settings.get('currency');
+          await db.settings.delete('currency');
+
+          await db.accounts.put({
+            id: testAccId,
+            name: 'حساب اختبار 4',
+            type: 'customer',
+            balance: 0,
+            currency: 'INVALID_CURRENCY' as any,
+            isActive: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as any);
+
+          await db.transactions.put({
+            id: testTrxId,
+            accountId: testAccId,
+            type: 'debit',
+            amount: 77,
+            amountMinor: undefined as any,
+            currency: 'ANOTHER_INVALID' as any,
+            date: new Date().toISOString(),
+            description: 'معاملة بعملات غير صالحة',
+            status: 'posted',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as any);
+
+          let uploadedPayload: any = null;
+          const origUpload = googleDriveService.uploadJsonFile;
+          const origUpdate = googleDriveService.updateJsonFile;
+          googleDriveService.uploadJsonFile = async (name: string, content: any) => {
+            uploadedPayload = content;
+            return origUpload(name, content);
+          };
+          googleDriveService.updateJsonFile = async (id: string, name: string, content: any) => {
+            uploadedPayload = content;
+            return origUpdate(id, name, content);
+          };
+
+          try {
+            await syncEngine.performFullSync().catch((err: any) => {
+              // Note: performFullSync calls recalculateAllBalances at step 10, which strictly requires
+              // valid currency. Here we verify that during payload assembly for upload, the transaction
+              // was not dropped and no bogus currency was fabricated.
+              if (!uploadedPayload) throw err;
+            });
+            const pushedTrx = uploadedPayload?.transactions?.find((t: any) => t.id === testTrxId);
+            // التأكد من عدم إسقاط المعاملة بصمت
+            if (!pushedTrx) {
+              throw new Error('تم إسقاط المعاملة بصمت من بيانات المزامنة!');
+            }
+            // التأكد من عدم تلفيق قيمة مالية أو استخدام افتراضي أعمى يغير المعنى المحاسبي
+            if (pushedTrx.amountMinor !== undefined) {
+              throw new Error(`تم تلفيق amountMinor: ${pushedTrx.amountMinor} رغم تعذر حل العملة!`);
+            }
+            if (pushedTrx.amount !== 77) {
+              throw new Error(`تم تغيير مبلغ المعاملة الأصلي: ${pushedTrx.amount}`);
+            }
+          } finally {
+            googleDriveService.uploadJsonFile = origUpload;
+            googleDriveService.updateJsonFile = origUpdate;
+            if (origSysCurrency) {
+              await db.settings.put(origSysCurrency);
+            }
+            await db.transactions.delete(testTrxId);
+            await db.accounts.delete(testAccId);
+          }
+        }
+      );
+
+      await this.runTest(
+        results,
+        'SYNC-CURRENCY-RES-05',
+        'مزامنة آمنة: نجاح المزامنة الكاملة دون تغيير قيمة أي مبلغ أو إسقاط بيانات بصمت',
+        async () => {
+          setupMocks();
+          const { db } = await import('../database/db');
+          const testAccId = 'acc_curr_test_05';
+          const testTrxId = 'trx_curr_test_05';
+
+          await db.accounts.put({
+            id: testAccId,
+            name: 'حساب اختبار 5',
+            type: 'customer',
+            balance: 0,
+            currency: 'USD',
+            isActive: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as any);
+
+          await db.transactions.put({
+            id: testTrxId,
+            accountId: testAccId,
+            type: 'credit',
+            amount: 88.5,
+            amountMinor: 8850,
+            currency: 'USD',
+            date: new Date().toISOString(),
+            description: 'معاملة نظامية مكتملة',
+            status: 'posted',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as any);
+
+          let uploadedPayload: any = null;
+          const origUpload = googleDriveService.uploadJsonFile;
+          const origUpdate = googleDriveService.updateJsonFile;
+          googleDriveService.uploadJsonFile = async (name: string, content: any) => {
+            uploadedPayload = content;
+            return origUpload(name, content);
+          };
+          googleDriveService.updateJsonFile = async (id: string, name: string, content: any) => {
+            uploadedPayload = content;
+            return origUpdate(id, name, content);
+          };
+
+          try {
+            const syncRes = await syncEngine.performFullSync();
+            if (!syncRes.success) {
+              throw new Error(`فشلت المزامنة: ${syncRes.message}`);
+            }
+            const pushedTrx = uploadedPayload?.transactions?.find((t: any) => t.id === testTrxId);
+            if (!pushedTrx) {
+              throw new Error('لم يتم تضمين المعاملة في الرفع');
+            }
+            if (pushedTrx.amount !== 88.5 || pushedTrx.amountMinor !== 8850) {
+              throw new Error('تم تغيير مبالغ المعاملة أثناء المزامنة');
+            }
+          } finally {
+            googleDriveService.uploadJsonFile = origUpload;
+            googleDriveService.updateJsonFile = origUpdate;
+            await db.transactions.delete(testTrxId);
+            await db.accounts.delete(testAccId);
+          }
+        }
+      );
+
     } finally {
       // Restore original googleDriveService methods
       googleDriveService.listFiles = origListFiles;
