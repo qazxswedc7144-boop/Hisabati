@@ -82,21 +82,63 @@ export const CURRENCY_PRECISION_MAP: Record<CurrencyCode, CurrencyPrecisionConfi
 export const DEFAULT_CURRENCY: CurrencyCode = 'YER';
 
 /**
- * Gets currency configuration safely.
- * @throws Error if currency is invalid and no valid fallback is provided.
+ * Normalizes a currency code safely.
+ *
+ * Important:
+ * - Never calls string methods on unknown values.
+ * - Trims whitespace.
+ * - Normalizes to uppercase.
+ * - Returns null for missing/unsupported currencies.
+ *
+ * No silent financial fallback is performed here.
  */
-export function getCurrencyConfig(code: string | CurrencyCode): CurrencyPrecisionConfig {
-  const upper = code.toUpperCase() as CurrencyCode;
-  const config = CURRENCY_PRECISION_MAP[upper];
-  if (!config) {
-    throw new Error(`[Financial Safety] Invalid or unsupported currency code: "${code}"`);
+export function normalizeCurrencyCode(
+  code: unknown
+): CurrencyCode | null {
+  if (typeof code !== 'string') {
+    return null;
   }
-  return config;
+
+  const normalized = code.trim().toUpperCase();
+
+  if (!normalized) {
+    return null;
+  }
+
+  return Object.prototype.hasOwnProperty.call(
+    CURRENCY_PRECISION_MAP,
+    normalized
+  )
+    ? (normalized as CurrencyCode)
+    : null;
 }
 
 /**
- * PRODUCTION SECURITY: Centralized currency resolution logic.
- * Explicitly follows the hierarchy: Transaction -> Account -> System -> Throw.
+ * Gets currency configuration safely.
+ *
+ * Missing or unsupported currencies are rejected explicitly.
+ * There is NO silent fallback to the default currency.
+ */
+export function getCurrencyConfig(
+  code: string | CurrencyCode
+): CurrencyPrecisionConfig {
+  const normalized = normalizeCurrencyCode(code);
+
+  if (!normalized) {
+    throw new Error(
+      `[Financial Safety] Invalid, missing, or unsupported currency code: "${String(code)}"`
+    );
+  }
+
+  return CURRENCY_PRECISION_MAP[normalized];
+}
+
+/**
+ * Production currency resolution.
+ *
+ * Hierarchy:
+ * Transaction -> Account -> System -> Throw
+ *
  * NO SILENT FALLBACKS.
  */
 export function resolveRequiredCurrency(params: {
@@ -104,46 +146,69 @@ export function resolveRequiredCurrency(params: {
   accountCurrency?: string | CurrencyCode;
   systemCurrency?: string | CurrencyCode;
 }): CurrencyCode {
-  const { transactionCurrency, accountCurrency, systemCurrency } = params;
+  const {
+    transactionCurrency,
+    accountCurrency,
+    systemCurrency,
+  } = params;
 
   // 1. Explicit transaction currency
-  if (transactionCurrency && isSupportedCurrency(transactionCurrency)) {
-    return transactionCurrency as CurrencyCode;
+  const transactionResolved =
+    normalizeCurrencyCode(transactionCurrency);
+
+  if (transactionResolved) {
+    return transactionResolved;
   }
 
   // 2. Account currency
-  if (accountCurrency && isSupportedCurrency(accountCurrency)) {
-    return accountCurrency as CurrencyCode;
+  const accountResolved =
+    normalizeCurrencyCode(accountCurrency);
+
+  if (accountResolved) {
+    return accountResolved;
   }
 
-  // 3. Valid system currency
-  if (systemCurrency && isSupportedCurrency(systemCurrency)) {
-    return systemCurrency as CurrencyCode;
+  // 3. System currency
+  const systemResolved =
+    normalizeCurrencyCode(systemCurrency);
+
+  if (systemResolved) {
+    return systemResolved;
   }
 
-  // 4. UNRESOLVED -> THROW
+  // 4. Unresolved -> THROW
   throw new Error(
-    '[Financial Safety] Currency resolution failed. No valid currency provided in transaction, account, or system settings. A valid currency is required for all financial mutations.'
+    '[Financial Safety] Currency resolution failed. ' +
+    'No valid currency provided in transaction, account, or system settings. ' +
+    'A valid currency is required for all financial mutations.'
   );
 }
 
 /**
- * Returns the minor unit digits (decimal places) for a given currency.
+ * Returns the minor unit digits for a currency.
  */
-export function getCurrencyDecimals(code: string | CurrencyCode): number {
+export function getCurrencyDecimals(
+  code: string | CurrencyCode
+): number {
   return getCurrencyConfig(code).minorUnitDigits;
 }
 
 /**
- * Returns the multiplier factor (10^minorUnitDigits) for a given currency.
+ * Returns the multiplier factor (10^minorUnitDigits).
  */
-export function getCurrencyFactor(code: string | CurrencyCode): number {
+export function getCurrencyFactor(
+  code: string | CurrencyCode
+): number {
   return getCurrencyConfig(code).minorUnitFactor;
 }
 
 /**
- * Verifies if a currency code is one of the supported currencies.
+ * Checks whether a currency code is supported.
+ *
+ * Case-insensitive and safe against undefined/null/non-string values.
  */
-export function isSupportedCurrency(code: unknown): code is CurrencyCode {
-  return typeof code === 'string' && Object.prototype.hasOwnProperty.call(CURRENCY_PRECISION_MAP, code);
+export function isSupportedCurrency(
+  code: unknown
+): code is CurrencyCode {
+  return normalizeCurrencyCode(code) !== null;
 }
