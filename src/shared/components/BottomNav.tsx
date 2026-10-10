@@ -30,7 +30,8 @@ export const BottomNav: React.FC = () => {
     <nav
       id="mobile-bottom-navigation"
       aria-label="التنقل الرئيسي"
-      className="md:hidden fixed bottom-0 start-0 end-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 pb-safe transition-all shadow-lg"
+      className="md:hidden fixed bottom-0 start-0 end-0 z-50 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 pb-safe shadow-lg"
+      style={{ position: 'fixed', bottom: 0, transform: 'translateZ(0)' }}
     >
       <div className="grid grid-cols-5 items-center justify-items-center h-16 max-w-lg mx-auto px-2 relative">
         {/* Left tabs (Dashboard, Accounts) */}
