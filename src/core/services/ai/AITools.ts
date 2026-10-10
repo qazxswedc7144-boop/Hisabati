@@ -89,12 +89,17 @@ export class AITools {
       throw new Error('المبلغ المالي يجب أن يكون أكبر من الصفر');
     }
 
-    // Pass strictly through the FinancialTransactionEngine
+    // AI-20 FIX: Do NOT pass amountMinor from AI — it was computed with a
+    // temporary currency assumption (YER by default), which may not match the
+    // real resolved currency of the account/system (e.g., SAR, USD).
+    // The FinancialTransactionEngine computes amountMinor canonically from
+    // `amount` + the actual resolved currency via validateAndResolveFinancialAmount.
     const transaction = await transactionEngine.createTransaction({
       accountId: command.accountId,
       type: command.type,
       amount: command.amount,
-      amountMinor: command.amountMinor,
+      // amountMinor intentionally omitted
+      currency: command.currency as any, // pass through if present, so engine can validate
       date: command.date || new Date().toISOString().split('T')[0],
       note: command.note || 'عملية مسجلة عبر المساعد الذكي',
       operationId: command.operationId,

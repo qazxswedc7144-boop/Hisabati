@@ -35,6 +35,10 @@ export class CloudSyncTestSuite {
     let inMemoryCloudFile: any = null;
 
     const setupMocks = () => {
+      // SYNC-CURRENCY-RES-FIX: Reset in-memory cloud state between tests
+      // to prevent settings (e.g., currency) from leaking across test cases.
+      inMemoryCloudFile = null;
+
       googleDriveService.isConnected = () => true;
       googleDriveService.listFiles = async () => {
         if (inMemoryCloudFile) {
