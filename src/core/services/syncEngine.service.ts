@@ -406,7 +406,31 @@ private async _performFullSyncInternal(): Promise<{
       let remoteData: any = null;
 
       if (syncFile) {
-        remoteData = await googleDriveService.downloadJsonFile(syncFile.id);
+        const downloaded: any = await googleDriveService.downloadJsonFile(syncFile.id);
+
+        if (downloaded?.isEncrypted === true && downloaded.data && downloaded.iv) {
+          // V2: Encrypted container
+          try {
+            const decrypted = await decryptBackupPayload(downloaded.data, downloaded.iv);
+            remoteData = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
+          } catch (decryptErr: any) {
+            console.error('[Sync] فشل فك تشفير ملف المزامنة:', decryptErr?.message);
+            throw new Error(
+              'فشل فك تشفير ملف المزامنة. قد يكون الملف تالفًا أو مُشفَّرًا بمفتاح جهاز آخر.'
+            );
+          }
+        } else if (
+          downloaded &&
+          typeof downloaded === 'object' &&
+          (downloaded.revision !== undefined || downloaded.version !== undefined || Array.isArray(downloaded.accounts))
+        ) {
+          // V1: Legacy plaintext — accept temporarily + flag for upgrade
+          console.warn('[Sync] ملف مزامنة نصي (V1) مكتشف. سيُشفَّر خلال الرفع القادم.');
+          remoteData = downloaded;
+          (remoteData as any).__needsEncryptionUpgrade = true;
+        } else {
+          remoteData = null;
+        }
       }
 
       // SYNC-07: Revision Safety Logic
