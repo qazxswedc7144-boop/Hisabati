@@ -25,6 +25,7 @@ import { integrityService } from './integrity.service';
 import { decimalToMinor } from '../money/converter';
 import { resolveRequiredCurrency, isSupportedCurrency } from '../money/currency';
 import { SyncContextRegistry } from './syncContext';
+import { encryptBackupPayload, decryptBackupPayload } from '../utils/crypto';
 
 const TAB_INSTANCE_ID = 'tab_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 const SYNC_STATE_FILE = 'hisabati_sync_state.json';
@@ -402,16 +403,7 @@ private async _performFullSyncInternal(): Promise<{
       const files = await googleDriveService.listFiles();
       const syncFile = files.find((f) => f.name === SYNC_STATE_FILE);
 
-      let remoteData: {
-        revision: number;
-        version: number;
-        deviceId: string;
-        lastModified: string;
-        accounts: Account[];
-        transactions: Transaction[];
-        tombstones?: SyncTombstone[];
-        settings?: any[];
-      } | null = null;
+      let remoteData: any = null;
 
       if (syncFile) {
         remoteData = await googleDriveService.downloadJsonFile(syncFile.id);
@@ -868,6 +860,21 @@ private async _performFullSyncInternal(): Promise<{
     } finally {
       this.isSyncing = false;
     }
+  }
+
+  /**
+   * SYNC-ENCRYPT-01: Wrap plain sync state in AES-GCM-256 container.
+   * Format V2: { isEncrypted, algorithm, iv, data, version }
+   */
+  private async buildEncryptedSyncContainer(plainState: any): Promise<any> {
+    const { cipherText, iv } = await encryptBackupPayload(plainState);
+    return {
+      isEncrypted: true,
+      algorithm: 'AES-GCM-256',
+      iv,
+      data: cipherText,
+      version: 2,
+    };
   }
 
   /**
