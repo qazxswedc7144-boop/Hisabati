@@ -583,15 +583,28 @@ private async _performFullSyncInternal(): Promise<{
               continue; // Do not resurrect deleted transaction (SYNC-09)
             }
 
-            // Ensure amountMinor is canonical (SYNC-05)
-            if (!remTrx.currency || typeof remTrx.currency !== 'string') {
-               await this.logAudit('MALFORMED_DATA_REJECTED', `تم تجاهل عملية مالية قادمة من السحابة بسبب غياب العملة الصحيحة. ID: ${remTrx.id}`, false);
-               continue; // REJECT
+            // Ensure amountMinor is canonical (SYNC-05) & resolve currency hierarchy strictly
+            try {
+              const accountObj = localAccMap.get(remTrx.accountId);
+              const systemCurrencySetting = await db.settings.get('currency');
+              const resolvedCurrency = resolveRequiredCurrency({
+                transactionCurrency: remTrx.currency,
+                accountCurrency: accountObj?.currency,
+                systemCurrency: systemCurrencySetting?.value as string | undefined,
+              });
+
+              if (remTrx.amountMinor === undefined && remTrx.amount !== undefined) {
+                remTrx.amountMinor = decimalToMinor(remTrx.amount, resolvedCurrency);
+              }
+              if (!remTrx.currency) {
+                remTrx.currency = resolvedCurrency;
+              }
+            } catch (currencyErr: any) {
+              await this.logAudit('MALFORMED_DATA_REJECTED', `تم تجاهل عملية مالية قادمة من السحابة بسبب تعذر حل العملة أو غيابها. ID: ${remTrx.id}: ${currencyErr?.message}`, false);
+              continue; // REJECT
             }
-            if (remTrx.amountMinor === undefined && remTrx.amount !== undefined) {
-              remTrx.amountMinor = decimalToMinor(remTrx.amount, remTrx.currency);
-            }
-            if (remTrx.amountMinor === undefined || isNaN(remTrx.amountMinor)) {
+
+            if (remTrx.amountMinor === undefined || isNaN(remTrx.amountMinor) || !Number.isInteger(remTrx.amountMinor)) {
                await this.logAudit('MALFORMED_DATA_REJECTED', `تم تجاهل عملية مالية قادمة من السحابة بسبب قيمة amountMinor غير صالحة. ID: ${remTrx.id}`, false);
                continue; // REJECT
             }
@@ -757,30 +770,23 @@ private async _performFullSyncInternal(): Promise<{
       };
 
       // In-place safe update: patch existing file or upload new
+      const encryptedContainer = await this.buildEncryptedSyncContainer(newCloudState);
+      const uploadMeta = {
+        accountCount: updatedAccounts.length,
+        transactionCount: updatedTransactions.length,
+        revision: nextRevision,
+        isEncrypted: true,
+      };
+
       if (syncFile) {
         try {
-          // Double check remote revision hasn't moved while we were merging
-          // In a high-concurrency env we'd use etags, but for GDrive we rely on our tab-locks and sequential push.
-          await googleDriveService.updateJsonFile(syncFile.id, SYNC_STATE_FILE, newCloudState, {
-            accountCount: updatedAccounts.length,
-            transactionCount: updatedTransactions.length,
-            revision: nextRevision
-          });
+          await googleDriveService.updateJsonFile(syncFile.id, SYNC_STATE_FILE, encryptedContainer, uploadMeta);
         } catch (err: any) {
-          // Fallback: upload new if patch fails (e.g. file gone)
-          await googleDriveService.uploadJsonFile(SYNC_STATE_FILE, newCloudState, {
-            accountCount: updatedAccounts.length,
-            transactionCount: updatedTransactions.length,
-            revision: nextRevision
-          });
+          await googleDriveService.uploadJsonFile(SYNC_STATE_FILE, encryptedContainer, uploadMeta);
           if (syncFile.id) await googleDriveService.deleteFile(syncFile.id).catch(() => {});
         }
       } else {
-        await googleDriveService.uploadJsonFile(SYNC_STATE_FILE, newCloudState, {
-          accountCount: updatedAccounts.length,
-          transactionCount: updatedTransactions.length,
-          revision: nextRevision
-        });
+        await googleDriveService.uploadJsonFile(SYNC_STATE_FILE, encryptedContainer, uploadMeta);
       }
 
       // 8. POST-UPLOAD SUCCESS: Mark items as completed & update local revision
@@ -801,6 +807,14 @@ private async _performFullSyncInternal(): Promise<{
           updatedAt: new Date().toISOString()
         });
       });
+
+      if (remoteData && (remoteData as any).__needsEncryptionUpgrade) {
+        await this.logAudit(
+          'SYNC_SUCCESS',
+          'تمت ترقية ملف المزامنة من V1 (نصي) إلى V2 (AES-GCM-256 مشفر).',
+          true
+        );
+      }
 
       // Keep recent completed items to prevent database growth
       const allCompleted = await db.syncQueue.where('status').equals('completed').toArray();
@@ -1052,7 +1066,7 @@ private async _performFullSyncInternal(): Promise<{
 
             if (currentStatus === 'posted' || currentStatus === 'reversed') {
               throw new Error(
-                `لا يمكن حل التعارض المالي على قيد بحالة ${currentStatus.toUpperCase()} تلقائيًا. ` +
+                `لا يمكن حل التعارض المالي على قيد بحالة ${currentStatus ? currentStatus.toUpperCase() : ''} تلقائيًا. ` +
                 `يتطلب مراجعة يدوية وإنشاء قيد عكسي.`
               );
             }

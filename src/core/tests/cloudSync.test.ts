@@ -6,6 +6,21 @@ import { transactionRepository } from '../repositories/transaction.repository';
 import { integrityService } from '../services/integrity.service';
 import { db } from '../database/db';
 import { decimalToMinor } from '../money/converter';
+import { decryptBackupPayload } from '../utils/crypto';
+
+/**
+ * SYNC-V2-FIX: Decode the uploaded cloud payload.
+ * Since V2, sync file is encrypted as { isEncrypted, data, iv, version }.
+ * Tests inspecting the plaintext must decode first.
+ */
+async function decodeUploadedPayload(uploaded: any): Promise<any> {
+  if (!uploaded || typeof uploaded !== 'object') return uploaded;
+  if (uploaded.isEncrypted === true && uploaded.data && uploaded.iv) {
+    const decrypted = await decryptBackupPayload(uploaded.data, uploaded.iv);
+    return typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
+  }
+  return uploaded; // Legacy V1 plaintext
+}
 
 export interface TestResult {
   id: string;
@@ -415,7 +430,8 @@ export class CloudSyncTestSuite {
           }
 
           // Verify in cloud state
-          const cloudTrx = inMemoryCloudFile?.transactions?.find((t: any) => t.id === trx.id);
+          const decodedCloud = await decodeUploadedPayload(inMemoryCloudFile);
+          const cloudTrx = decodedCloud?.transactions?.find((t: any) => t.id === trx.id);
           if (!cloudTrx || cloudTrx.amountMinor !== refTrx.amountMinor) {
             throw new Error(`تغيرت قيمة amountMinor في السحابة: المتوقع ${refTrx.amountMinor} ولكن الفعلي ${cloudTrx?.amountMinor}`);
           }
@@ -508,7 +524,8 @@ export class CloudSyncTestSuite {
           }
 
           // Verify tombstone is recorded in cloud state
-          const tombstone = inMemoryCloudFile?.tombstones?.find((t: any) => t.id === trx.id);
+          const decodedCloud = await decodeUploadedPayload(inMemoryCloudFile);
+          const tombstone = decodedCloud?.tombstones?.find((t: any) => t.id === trx.id);
           if (!tombstone) {
             throw new Error('لم يتم تسجيل الـ Tombstone في حالة السحابة');
           }
@@ -895,7 +912,8 @@ export class CloudSyncTestSuite {
 
           try {
             await syncEngine.performFullSync();
-            const pushedTrx = uploadedPayload?.transactions?.find((t: any) => t.id === testTrxId);
+            const decoded = await decodeUploadedPayload(uploadedPayload);
+            const pushedTrx = decoded?.transactions?.find((t: any) => t.id === testTrxId);
             if (!pushedTrx) {
               throw new Error('لم يتم رفع المعاملة للسحابة');
             }
@@ -960,7 +978,8 @@ export class CloudSyncTestSuite {
 
           try {
             await syncEngine.performFullSync();
-            const pushedTrx = uploadedPayload?.transactions?.find((t: any) => t.id === testTrxId);
+            const decoded = await decodeUploadedPayload(uploadedPayload);
+            const pushedTrx = decoded?.transactions?.find((t: any) => t.id === testTrxId);
             if (!pushedTrx) {
               throw new Error('لم يتم رفع المعاملة للسحابة');
             }
@@ -1034,7 +1053,8 @@ export class CloudSyncTestSuite {
 
           try {
             await syncEngine.performFullSync();
-            const pushedTrx = uploadedPayload?.transactions?.find((t: any) => t.id === testTrxId);
+            const decoded = await decodeUploadedPayload(uploadedPayload);
+            const pushedTrx = decoded?.transactions?.find((t: any) => t.id === testTrxId);
             if (!pushedTrx) {
               throw new Error('لم يتم رفع المعاملة للسحابة');
             }
@@ -1112,7 +1132,8 @@ export class CloudSyncTestSuite {
               // was not dropped and no bogus currency was fabricated.
               if (!uploadedPayload) throw err;
             });
-            const pushedTrx = uploadedPayload?.transactions?.find((t: any) => t.id === testTrxId);
+            const decoded = await decodeUploadedPayload(uploadedPayload);
+            const pushedTrx = decoded?.transactions?.find((t: any) => t.id === testTrxId);
             // التأكد من عدم إسقاط المعاملة بصمت
             if (!pushedTrx) {
               throw new Error('تم إسقاط المعاملة بصمت من بيانات المزامنة!');
@@ -1188,7 +1209,8 @@ export class CloudSyncTestSuite {
             if (!syncRes.success) {
               throw new Error(`فشلت المزامنة: ${syncRes.message}`);
             }
-            const pushedTrx = uploadedPayload?.transactions?.find((t: any) => t.id === testTrxId);
+            const decoded = await decodeUploadedPayload(uploadedPayload);
+            const pushedTrx = decoded?.transactions?.find((t: any) => t.id === testTrxId);
             if (!pushedTrx) {
               throw new Error('لم يتم تضمين المعاملة في الرفع');
             }

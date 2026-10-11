@@ -11,6 +11,7 @@ import { db } from '../database/db';
 import { getNextSequence, getCurrentSequence } from '../utils/sequence';
 import { getDeviceId } from '../utils/deviceId';
 import { CurrencyCode } from '@/shared/types';
+import { decryptBackupPayload } from '../utils/crypto';
 
 export interface Phase24TestResult {
   id: string;
@@ -129,7 +130,12 @@ export class Phase24SyncHardeningTestSuite {
 
           // Sync to cloud (Day 0) - createTransaction automatically enqueues CREATE mutation
           await syncEngine.performFullSync();
-          if (!inMemoryCloudFile || inMemoryCloudFile.transactions.length !== 1) {
+          if (!inMemoryCloudFile || !inMemoryCloudFile.isEncrypted) {
+            throw new Error('فشل رفع المعاملة للسحابة');
+          }
+          const decryptedCloud = await decryptBackupPayload(inMemoryCloudFile.data, inMemoryCloudFile.iv);
+          const cloudData = typeof decryptedCloud === 'string' ? JSON.parse(decryptedCloud) : decryptedCloud;
+          if (!cloudData || cloudData.transactions.length !== 1) {
             throw new Error('فشل رفع المعاملة للسحابة');
           }
 
