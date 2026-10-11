@@ -52,6 +52,11 @@ export default function App() {
         await initRBAC();
         await useSettingsStore.getState().loadSettings();
 
+        // Bootstrap sync subscriptions (lazy — keeps them out of the main bundle)
+        import('@/shared/stores/syncBootstrap').then((m) => {
+          m.bootstrapSyncSubscriptions();
+        });
+
         // 1. Process any pending side effects asynchronously
         import('@/core/services/pendingSideEffects.worker').then(m => {
           m.processPendingSideEffects().catch((err) => {
@@ -103,4 +108,3 @@ export default function App() {
     </BrowserRouter>
   );
 }
-
