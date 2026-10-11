@@ -85,6 +85,7 @@ export const DataControlCenter: React.FC = () => {
   // Database Management State
   const [isResettingData, setIsResettingData] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   // Handlers for Google Drive & Sync
   const handleStartConnect = () => {
@@ -127,7 +128,22 @@ export const DataControlCenter: React.FC = () => {
       showToast(err?.message || 'فشلت المزامنة مع Google Drive', 'error');
     }
   };
+const handleDisconnectDrive = async () => {
+  const confirmed = window.confirm(
+    'سيتم فصل حساب Google Drive. لن تُحذف النسخ الاحتياطية من Drive. هل تريد المتابعة؟'
+  );
+  if (!confirmed) return;
 
+  setIsDisconnecting(true);
+  try {
+    await disconnectGoogleDrive();
+    showToast('تم فصل Google Drive بنجاح', 'success');
+  } catch (err: any) {
+    showToast(err?.message || 'حدث خطأ أثناء الفصل', 'error');
+  } finally {
+    setIsDisconnecting(false);
+  }
+};
   const handleInitiateDriveRestore = (backup: DriveFileInfo) => {
     setSelectedBackupForRestore(backup);
     setShowDriveRestoreModal(true);
