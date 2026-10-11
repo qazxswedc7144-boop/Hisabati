@@ -170,7 +170,7 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
     } catch (err) {
       console.warn('Failed to fetch cloud backups:', err);
     } finally {
-      setIsLoadingBackups: false;
+      set({ isLoadingBackups: false });
     }
   },
 
@@ -224,4 +224,4 @@ if (typeof window !== 'undefined' && !(import.meta as any).env?.TEST) {
       useSyncStore.getState().checkDriveConnection();
     } catch { /* ignore */ }
   }, 2000);
-      }
+}
