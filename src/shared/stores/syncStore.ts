@@ -46,7 +46,7 @@ interface SyncStoreState {
 }
 
 export const useSyncStore = create<SyncStoreState>((set, get) => ({
-  isDriveConnected: false, // Will be updated in checkDriveConnection
+  isDriveConnected: false,
   userEmail: null,
   userName: null,
   syncStatus: 'idle',
@@ -85,12 +85,14 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
 
   disconnectGoogleDrive: async () => {
     const { googleDriveService } = await import('@/core/services/googleDrive.service');
-    googleDriveService.disconnect();
+    await googleDriveService.revokeAndDisconnect();
     set({
       isDriveConnected: false,
       userEmail: null,
       userName: null,
       cloudBackups: [],
+      pendingQueueCount: 0,
+      queueStats: { pending: 0, processing: 0, failed: 0, completed: 0, total: 0 },
     });
   },
 
@@ -163,13 +165,12 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
     set({ isLoadingBackups: true });
     try {
       const files = await googleDriveService.listFiles();
-      // Filter backup files
       const backups = files.filter((f) => f.name.startsWith('hisabati-backup'));
       set({ cloudBackups: backups });
     } catch (err) {
       console.warn('Failed to fetch cloud backups:', err);
     } finally {
-      set({ isLoadingBackups: false });
+      setIsLoadingBackups: false;
     }
   },
 
@@ -220,8 +221,7 @@ if (typeof window !== 'undefined' && !(import.meta as any).env?.TEST) {
         useSyncStore.setState({ conflicts });
       });
 
-      // Initial check
       useSyncStore.getState().checkDriveConnection();
     } catch { /* ignore */ }
   }, 2000);
-}
+      }
