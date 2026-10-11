@@ -74,6 +74,34 @@ export class GoogleDriveService {
     return !!this.getAccessToken();
   }
 
+  /**
+   * Revokes the current access token on Google's side, then clears local state.
+   * Used when the user explicitly disconnects from the UI.
+   * Never throws — local state is always cleared even if revoke fails.
+   */
+  public async revokeAndDisconnect(): Promise<void> {
+    const token = this.memoryToken;
+    if (token) {
+      try {
+        await fetch(
+          `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          }
+        );
+      } catch (err) {
+        console.warn('[Hisabati OAuth] Token revoke failed (ignored):', err);
+      }
+    }
+    this.disconnect();
+  }
+
+  /**
+   * Synchronous local-only disconnect.
+   * Used internally when a 401 is received or when the token expires,
+   * to immediately clear in-memory credentials without a network round-trip.
+   */
   public disconnect(): void {
     this.memoryToken = null;
     this.tokenExpiresAt = 0;
