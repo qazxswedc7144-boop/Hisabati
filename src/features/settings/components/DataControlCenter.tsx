@@ -427,13 +427,14 @@ const handleDisconnectDrive = async () => {
                 </button>
 
                 <button
-                  type="button"
-                  onClick={disconnectGoogleDrive}
-                  className="px-3 py-2 rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold transition min-h-[44px]"
-                  title="إلغاء الربط"
-                >
-                  فصل
-                </button>
+  type="button"
+  onClick={handleDisconnectDrive}
+  disabled={isDisconnecting}
+  className="px-3 py-2 rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold transition min-h-[44px] disabled:opacity-50"
+  title="فصل Google Drive"
+>
+  {isDisconnecting ? 'جارٍ الفصل...' : 'فصل'}
+</button>
               </div>
             </div>
 
