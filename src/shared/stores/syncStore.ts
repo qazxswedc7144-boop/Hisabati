@@ -1,5 +1,7 @@
 /**
  * Zustand Store for Cloud Sync and Google Drive Backup Management.
+ * NOTE: Side-effectful initialization (sync subscriptions) has been moved
+ * to syncBootstrap.ts to keep this module tree-shakeable.
  */
 
 import { create } from 'zustand';
@@ -203,25 +205,3 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
     }));
   },
 }));
-
-// Delayed subscription to syncEngine to keep index clean (browser only, not in test runners)
-if (typeof window !== 'undefined' && !(import.meta as any).env?.TEST) {
-  setTimeout(async () => {
-    try {
-      const { syncEngine } = await import('@/core/services/syncEngine.service');
-      syncEngine.subscribeStatus((status) => {
-        useSyncStore.setState({ syncStatus: status });
-        const updatePending = useSyncStore.getState().updatePendingCount;
-        if (typeof updatePending === 'function') {
-          updatePending();
-        }
-      });
-
-      syncEngine.subscribeConflicts((conflicts) => {
-        useSyncStore.setState({ conflicts });
-      });
-
-      useSyncStore.getState().checkDriveConnection();
-    } catch { /* ignore */ }
-  }, 2000);
-}
