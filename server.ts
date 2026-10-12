@@ -3,7 +3,7 @@ import http from 'http';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import { ServerMembershipVerifier } from './src/core/services/tenant/ServerMembershipVerifier';
-
+import { FirebaseTokenVerifier, FirebaseTokenVerificationError } from './src/core/services/firebase/FirebaseTokenVerifier';
 const PORT = 3000;
 
 // Export app and server factory for integration testing and server startup
@@ -187,7 +187,16 @@ export function createApp() {
     };
   };
 
-  // SEC-01: Server-Side API Authentication & Client Session Verification
+  // ============================================================================
+// ⚠️ LEGACY MIDDLEWARE — NOT REAL AUTHENTICATION
+// ============================================================================
+// The x-hisabati-session header is generated client-side and carries NO
+// cryptographic proof of identity. This middleware is retained only for
+// backwards compatibility with legacy routes that have not yet migrated.
+//
+// ❌ DO NOT apply this to any sensitive endpoint (AI, OCR, tenant, financial).
+// ✅ Use requireFirebaseAuth instead for all new and migrated routes.
+// ============================================================================
   const requireApiAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const clientHeader = req.headers['x-hisabati-client'];
     const sessionHeader = req.headers['x-hisabati-session'];
@@ -208,7 +217,62 @@ export function createApp() {
 
     next();
   };
+// ============================================================================
+// P0-1: Firebase ID Token Authentication Middleware
+// ============================================================================
+// Verifies Firebase ID token sent in Authorization: Bearer header.
+// Populates req.verifiedUid with cryptographically verified Firebase UID.
+// Rejects requests without valid ID tokens — fail-closed.
+// ============================================================================
+const requireFirebaseAuth = async (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) => {
+  const authHeader = req.headers.authorization;
 
+  if (!authHeader || typeof authHeader !== 'string') {
+    return res.status(401).json({
+      error: 'المصادقة مطلوبة: يجب توفير رمز دخول Firebase صالح في ترويسة Authorization.',
+      code: 'TOKEN_MISSING',
+    });
+  }
+
+  if (!authHeader.toLowerCase().startsWith('bearer ')) {
+    return res.status(401).json({
+      error: 'صيغة الترويسة غير صحيحة. يجب أن تكون: Bearer <Firebase ID Token>',
+      code: 'TOKEN_MALFORMED',
+    });
+  }
+
+  const idToken = authHeader.slice(7).trim();
+  if (!idToken) {
+    return res.status(401).json({
+      error: 'رمز الدخول فارغ.',
+      code: 'TOKEN_MISSING',
+    });
+  }
+
+  try {
+    const claims = await FirebaseTokenVerifier.verifyIdToken(idToken);
+    (req as any).verifiedUid = claims.uid;
+    (req as any).verifiedEmail = claims.email;
+    next();
+  } catch (err: any) {
+    const code = err instanceof FirebaseTokenVerificationError ? err.code : 'TOKEN_INVALID';
+    const messageAr =
+      err instanceof FirebaseTokenVerificationError
+        ? err.message
+        : 'فشل التحقق من رمز الدخول.';
+
+    console.warn(`[Auth] Firebase ID token rejected: ${code}`);
+
+    return res.status(401).json({
+      error: messageAr,
+      code,
+    });
+  }
+};
   // Safe Centralized Error Masking: Never leak stack traces or internal secrets
   const handleApiError = (res: express.Response, err: any, customUserMessage: string) => {
     const isProd = process.env.NODE_ENV === 'production';
