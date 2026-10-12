@@ -8,23 +8,32 @@ import { AddAccountModal } from '@/shared/components/AddAccountModal';
 import { Toast } from '@/shared/components/Toast';
 import { OfflineIndicator } from '@/shared/components/OfflineIndicator';
 
-const QuickAddTransactionModal = React.lazy(() => import('@/shared/components/QuickAddTransactionModal').then(m => ({ default: m.QuickAddTransactionModal })));
-const SendMessageModal = React.lazy(() => import('@/features/messaging/components/SendMessageModal').then(m => ({ default: m.SendMessageModal })));
-const ScheduleCollectionModal = React.lazy(() => import('@/features/messaging/components/ScheduleCollectionModal').then(m => ({ default: m.ScheduleCollectionModal })));
-const OCRReceiptScannerModal = React.lazy(() => import('@/features/ocr/components/OCRReceiptScannerModal').then(m => ({ default: m.OCRReceiptScannerModal })));
-const SmartReceiptReviewModal = React.lazy(() => import('@/features/ocr/components/SmartReceiptReviewModal').then(m => ({ default: m.SmartReceiptReviewModal })));
-const ReceiptToTransactionModal = React.lazy(() => import('@/features/ocr/components/ReceiptToTransactionModal').then(m => ({ default: m.ReceiptToTransactionModal })));
+import { safeLazy } from '@/core/utils/safeImport';
+
+const QuickAddTransactionModal = safeLazy(() => import('@/shared/components/QuickAddTransactionModal').then(m => ({ default: m.QuickAddTransactionModal })));
+const SendMessageModal = safeLazy(() => import('@/features/messaging/components/SendMessageModal').then(m => ({ default: m.SendMessageModal })));
+const ScheduleCollectionModal = safeLazy(() => import('@/features/messaging/components/ScheduleCollectionModal').then(m => ({ default: m.ScheduleCollectionModal })));
+const OCRReceiptScannerModal = safeLazy(() => import('@/features/ocr/components/OCRReceiptScannerModal').then(m => ({ default: m.OCRReceiptScannerModal })));
+const SmartReceiptReviewModal = safeLazy(() => import('@/features/ocr/components/SmartReceiptReviewModal').then(m => ({ default: m.SmartReceiptReviewModal })));
+const ReceiptToTransactionModal = safeLazy(() => import('@/features/ocr/components/ReceiptToTransactionModal').then(m => ({ default: m.ReceiptToTransactionModal })));
 
 import { useSettingsStore } from '@/shared/stores/settingsStore';
 import { useAccountStore } from '@/shared/stores/accountStore';
 import { useTransactionStore } from '@/shared/stores/transactionStore';
 import { useOCRStore } from '@/shared/stores/ocrStore';
+import { useMessagingStore } from '@/shared/stores/messagingStore';
+import { useUIStore } from '@/shared/stores/uiStore';
 
 export const MainLayout: React.FC = () => {
   const loadSettings = useSettingsStore((state) => state.loadSettings);
   const fetchAccounts = useAccountStore((state) => state.fetchAccounts);
   const fetchRecentTransactions = useTransactionStore((state) => state.fetchRecentTransactions);
 
+  const isQuickAddOpen = useUIStore((state) => state.isQuickAddTransactionOpen);
+  const isSendMessageModalOpen = useMessagingStore((state) => state.isSendMessageModalOpen);
+  const isScheduleModalOpen = useMessagingStore((state) => state.isScheduleModalOpen);
+  const isScannerOpen = useOCRStore((state) => state.isScannerOpen);
+  const isReviewModalOpen = useOCRStore((state) => state.isReviewModalOpen);
   const isConversionModalOpen = useOCRStore((state) => state.isConversionModalOpen);
   const closeConversionModal = useOCRStore((state) => state.closeConversionModal);
   const draftToConvert = useOCRStore((state) => state.draftToConvert);
@@ -54,16 +63,18 @@ export const MainLayout: React.FC = () => {
         <BottomNav />
         <AddAccountModal />
         <React.Suspense fallback={null}>
-          <QuickAddTransactionModal />
-          <SendMessageModal />
-          <ScheduleCollectionModal />
-          <OCRReceiptScannerModal />
-          <SmartReceiptReviewModal />
-          <ReceiptToTransactionModal
-            isOpen={isConversionModalOpen}
-            onClose={closeConversionModal}
-            draft={draftToConvert}
-          />
+          {isQuickAddOpen && <QuickAddTransactionModal />}
+          {isSendMessageModalOpen && <SendMessageModal />}
+          {isScheduleModalOpen && <ScheduleCollectionModal />}
+          {isScannerOpen && <OCRReceiptScannerModal />}
+          {isReviewModalOpen && <SmartReceiptReviewModal />}
+          {isConversionModalOpen && (
+            <ReceiptToTransactionModal
+              isOpen={isConversionModalOpen}
+              onClose={closeConversionModal}
+              draft={draftToConvert}
+            />
+          )}
         </React.Suspense>
         <Toast />
         <OfflineIndicator />

@@ -15,6 +15,7 @@ import http from 'http';
 import { googleDriveService } from '../services/googleDrive.service';
 import { getApiHeaders, getClientSessionToken } from '../utils/apiAuth';
 import { BackupService, MAX_BACKUP_ACCOUNTS, MAX_BACKUP_TRANSACTIONS } from '../services/backup.service';
+import { FirebaseTokenVerifier } from '../services/firebase/FirebaseTokenVerifier';
 
 export interface Phase3TestResult {
   id: string;
@@ -83,7 +84,7 @@ export class Phase3SecurityHardeningTestSuite {
       }
     };
 
-    // TEST 1: Reject anonymous calls to /api/ocr/analyze without client session header
+    // TEST 1: Reject anonymous calls to /api/ocr/analyze without bearer token
     await runTest('SEC-01-A', 'رفض استدعاء التعرف الضوئي المجهول بدون ترويسات أمنية (401 Unauthorized)', async () => {
       const res = await fetch(`${serverUrl}/api/ocr/analyze`, {
         method: 'POST',
@@ -95,12 +96,12 @@ export class Phase3SecurityHardeningTestSuite {
         throw new Error(`Expected status 401 but got ${res.status}`);
       }
       const data = await res.json();
-      if (data.code !== 'UNAUTHORIZED_API_ACCESS') {
-        throw new Error(`Expected code UNAUTHORIZED_API_ACCESS but got ${data.code}`);
+      if (data.code !== 'TOKEN_MISSING') {
+        throw new Error(`Expected code TOKEN_MISSING but got ${data.code}`);
       }
     });
 
-    // TEST 2: Reject anonymous calls to /api/ai/chat without client session header
+    // TEST 2: Reject anonymous calls to /api/ai/chat without bearer token
     await runTest('SEC-01-B', 'رفض استدعاء المساعد المالي المجهول بدون ترويسات أمنية (401 Unauthorized)', async () => {
       const res = await fetch(`${serverUrl}/api/ai/chat`, {
         method: 'POST',
@@ -111,9 +112,13 @@ export class Phase3SecurityHardeningTestSuite {
       if (res.status !== 401) {
         throw new Error(`Expected status 401 but got ${res.status}`);
       }
+      const data = await res.json();
+      if (data.code !== 'TOKEN_MISSING') {
+        throw new Error(`Expected code TOKEN_MISSING but got ${data.code}`);
+      }
     });
 
-    // TEST 3: Reject anonymous calls to /api/ai/audit-invoice without client session header
+    // TEST 3: Reject anonymous calls to /api/ai/audit-invoice without bearer token
     await runTest('SEC-01-C', 'رفض استدعاء تدقيق الفواتير المجهول بدون ترويسات أمنية (401 Unauthorized)', async () => {
       const res = await fetch(`${serverUrl}/api/ai/audit-invoice`, {
         method: 'POST',
@@ -123,6 +128,10 @@ export class Phase3SecurityHardeningTestSuite {
 
       if (res.status !== 401) {
         throw new Error(`Expected status 401 but got ${res.status}`);
+      }
+      const data = await res.json();
+      if (data.code !== 'TOKEN_MISSING') {
+        throw new Error(`Expected code TOKEN_MISSING but got ${data.code}`);
       }
     });
 
@@ -150,10 +159,13 @@ export class Phase3SecurityHardeningTestSuite {
 
     // TEST 5: Input Validation on /api/ocr/analyze (Invalid Image Data)
     await runTest('SEC-04-A', 'التحقق من صحة المدخلات في التعرف الضوئي (رفض البيانات غير الصالحة 400)', async () => {
-      const headers = getApiHeaders();
+      const testToken = FirebaseTokenVerifier.createTestToken({ uid: 'test_sec_user_04' });
       const res = await fetch(`${serverUrl}/api/ocr/analyze`, {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${testToken}`,
+        },
         body: JSON.stringify({ image: 12345 }), // Number instead of string
       });
 
@@ -164,11 +176,14 @@ export class Phase3SecurityHardeningTestSuite {
 
     // TEST 6: Input Validation on /api/ai/chat (Prompt Length Limits)
     await runTest('SEC-04-B', 'التحقق من حدود حجم السؤال في الذكاء الاصطناعي (أكثر من 2000 حرف)', async () => {
-      const headers = getApiHeaders();
+      const testToken = FirebaseTokenVerifier.createTestToken({ uid: 'test_sec_user_04' });
       const oversizedPrompt = 'أ'.repeat(2500);
       const res = await fetch(`${serverUrl}/api/ai/chat`, {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${testToken}`,
+        },
         body: JSON.stringify({ prompt: oversizedPrompt }),
       });
 

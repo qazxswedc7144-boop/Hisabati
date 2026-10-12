@@ -18,6 +18,7 @@ import {
   FileCheck,
   Activity,
   Coins,
+  CloudOff,
 } from 'lucide-react';
 import { useSyncStore, useUIStore, useAccountStore, useTransactionStore } from '@/shared/stores';
 import { formatNumber, formatDate } from '@/core/utils/formatters';
@@ -85,6 +86,7 @@ export const DataControlCenter: React.FC = () => {
   // Database Management State
   const [isResettingData, setIsResettingData] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   // Handlers for Google Drive & Sync
@@ -128,22 +130,19 @@ export const DataControlCenter: React.FC = () => {
       showToast(err?.message || 'فشلت المزامنة مع Google Drive', 'error');
     }
   };
-const handleDisconnectDrive = async () => {
-  const confirmed = window.confirm(
-    'سيتم فصل حساب Google Drive. لن تُحذف النسخ الاحتياطية من Drive. هل تريد المتابعة؟'
-  );
-  if (!confirmed) return;
 
-  setIsDisconnecting(true);
-  try {
-    await disconnectGoogleDrive();
-    showToast('تم فصل Google Drive بنجاح', 'success');
-  } catch (err: any) {
-    showToast(err?.message || 'حدث خطأ أثناء الفصل', 'error');
-  } finally {
-    setIsDisconnecting(false);
-  }
-};
+  const handleConfirmDisconnect = async () => {
+    setShowDisconnectConfirm(false);
+    setIsDisconnecting(true);
+    try {
+      await disconnectGoogleDrive();
+      showToast('تم فصل Google Drive بنجاح', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'حدث خطأ أثناء الفصل', 'error');
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
   const handleInitiateDriveRestore = (backup: DriveFileInfo) => {
     setSelectedBackupForRestore(backup);
     setShowDriveRestoreModal(true);
@@ -427,14 +426,14 @@ const handleDisconnectDrive = async () => {
                 </button>
 
                 <button
-  type="button"
-  onClick={handleDisconnectDrive}
-  disabled={isDisconnecting}
-  className="px-3 py-2 rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold transition min-h-[44px] disabled:opacity-50"
-  title="فصل Google Drive"
->
-  {isDisconnecting ? 'جارٍ الفصل...' : 'فصل'}
-</button>
+                  type="button"
+                  onClick={() => setShowDisconnectConfirm(true)}
+                  disabled={isDisconnecting}
+                  className="px-3 py-2 rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold transition min-h-[44px] disabled:opacity-50"
+                  title="فصل Google Drive"
+                >
+                  {isDisconnecting ? 'جارٍ الفصل...' : 'فصل'}
+                </button>
               </div>
             </div>
 
@@ -1037,6 +1036,43 @@ const handleDisconnectDrive = async () => {
                 className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition min-h-[44px]"
               >
                 مسح الكل
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. Disconnect Google Drive Confirm Dialog */}
+      {showDisconnectConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 text-center space-y-4 my-auto">
+            <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
+              <CloudOff className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-1">
+                تأكيد فصل Google Drive
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                سيتم فصل حساب Google Drive. لن تُحذف النسخ الاحتياطية من Drive. هل تريد المتابعة؟
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDisconnectConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition min-h-[44px]"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDisconnect}
+                disabled={isDisconnecting}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition min-h-[44px] disabled:opacity-50"
+              >
+                {isDisconnecting ? 'جارٍ الفصل...' : 'فصل الحساب'}
               </button>
             </div>
           </div>
