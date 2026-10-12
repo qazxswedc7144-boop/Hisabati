@@ -23,7 +23,6 @@ export class InvoiceAuditEngineService {
  * P0-1: Retrieves a fresh Firebase ID token from the currently signed-in user.
  * Returns null when no authenticated Firebase user is present.
  */
- */
 private async getFirebaseIdToken(): Promise<string | null> {
   try {
     if (!auth || !auth.currentUser) {
