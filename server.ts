@@ -301,7 +301,7 @@ const requireFirebaseAuth = async (
   // ==========================================
   // 1. Server-side Gemini OCR Vision endpoint
   // ==========================================
-  app.post('/api/ocr/analyze', ocrConcurrencyGate, ocrLimiter, requireApiAuth, async (req, res) => {
+  app.post('/api/ocr/analyze', ocrConcurrencyGate, ocrLimiter, requireFirebaseAuth, async (req, res) => {
     try {
       const { image, mimeType } = req.body || {};
 
