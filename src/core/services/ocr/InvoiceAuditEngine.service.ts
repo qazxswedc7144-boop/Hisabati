@@ -19,9 +19,10 @@ export interface AuditInvoiceOptions {
 }
 
 export class InvoiceAuditEngineService {
-  /**
+/**
  * P0-1: Retrieves a fresh Firebase ID token from the currently signed-in user.
  * Returns null when no authenticated Firebase user is present.
+ */
  */
 private async getFirebaseIdToken(): Promise<string | null> {
   try {
@@ -33,8 +34,8 @@ private async getFirebaseIdToken(): Promise<string | null> {
     return null;
   }
 }
-/**  
-   * Main entry point for AI & Rule-based Invoice Audit & Anomaly Detection.
+/**
+ * Main entry point for AI & Rule-based Invoice Audit & Anomaly Detection.
    * STRICT GUARANTEE:
    * - Read-only analysis. Never writes, modifies, or deletes financial transactions.
    * - Fully offline-capable with robust local deterministic heuristics.
@@ -468,11 +469,12 @@ private async getFirebaseIdToken(): Promise<string | null> {
       try {
         const idToken = await this.getFirebaseIdToken();
 if (!idToken) throw new Error('NO_FIREBASE_USER');
-        const aiResponse = await fetch('/api/ai/audit-invoice', {
-          method: 'POST',
-          headers: {
-  'Content-Type': 'application/json',
-  'Authorization': `Bearer ${idToken}`,
+const aiResponse = await fetch('/api/ai/audit-invoice', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${idToken}`,
+  },
 },
           body: JSON.stringify({
             draft,
