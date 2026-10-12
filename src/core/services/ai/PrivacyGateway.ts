@@ -51,12 +51,12 @@ export class PrivacyGateway {
     const sanitizedContext: Record<string, unknown> = {};
     if (context && typeof context === 'object') {
       for (const [key, value] of Object.entries(context)) {
-        // Drop any accountId or raw sensitive identifiers
-        if (key === 'accountId' || key === 'id' || key === 'userId' || key === 'token') {
+        // Drop any accountId, tenantId, organizationId, userId, token, key, PII
+        if (['accountId', 'id', 'tenantId', 'organizationId', 'userId', 'token', 'key', 'email', 'phone'].includes(key)) {
           continue;
         }
         if (typeof value === 'string') {
-          sanitizedContext[key] = value.replace(/(account_id|id|token|key)[\s:=]+[\w-]+/gi, '[FILTERED]');
+          sanitizedContext[key] = value.replace(/(account_id|tenant_id|org_id|id|token|key|email)[\s:=]+[\w@.-]+/gi, '[FILTERED]');
         } else if (Array.isArray(value)) {
           sanitizedContext[key] = value.map((item, index) => {
             if (item && typeof item === 'object') {
@@ -66,6 +66,8 @@ export class PrivacyGateway {
               }
               delete copy.id;
               delete copy.accountId;
+              delete copy.tenantId;
+              delete copy.organizationId;
               return copy;
             }
             return item;
@@ -80,13 +82,15 @@ export class PrivacyGateway {
   }
 
   /**
-   * Sanitizes minimal context summary to ensure no raw account IDs or PII are leaked.
+   * Sanitizes minimal context summary to ensure no raw account IDs, tenant IDs, or PII are leaked.
    */
   public sanitizeContext(context?: Record<string, unknown>): Record<string, unknown> {
     if (!context || typeof context !== 'object') return {};
     const [, sanitizedContext] = Object.entries(context).reduce(
       ([idx, acc], [k, v]) => {
-        if (k === 'accountId' || k === 'id') return [idx, acc];
+        if (['accountId', 'id', 'tenantId', 'organizationId', 'userId', 'token', 'key', 'email', 'phone'].includes(k)) {
+          return [idx, acc];
+        }
         if (k === 'accountName' && typeof v === 'string') {
           acc[k] = `[ACCOUNT_${idx}]`;
           return [idx + 1, acc];

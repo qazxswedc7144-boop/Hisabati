@@ -539,8 +539,6 @@ ${prompt.trim()}
           entities: rawObj.entities,
           mode: mode || rawObj.mode || 'ask',
           provider: 'gemini-server',
-          card: rawObj.card,
-          command: rawObj.command,
         });
 
         if (parseResult.success) {

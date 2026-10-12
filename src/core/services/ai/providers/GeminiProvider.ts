@@ -55,8 +55,10 @@ export class GeminiProvider implements AIProvider {
     }
 
     try {
-      const sanitizedPrompt = privacyGateway.sanitizePrompt(request.prompt);
-      const sanitizedContext = privacyGateway.sanitizeContext(request.minimalContext);
+      const { sanitizedPrompt, sanitizedContext } = privacyGateway.tokenizePromptAndContext(
+        request.prompt,
+        request.minimalContext
+      );
 
       const res = await fetch('/api/ai/generate', {
         method: 'POST',
@@ -80,8 +82,7 @@ export class GeminiProvider implements AIProvider {
           intent: validated.intent as any,
           confidence: validated.confidence,
           mode: validated.mode as any,
-          card: validated.card as any,
-          command: validated.command as any,
+          entities: validated.entities as any,
           provider: this.id,
           model: validated.model || 'gemini-2.5-flash',
         };

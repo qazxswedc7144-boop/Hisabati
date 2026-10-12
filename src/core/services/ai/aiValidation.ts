@@ -28,8 +28,6 @@ export const AIResponseSchema = z.object({
   mode: AIModeEnum.default('ask'),
   provider: z.string().default('gemini-server'),
   model: z.string().optional(),
-  card: z.record(z.string(), z.unknown()).optional(),
-  command: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type ValidatedAIResponse = z.infer<typeof AIResponseSchema>;
