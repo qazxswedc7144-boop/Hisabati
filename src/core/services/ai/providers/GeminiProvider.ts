@@ -1,6 +1,6 @@
 import { AIProvider, AIRequest, AIResponse } from '@/shared/types/ai.types';
 import { localFallbackProvider } from './LocalFallbackProvider';
-import { getApiHeaders } from '@/core/utils/apiAuth';
+import { auth } from '@/core/database/firebase';
 
 export class GeminiProvider implements AIProvider {
   public readonly id = 'gemini';
@@ -11,24 +11,54 @@ export class GeminiProvider implements AIProvider {
       return false;
     }
     try {
-      // Check if backend API endpoint responds
-      const res = await fetch('/api/health', { method: 'GET', signal: AbortSignal.timeout(1500) });
+      const res = await fetch('/api/health', {
+        method: 'GET',
+        signal: AbortSignal.timeout(1500),
+      });
       return res.ok;
     } catch {
       return false;
     }
   }
 
+  /**
+   * P0-1: Retrieves a fresh Firebase ID token from the currently signed-in user.
+   * Returns null when no authenticated Firebase user is present (local-only mode).
+   * Firebase SDK caches the token internally until near expiry; refreshes automatically.
+   */
+  private async getFirebaseIdToken(): Promise<string | null> {
+    try {
+      if (!auth || !auth.currentUser) {
+        return null;
+      }
+      return await auth.currentUser.getIdToken();
+    } catch {
+      return null;
+    }
+  }
+
   public async generate(request: AIRequest): Promise<AIResponse> {
-    // If offline, directly delegate to local fallback provider
+    // If offline, delegate directly to local fallback.
     if (!navigator.onLine) {
       return await localFallbackProvider.generate(request);
+    }
+
+    // P0-1: Require Firebase ID token before any server call.
+    // Local-mode users (no Firebase account) fall back silently.
+    const idToken = await this.getFirebaseIdToken();
+    if (!idToken) {
+      const fallback = await localFallbackProvider.generate(request);
+      fallback.isOfflineFallback = true;
+      return fallback;
     }
 
     try {
       const res = await fetch('/api/ai/generate', {
         method: 'POST',
-        headers: getApiHeaders(),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
         body: JSON.stringify({
           prompt: request.prompt,
           mode: request.mode,
@@ -50,11 +80,13 @@ export class GeminiProvider implements AIProvider {
           model: json.model || 'gemini-2.5-flash',
         };
       }
+
+      // Non-2xx (401/403/429/500) → silent fallback to local provider.
+      // No token logging to avoid leakage.
     } catch {
-      // Network failure, timeout, or no backend server running -> Fallback safely to local engine
+      // Network failure, timeout, or server unreachable → fallback.
     }
 
-    // Seamless offline/local fallback
     const fallbackResponse = await localFallbackProvider.generate(request);
     fallbackResponse.isOfflineFallback = true;
     return fallbackResponse;
