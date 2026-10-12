@@ -197,7 +197,7 @@ export function createApp() {
 // ❌ DO NOT apply this to any sensitive endpoint (AI, OCR, tenant, financial).
 // ✅ Use requireFirebaseAuth instead for all new and migrated routes.
 // ============================================================================
-  const requireFirebaseAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const requireApiAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const clientHeader = req.headers['x-hisabati-client'];
     const sessionHeader = req.headers['x-hisabati-session'];
 
