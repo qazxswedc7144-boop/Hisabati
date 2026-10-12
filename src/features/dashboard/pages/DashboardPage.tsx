@@ -48,26 +48,26 @@ export const DashboardPage: React.FC = () => {
   const openScannerModal = useOCRStore((state) => state.openScannerModal);
 
   return (
-    <div id="dashboard-page" className="space-y-5 sm:space-y-6 animate-in fade-in duration-200">
-      {/* Welcome Banner & Quick Actions - Responsive Stack/Row */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-1 w-full">
-        <div className="min-w-0">
-          <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100 truncate">
+    <div id="dashboard-page" className="space-y-3 sm:space-y-5 animate-in fade-in duration-200">
+      {/* Welcome Banner & Quick Actions - Compact Row on All Screens */}
+      <div className="flex flex-row items-center justify-between gap-2 sm:gap-3 w-full">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-base sm:text-xl font-black tracking-tight text-slate-900 dark:text-slate-100 truncate">
             {t('dashboard.welcome')} 👋
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+          <p className="text-[11px] sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5 truncate">
             {t('dashboard.quickSummary')}
           </p>
         </div>
 
         {/* Quick Actions (Secondary: مسح, Tertiary: إضافة حساب) */}
-        <div className="flex flex-row items-center gap-2 flex-nowrap shrink-0">
+        <div className="flex flex-row items-center gap-1.5 sm:gap-2 flex-nowrap shrink-0">
           <button
             id="btn-dash-scan-ocr"
             onClick={() => openScannerModal()}
-            className="w-fit inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-sky-200 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-xs sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[44px] whitespace-nowrap shrink-0"
+            className="w-fit inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-sky-200 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-[11px] sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[40px] sm:min-h-[44px] whitespace-nowrap shrink-0"
           >
-            <ScanLine className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
+            <ScanLine className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-600 dark:text-sky-400 shrink-0" />
             <span>مسح فاتورة</span>
           </button>
 
@@ -75,9 +75,9 @@ export const DashboardPage: React.FC = () => {
             id="btn-dash-add-acc"
             onClick={() => openAddAccount()}
             title="إضافة حساب"
-            className="w-fit inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[44px] whitespace-nowrap shrink-0"
+            className="w-fit inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[40px] sm:min-h-[44px] whitespace-nowrap shrink-0"
           >
-            <UserPlus className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+            <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-600 dark:text-teal-400 shrink-0" />
             <span>إضافة حساب</span>
           </button>
         </div>
@@ -313,4 +313,3 @@ export const DashboardPage: React.FC = () => {
     </div>
   );
 };
-
