@@ -32,7 +32,7 @@ export const MainLayout: React.FC = () => {
   const isQuickAddOpen = useUIStore((state) => state.isQuickAddTransactionOpen);
   const isSendMessageModalOpen = useMessagingStore((state) => state.isSendMessageModalOpen);
   const isScheduleModalOpen = useMessagingStore((state) => state.isScheduleModalOpen);
-  const isScannerOpen = useOCRStore((state) => state.isScannerOpen);
+  const isScannerModalOpen = useOCRStore((state) => state.isScannerModalOpen);
   const isReviewModalOpen = useOCRStore((state) => state.isReviewModalOpen);
   const isConversionModalOpen = useOCRStore((state) => state.isConversionModalOpen);
   const closeConversionModal = useOCRStore((state) => state.closeConversionModal);
@@ -66,7 +66,7 @@ export const MainLayout: React.FC = () => {
           {isQuickAddOpen && <QuickAddTransactionModal />}
           {isSendMessageModalOpen && <SendMessageModal />}
           {isScheduleModalOpen && <ScheduleCollectionModal />}
-          {isScannerOpen && <OCRReceiptScannerModal />}
+          {isScannerModalOpen && <OCRReceiptScannerModal />}
           {isReviewModalOpen && <SmartReceiptReviewModal />}
           {isConversionModalOpen && (
             <ReceiptToTransactionModal

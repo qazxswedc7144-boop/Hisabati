@@ -1,4 +1,5 @@
 export * from './AIPrivacyService';
+export * from './PrivacyGateway';
 export * from './ArabicNumberParser';
 export * from './AccountResolver';
 export * from './AITools';

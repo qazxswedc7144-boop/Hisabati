@@ -1,6 +1,7 @@
 import { AIProvider, AIRequest, AIResponse } from '@/shared/types/ai.types';
 import { localFallbackProvider } from './LocalFallbackProvider';
 import { auth } from '@/core/database/firebase';
+import { privacyGateway } from '../PrivacyGateway';
 
 export class GeminiProvider implements AIProvider {
   public readonly id = 'gemini';
@@ -53,6 +54,9 @@ export class GeminiProvider implements AIProvider {
     }
 
     try {
+      const sanitizedPrompt = privacyGateway.sanitizePrompt(request.prompt);
+      const sanitizedContext = privacyGateway.sanitizeContext(request.minimalContext);
+
       const res = await fetch('/api/ai/generate', {
         method: 'POST',
         headers: {
@@ -60,9 +64,9 @@ export class GeminiProvider implements AIProvider {
           'Authorization': `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          prompt: request.prompt,
+          prompt: sanitizedPrompt,
           mode: request.mode,
-          context: request.minimalContext,
+          context: sanitizedContext,
         }),
         signal: AbortSignal.timeout(5000),
       });
