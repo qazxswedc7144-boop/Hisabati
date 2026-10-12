@@ -497,13 +497,13 @@ ${prompt.trim()}
     }
   };
 
-  app.post('/api/ai/chat', aiConcurrencyGate, aiLimiter, requireApiAuth, handleAiChat);
-  app.post('/api/ai/generate', aiConcurrencyGate, aiLimiter, requireApiAuth, handleAiChat);
+  app.post('/api/ai/chat', aiConcurrencyGate, aiLimiter, requireFirebaseAuth, handleAiChat);
+  app.post('/api/ai/generate', aiConcurrencyGate, aiLimiter, requireFirebaseAuth, handleAiChat);
 
   // ==========================================
   // 3. Server-side AI Invoice Audit endpoint
   // ==========================================
-  app.post('/api/ai/audit-invoice', aiConcurrencyGate, aiLimiter, requireApiAuth, async (req, res) => {
+  app.post('/api/ai/audit-invoice', aiConcurrencyGate, aiLimiter, requireFirebaseAuth, async (req, res) => {
     try {
       const { draft, accountContext } = req.body || {};
 
@@ -557,7 +557,7 @@ ${JSON.stringify(accountContext || {}).slice(0, 5000)}
       `.trim();
 
       const geminiCall = ai.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: 'gemini-2.5-flash',
         contents: [
           {
             role: 'user',
