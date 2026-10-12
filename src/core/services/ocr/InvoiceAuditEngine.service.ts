@@ -474,7 +474,6 @@ const aiResponse = await fetch('/api/ai/audit-invoice', {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${idToken}`,
   },
-},
           body: JSON.stringify({
             draft,
             accountContext: accountComparison,
