@@ -5,25 +5,44 @@ import {
 } from '@/shared/types/ocr.types';
 import { ImagePreprocessor } from '../ImagePreprocessor';
 import { toMinorUnits } from '@/core/utils/financial';
+import { auth } from '@/core/database/firebase';
 
 /**
  * ServerVisionOCRProvider
  * Server-side AI Vision OCR Provider using Gemini Multimodal via protected Express API.
  * Keeps API secrets strictly on the server-side.
+ *
+ * P0-1: Requires Firebase ID token (Authorization: Bearer) — no client-side
+ * pseudo-session is accepted. Local-only users cannot use this provider.
  */
-import { getApiHeaders } from '@/core/utils/apiAuth';
-
 export class ServerVisionOCRProvider implements OCRProvider {
   public readonly name = 'server_vision_gemini';
 
   public async isAvailable(): Promise<boolean> {
     if (typeof window === 'undefined') return false;
     if (!navigator.onLine) return false;
+    // P0-1: requires an authenticated Firebase user.
+    if (!auth || !auth.currentUser) return false;
     try {
       const res = await fetch('/api/health');
       return res.ok;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * P0-1: Retrieves a fresh Firebase ID token from the currently signed-in user.
+   * Returns null when no authenticated Firebase user is present.
+   */
+  private async getFirebaseIdToken(): Promise<string | null> {
+    try {
+      if (!auth || !auth.currentUser) {
+        return null;
+      }
+      return await auth.currentUser.getIdToken();
+    } catch {
+      return null;
     }
   }
 
@@ -33,13 +52,24 @@ export class ServerVisionOCRProvider implements OCRProvider {
   ): Promise<OCRResult> {
     const startTime = performance.now();
 
+    // P0-1: Require Firebase ID token before any outbound call.
+    const idToken = await this.getFirebaseIdToken();
+    if (!idToken) {
+      throw new Error(
+        'خدمة قراءة الفواتير السحابية تتطلب تسجيل الدخول بحساب Firebase. يرجى تسجيل الدخول والمحاولة مجدداً.'
+      );
+    }
+
     // 1. Mobile-friendly preprocessing: downscale & enhance contrast before uploading
     const preprocessed = await ImagePreprocessor.preprocess(imageSource, options);
 
-    // 2. Transmit to server endpoint
+    // 2. Transmit to server endpoint with Firebase ID token
     const response = await fetch('/api/ocr/analyze', {
       method: 'POST',
-      headers: getApiHeaders(),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
       body: JSON.stringify({
         image: preprocessed.dataUrl,
         mimeType: preprocessed.mimeType,
@@ -48,7 +78,9 @@ export class ServerVisionOCRProvider implements OCRProvider {
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error || `Server OCR request failed with HTTP ${response.status}`);
+      throw new Error(
+        errData.error || `Server OCR request failed with HTTP ${response.status}`
+      );
     }
 
     const payload = await response.json();
