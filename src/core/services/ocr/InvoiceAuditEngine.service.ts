@@ -9,7 +9,7 @@ import {
 } from '@/shared/types';
 import { receiptTransactionBridge } from './ReceiptTransactionBridge.service';
 import { roundMoney } from '../../utils/financial';
-import { getApiHeaders } from '@/core/utils/apiAuth';
+import { auth } from '../../database/firebase';
 
 export interface AuditInvoiceOptions {
   draft: StructuredReceiptDraft;
@@ -20,6 +20,20 @@ export interface AuditInvoiceOptions {
 
 export class InvoiceAuditEngineService {
   /**
+ * P0-1: Retrieves a fresh Firebase ID token from the currently signed-in user.
+ * Returns null when no authenticated Firebase user is present.
+ */
+private async getFirebaseIdToken(): Promise<string | null> {
+  try {
+    if (!auth || !auth.currentUser) {
+      return null;
+    }
+    return await auth.currentUser.getIdToken();
+  } catch {
+    return null;
+  }
+}
+/**  
    * Main entry point for AI & Rule-based Invoice Audit & Anomaly Detection.
    * STRICT GUARANTEE:
    * - Read-only analysis. Never writes, modifies, or deletes financial transactions.
@@ -452,9 +466,14 @@ export class InvoiceAuditEngineService {
 
     if (!skipAiOnline && typeof window !== 'undefined' && navigator.onLine) {
       try {
+        const idToken = await this.getFirebaseIdToken();
+if (!idToken) throw new Error('NO_FIREBASE_USER');
         const aiResponse = await fetch('/api/ai/audit-invoice', {
           method: 'POST',
-          headers: getApiHeaders(),
+          headers: {
+  'Content-Type': 'application/json',
+  'Authorization': `Bearer ${idToken}`,
+},
           body: JSON.stringify({
             draft,
             accountContext: accountComparison,
