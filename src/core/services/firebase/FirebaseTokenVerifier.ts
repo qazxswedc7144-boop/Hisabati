@@ -74,15 +74,43 @@ function base64UrlEncode(str: string): string {
  * - Extracts identity strictly from valid cryptographic token claims.
  * - Never trusts client-reported UID or role.
  * - Never logs or reveals the raw token in logs, console, or error traces.
+ *
+ * SECURITY: Test token support is HARD-DISABLED in production builds.
+ * Any attempt to register a test token in production throws immediately.
  */
 export class FirebaseTokenVerifier {
+  // P0-1 fix: environment-driven projectId priority. Env vars FIRST, JSON config as fallback only.
   private static defaultProjectId: string =
+    (typeof process !== 'undefined' ? process.env.FIREBASE_PROJECT_ID : '') ||
+    (typeof process !== 'undefined' ? process.env.VITE_FIREBASE_PROJECT_ID : '') ||
     firebaseConfigJson.projectId ||
-    (typeof process !== 'undefined' ? process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID : '') ||
     'geometric-axis-2cbh2';
 
   private static cachedPublicKeys: Map<string, { cert: string; expiresAt: number }> = new Map();
   private static testTokens: Map<string, TestTokenEntry> = new Map();
+
+  // P0-1 fix: tolerance reduced from 300s to 60s (matches Firebase Admin SDK expectations more closely)
+  private static readonly CLOCK_SKEW_SECONDS = 60;
+
+  /**
+   * Returns true ONLY in non-production environments.
+   * Guards all test-only methods (registerTestToken, createTestToken, clearTestTokens).
+   */
+  private static isTestEnvironment(): boolean {
+    // Node production flag
+    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') {
+      return false;
+    }
+    // Vite production build flag
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env?.PROD) {
+      return false;
+    }
+    // Explicit opt-out for safety in custom deployments
+    if (typeof process !== 'undefined' && process.env.HISABATI_ALLOW_TEST_TOKENS === 'false') {
+      return false;
+    }
+    return true;
+  }
 
   /**
    * Sets the expected project ID if different from default config
@@ -97,18 +125,29 @@ export class FirebaseTokenVerifier {
 
   /**
    * Registers a test token for deterministic unit and integration tests.
-   * Useful in testing environments without a live Google Cloud connection.
+   * THROWS in production.
    */
   public static registerTestToken(entry: TestTokenEntry): void {
+    if (!this.isTestEnvironment()) {
+      throw new Error(
+        'FirebaseTokenVerifier: registerTestToken() is forbidden in production builds.'
+      );
+    }
     this.testTokens.set(entry.token, entry);
   }
 
   public static clearTestTokens(): void {
+    if (!this.isTestEnvironment()) {
+      throw new Error(
+        'FirebaseTokenVerifier: clearTestTokens() is forbidden in production builds.'
+      );
+    }
     this.testTokens.clear();
   }
 
   /**
    * Generates a structurally authentic test token for unit test simulations.
+   * THROWS in production.
    */
   public static createTestToken(
     claims: Partial<VerifiedTokenClaims> & { uid: string },
@@ -118,8 +157,16 @@ export class FirebaseTokenVerifier {
       invalidSignature?: boolean;
     } = {}
   ): string {
+    if (!this.isTestEnvironment()) {
+      throw new Error(
+        'FirebaseTokenVerifier: createTestToken() is forbidden in production builds.'
+      );
+    }
+
     const now = Math.floor(Date.now() / 1000);
-    const projId = options.wrongProject ? 'wrong-external-project-99' : (claims.projectId || this.defaultProjectId);
+    const projId = options.wrongProject
+      ? 'wrong-external-project-99'
+      : claims.projectId || this.defaultProjectId;
     const exp = options.expired ? now - 3600 : now + 3600;
     const iat = options.expired ? now - 7200 : now - 60;
     const authTime = iat;
@@ -180,14 +227,18 @@ export class FirebaseTokenVerifier {
    * - Strict structural parsing
    * - Audience & Issuer project matching
    * - Expiration and timing validation
+   * - auth_time presence enforcement
+   * - sub-only UID extraction (never falls back to user_id)
    * - Anti-spoofing and leakage prevention
+   *
+   * SECURITY: No skipSignatureCheckForTests option. Signature is ALWAYS verified
+   * except for registered test tokens (which only work in non-production).
    */
   public static async verifyIdToken(
     rawToken: string | undefined | null,
     options: {
       expectedProjectId?: string;
       nowSeconds?: number;
-      skipSignatureCheckForTests?: boolean;
     } = {}
   ): Promise<VerifiedTokenClaims> {
     if (!rawToken || typeof rawToken !== 'string' || !rawToken.trim()) {
@@ -199,28 +250,30 @@ export class FirebaseTokenVerifier {
 
     const token = rawToken.trim();
 
-    // Check registered test tokens first
-    const registered = this.testTokens.get(token);
-    if (registered) {
-      if (registered.expired) {
-        throw new FirebaseTokenVerificationError(
-          'TOKEN_EXPIRED',
-          'انتهت صلاحية رمز الدخول. يرجى إعادة تسجيل الدخول مجدداً.'
-        );
+    // Test tokens: ONLY honored in non-production AND only if the entry exists.
+    if (this.isTestEnvironment()) {
+      const registered = this.testTokens.get(token);
+      if (registered) {
+        if (registered.expired) {
+          throw new FirebaseTokenVerificationError(
+            'TOKEN_EXPIRED',
+            'انتهت صلاحية رمز الدخول. يرجى إعادة تسجيل الدخول مجدداً.'
+          );
+        }
+        if (registered.wrongProject) {
+          throw new FirebaseTokenVerificationError(
+            'TOKEN_PROJECT_MISMATCH',
+            'رمز الدخول يتبع مشروعاً مختلفاً غير مصرح له بالوصول إلى هذا التطبيق.'
+          );
+        }
+        if (registered.invalidSignature) {
+          throw new FirebaseTokenVerificationError(
+            'TOKEN_INVALID_SIGNATURE',
+            'توقيع رمز الدخول غير صالح أو تم التلاعب به.'
+          );
+        }
+        return registered.claims;
       }
-      if (registered.wrongProject) {
-        throw new FirebaseTokenVerificationError(
-          'TOKEN_PROJECT_MISMATCH',
-          'رمز الدخول يتبع مشروعاً مختلفاً غير مصرح له بالوصول إلى هذا التطبيق.'
-        );
-      }
-      if (registered.invalidSignature) {
-        throw new FirebaseTokenVerificationError(
-          'TOKEN_INVALID_SIGNATURE',
-          'توقيع رمز الدخول غير صالح أو تم التلاعب به.'
-        );
-      }
-      return registered.claims;
     }
 
     // Parse standard JWT (3 parts separated by dots)
@@ -274,7 +327,6 @@ export class FirebaseTokenVerifier {
 
     const expectedProject = options.expectedProjectId || this.defaultProjectId;
     const now = options.nowSeconds ?? Math.floor(Date.now() / 1000);
-    const CLOCK_SKEW_SECONDS = 300; // 5 minutes tolerance
 
     // 1. Verify Issuer
     const expectedIssuer = `https://securetoken.google.com/${expectedProject}`;
@@ -295,44 +347,55 @@ export class FirebaseTokenVerifier {
       );
     }
 
-    // 3. Verify Subject (UID)
-    const uid = payload.sub || payload.user_id;
-    if (!uid || typeof uid !== 'string' || uid.trim().length === 0 || uid.length > 128) {
+    // 3. Verify Subject (UID) — strictly from `sub`, never from `user_id`
+    if (
+      !payload.sub ||
+      typeof payload.sub !== 'string' ||
+      payload.sub.trim().length === 0 ||
+      payload.sub.length > 128
+    ) {
       throw new FirebaseTokenVerificationError(
         'TOKEN_UID_INVALID',
-        'معرف المستخدم (UID) في رمز الدخول غير صالح أو مفقود.'
+        'معرف المستخدم (sub) في رمز الدخول غير صالح أو مفقود.'
+      );
+    }
+    const uid = payload.sub;
+
+    // 4. Verify auth_time presence (Firebase ID tokens always include it)
+    if (typeof payload.auth_time !== 'number') {
+      throw new FirebaseTokenVerificationError(
+        'TOKEN_MALFORMED',
+        'حقل auth_time إلزامي في رمز Firebase ID وغائب في هذا الرمز.'
       );
     }
 
-    // 4. Verify Expiration
-    if (typeof payload.exp !== 'number' || payload.exp < now - CLOCK_SKEW_SECONDS) {
+    // 5. Verify Expiration (60s tolerance)
+    if (typeof payload.exp !== 'number' || payload.exp < now - this.CLOCK_SKEW_SECONDS) {
       throw new FirebaseTokenVerificationError(
         'TOKEN_EXPIRED',
         'انتهت صلاحية رمز الدخول. يرجى تسجيل الدخول مجدداً لتحديث الجلسة.'
       );
     }
 
-    // 5. Verify Issue Time
-    if (typeof payload.iat !== 'number' || payload.iat > now + CLOCK_SKEW_SECONDS) {
+    // 6. Verify Issue Time
+    if (typeof payload.iat !== 'number' || payload.iat > now + this.CLOCK_SKEW_SECONDS) {
       throw new FirebaseTokenVerificationError(
         'TOKEN_PREMATURE',
         'وقت إصدار الرمز مستقبلي وغير صالح مقارنة بتوقيت الخادم.'
       );
     }
 
-    // 6. Verify Signature
-    if (!options.skipSignatureCheckForTests) {
-      const isVerified = await this.verifySignatureWithGoogle(
-        header.kid,
-        `${headerB64}.${payloadB64}`,
-        signatureB64
+    // 7. Cryptographic Signature Verification (ALWAYS performed)
+    const isVerified = await this.verifySignatureWithGoogle(
+      header.kid,
+      `${headerB64}.${payloadB64}`,
+      signatureB64
+    );
+    if (!isVerified) {
+      throw new FirebaseTokenVerificationError(
+        'TOKEN_INVALID_SIGNATURE',
+        'فشل التحقق من التوقيع الرقمي لرمز الدخول.'
       );
-      if (!isVerified) {
-        throw new FirebaseTokenVerificationError(
-          'TOKEN_INVALID_SIGNATURE',
-          'فشل التحقق من التوقيع الرقمي لرمز الدخول.'
-        );
-      }
     }
 
     return {
@@ -340,7 +403,7 @@ export class FirebaseTokenVerifier {
       email: typeof payload.email === 'string' ? payload.email : undefined,
       emailVerified: typeof payload.email_verified === 'boolean' ? payload.email_verified : undefined,
       name: typeof payload.name === 'string' ? payload.name : undefined,
-      authTime: typeof payload.auth_time === 'number' ? payload.auth_time : payload.iat,
+      authTime: payload.auth_time,
       issuedAt: payload.iat,
       expiresAt: payload.exp,
       projectId: expectedProject,
@@ -349,6 +412,7 @@ export class FirebaseTokenVerifier {
 
   /**
    * Cryptographically verifies signature against Google's public certificates.
+   * FAIL-CLOSED: any network or parse error returns false.
    */
   private static async verifySignatureWithGoogle(
     kid: string,
@@ -361,6 +425,8 @@ export class FirebaseTokenVerifier {
         return false;
       }
 
+      // Server-side Node.js environment only. Browser-side calls should never reach here
+      // in production because token verification happens on the Express server.
       if (typeof window === 'undefined') {
         const cryptoModule = await import('crypto');
         const verifier = cryptoModule.createVerify('RSA-SHA256');
@@ -368,6 +434,7 @@ export class FirebaseTokenVerifier {
         return verifier.verify(publicCert, signatureB64, 'base64url');
       }
 
+      // Browser-side signature verification is not supported (and not needed).
       return false;
     } catch {
       return false;
@@ -375,7 +442,8 @@ export class FirebaseTokenVerifier {
   }
 
   /**
-   * Retrieves Google public x509 cert by kid with caching
+   * Retrieves Google public x509 cert by kid with caching.
+   * FAIL-CLOSED: returns null on any error.
    */
   private static async getGooglePublicCertificate(kid: string): Promise<string | null> {
     const cached = this.cachedPublicKeys.get(kid);
@@ -404,4 +472,4 @@ export class FirebaseTokenVerifier {
       return null;
     }
   }
-}
+  }
