@@ -1,6 +1,7 @@
 import { AIProvider, AIRequest, AIResponse } from '@/shared/types/ai.types';
 import { localFallbackProvider } from './LocalFallbackProvider';
 import { auth } from '@/core/database/firebase';
+import { validateAIResponse } from '../aiValidation';
 import { privacyGateway } from '../PrivacyGateway';
 
 export class GeminiProvider implements AIProvider {
@@ -73,15 +74,16 @@ export class GeminiProvider implements AIProvider {
 
       if (res.ok) {
         const json = await res.json();
+        const validated = validateAIResponse(json);
         return {
-          text: json.text,
-          intent: json.intent,
-          confidence: json.confidence || 0.9,
-          mode: json.mode || request.mode || 'ask',
-          card: json.card,
-          command: json.command,
+          text: validated.text,
+          intent: validated.intent as any,
+          confidence: validated.confidence,
+          mode: validated.mode as any,
+          card: validated.card as any,
+          command: validated.command as any,
           provider: this.id,
-          model: json.model || 'gemini-2.5-flash',
+          model: validated.model || 'gemini-2.5-flash',
         };
       }
 

@@ -8,6 +8,7 @@ import {
   aiPrivacyService,
   localFallbackProvider,
   aiService,
+  validateAIResponse,
 } from '@/core/services/ai';
 import { db } from '@/core/database/db';
 import { Account, CreateAccountDTO, StructuredAICommand } from '@/shared/types';
@@ -564,6 +565,35 @@ export class AITestSuite {
 
         // Clean up
         await db.accounts.delete(account.id);
+      }
+    );
+
+    await runTest(
+      'AI-25',
+      'Zod Runtime Validation Test: Malformed JSON, Disallowed Intent, and Out-of-Range Confidence',
+      'التحقق من صحة استجابات الذكاء الاصطناعي وقت التشغيل باستخدام Zod وإبطال القيم الخاطئة',
+      async () => {
+        // Test malformed intent and out of range confidence
+        const invalidResponse = {
+          intent: 'HACKER_MALICIOUS_INTENT',
+          confidence: 2.5,
+          text: 'malicious payload'
+        };
+        const validated = validateAIResponse(invalidResponse);
+        if (validated.intent !== 'UNKNOWN' || validated.confidence > 1) {
+          throw new Error('Zod validation did not sanitize invalid intent or confidence!');
+        }
+
+        // Test valid response passes cleanly
+        const validResponse = {
+          intent: 'GET_TOTAL_RECEIVABLES',
+          confidence: 0.95,
+          text: 'الإجمالي'
+        };
+        const validatedValid = validateAIResponse(validResponse);
+        if (validatedValid.intent !== 'GET_TOTAL_RECEIVABLES' || validatedValid.confidence !== 0.95) {
+          throw new Error('Zod validation rejected valid response!');
+        }
       }
     );
 

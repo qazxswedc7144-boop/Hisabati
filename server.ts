@@ -4,6 +4,7 @@ import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import { ServerMembershipVerifier } from './src/core/services/tenant/ServerMembershipVerifier';
 import { FirebaseTokenVerifier, FirebaseTokenVerificationError } from './src/core/services/firebase/FirebaseTokenVerifier';
+import { AIResponseSchema } from './src/core/services/ai/aiValidation';
 const PORT = 3000;
 
 // Export app and server factory for integration testing and server startup
@@ -526,37 +527,46 @@ ${prompt.trim()}
       const response = await Promise.race([geminiCall, timeoutPromise]);
       const responseText = (response.text || '').trim();
 
-      // Safe JSON parsing with fallback to UNKNOWN intent
-      let parsedData: any = null;
+      // Zod Runtime Validation for AI Response
+      let validatedResponse;
       try {
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          parsedData = JSON.parse(jsonMatch[0]);
+        const rawObj = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+        const parseResult = AIResponseSchema.safeParse({
+          text: rawObj.text || responseText,
+          intent: rawObj.intent,
+          confidence: rawObj.confidence,
+          entities: rawObj.entities,
+          mode: mode || rawObj.mode || 'ask',
+          provider: 'gemini-server',
+          card: rawObj.card,
+          command: rawObj.command,
+        });
+
+        if (parseResult.success) {
+          validatedResponse = parseResult.data;
+        } else {
+          validatedResponse = {
+            text: responseText,
+            intent: 'UNKNOWN',
+            confidence: 0.2,
+            entities: {},
+            mode: mode || 'ask',
+            provider: 'gemini-server',
+          };
         }
       } catch {
-        parsedData = null;
-      }
-
-      if (parsedData && typeof parsedData === 'object' && parsedData.intent) {
-        return res.json({
-          text: parsedData.text || responseText,
-          intent: typeof parsedData.intent === 'string' ? parsedData.intent : 'UNKNOWN',
-          confidence: typeof parsedData.confidence === 'number' ? parsedData.confidence : 0.9,
-          entities: typeof parsedData.entities === 'object' && parsedData.entities !== null ? parsedData.entities : {},
+        validatedResponse = {
+          text: responseText,
+          intent: 'UNKNOWN',
+          confidence: 0.2,
+          entities: {},
           mode: mode || 'ask',
           provider: 'gemini-server',
-        });
+        };
       }
 
-      // Safe Fallback when JSON parsing fails or intent is missing
-      return res.json({
-        text: responseText,
-        intent: 'UNKNOWN',
-        confidence: 0.3,
-        entities: {},
-        mode: mode || 'ask',
-        provider: 'gemini-server',
-      });
+      return res.json(validatedResponse);
     } catch (err: any) {
       return handleApiError(res, err, 'حدث خطأ أثناء التواصل مع نموذج الذكاء الاصطناعي.');
     }

@@ -9,6 +9,7 @@ export * from './AICommandParser';
 export * from './AIValidationService';
 export * from './AIResponseService';
 export * from './VoiceInputService';
+export * from './aiValidation';
 export * from './providers/LocalFallbackProvider';
 export * from './providers/GeminiProvider';
 export * from './providers/OpenAIProvider';
