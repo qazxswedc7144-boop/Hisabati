@@ -476,14 +476,6 @@ export class TenantService {
         if (val.valid) {
           isVerified = true;
           grantReason = 'offline_capability_lease';
-        } else if (
-          store.authMembershipStatus === 'online_verified' &&
-          store.activeOrganization?.id === org.id &&
-          store.currentMembership?.userId === membership.userId
-        ) {
-          // Active verified session
-          isVerified = true;
-          grantReason = 'server_verified';
         }
       }
 

@@ -1125,6 +1125,89 @@ export class FirebaseMembershipP12TestSuite {
           }
         },
       },
+
+      // P1.2-X) Production Environment Simulation: Test Fixtures Rejected
+      {
+        id: 'P1.2-X-PROD-FIXTURE-BLOCK',
+        title: 'Production Simulation: Test Fixtures Rejected',
+        description: 'التأكد من رفض استخدام Test Fixtures ومنع فتح قاعدة البيانات عند محاكاة بيئة الإنتاج',
+        fn: async () => {
+          const { TenantDatabaseManager } = await import('../database/TenantDatabaseManager');
+          
+          // Temporarily stub process.env.NODE_ENV = 'production' to test production guard
+          const origNodeEnv = process.env.NODE_ENV;
+          process.env.NODE_ENV = 'production';
+
+          try {
+            let fixtureAllowed = false;
+            try {
+              TenantDatabaseManager.registerTestFixture('org_prod_forbidden');
+              fixtureAllowed = true;
+            } catch {
+              // Expected error in production guard
+            }
+
+            if (fixtureAllowed) {
+              throw new Error('خرق أمني: مسموح بتسجيل Test Fixtures في بيئة الإنتاج!');
+            }
+          } finally {
+            process.env.NODE_ENV = origNodeEnv;
+          }
+        },
+      },
+
+      // P1.2-Y) Stale or Fake 'online_verified' State Rejected
+      {
+        id: 'P1.2-Y-STALE-ONLINE-VERIFIED-REJECT',
+        title: 'Stale online_verified State Rejected',
+        description: 'منع تبديل المؤسسة اعتماداً على حالة online_verified قديمة أو مزيفة بدون Capability Lease صالح',
+        fn: async () => {
+          const store = useTenantStore.getState();
+          const mockOrg = {
+            id: 'org_fake_vault',
+            name: 'Fake Vault',
+            ownerId: 'usr_fake',
+            status: 'active' as const,
+            settings: { currency: 'YER' as const, language: 'ar' as const, timezone: 'UTC' },
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          const mockMembership = {
+            organizationId: 'org_fake_vault',
+            userId: 'usr_fake',
+            role: 'owner' as const,
+            status: 'active' as const,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          // Force fake online_verified state in store without valid lease or server check
+          store.setContext({
+            activeOrganization: mockOrg,
+            currentMembership: mockMembership,
+            authMembershipStatus: 'online_verified',
+            isLocalMode: false,
+          });
+
+          let switched = false;
+          try {
+            await tenantService.switchOrganization(mockOrg, mockMembership);
+            // Check if tenant db actually opened without valid lease/server check
+            const db = tenantDbManager.getActiveDatabase();
+            if (db && db.name.includes('org_fake_vault')) {
+              switched = true;
+            }
+          } catch {
+            // Expected rejection
+          }
+
+          if (switched) {
+            throw new Error('خرق أمني حرج: تم فتح قاعدة البيانات بناءً على حالة online_verified مزيفة دون التحقق أو الـ Lease!');
+          }
+
+          await tenantService.switchToLocalMode();
+        },
+      },
     ];
 
     for (const tc of testCases) {
