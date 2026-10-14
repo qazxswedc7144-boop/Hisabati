@@ -2,8 +2,6 @@ import { FirebaseTokenVerifier, FirebaseTokenVerificationError } from '../fireba
 import { Organization, OrganizationMembership, AuthMembershipStatus } from '@/shared/types/tenant.types';
 import { UserRole } from '@/shared/types/rbac.types';
 import { rbacGuard } from '../rbac/RBACGuard.service';
-import { db as firestoreDb } from '@/core/database/firebase';
-import { doc, getDoc } from 'firebase/firestore';
 
 export interface VerifyMembershipRequest {
   idToken: string;
@@ -32,7 +30,8 @@ export interface VerifyMembershipResponse {
 /**
  * ServerMembershipVerifier: Decouples Authentication from Authorization.
  * - Authenticated Firebase Identity != Tenant Member / Owner.
- * - Source of truth is strictly verified Firestore documents.
+ * - Source of truth in production is strictly Firebase Admin SDK (dynamically imported to prevent client bundling).
+ * - In test environment, uses isolated test stores and FirebaseTokenVerifier.
  * - Zero trust for client-sent uid, role, or permissions.
  */
 export class ServerMembershipVerifier {
@@ -76,7 +75,7 @@ export class ServerMembershipVerifier {
   }
 
   /**
-   * Authoritative server-side verification.
+   * Authoritative server-side verification using Firebase Admin SDK in production, test verifier in test mode.
    */
   public static async verifyMembership(
     request: VerifyMembershipRequest
@@ -98,22 +97,31 @@ export class ServerMembershipVerifier {
 
     const cleanOrgId = organizationId.trim();
 
-    // 2. Cryptographic Token Verification (Authenticity & Expiry)
+    // 2. Cryptographic Token Verification
     let verifiedUid: string;
     let verifiedEmail: string | undefined;
     let verifiedName: string | undefined;
 
     try {
-      const claims = await FirebaseTokenVerifier.verifyIdToken(idToken);
-      verifiedUid = claims.uid;
-      verifiedEmail = claims.email;
-      verifiedName = claims.name;
+      if (this.isTestEnvironment()) {
+        const claims = await FirebaseTokenVerifier.verifyIdToken(idToken);
+        verifiedUid = claims.uid;
+        verifiedEmail = claims.email;
+        verifiedName = claims.name;
+      } else {
+        const { getAdminAuth } = await import('../firebase/adminServer');
+        const adminAuth = getAdminAuth();
+        const decodedToken = await adminAuth.verifyIdToken(idToken, true);
+        verifiedUid = decodedToken.uid;
+        verifiedEmail = decodedToken.email;
+        verifiedName = decodedToken.name;
+      }
     } catch (err: any) {
       const code = err instanceof FirebaseTokenVerificationError ? err.code : 'TOKEN_INVALID';
       const messageAr =
         err instanceof FirebaseTokenVerificationError
           ? err.message
-          : 'فشل التحقق من رمز الدخول السحابي.';
+          : 'فشل التحقق من رمز الدخول عبر Firebase Admin SDK.';
 
       return {
         success: false,
@@ -122,7 +130,7 @@ export class ServerMembershipVerifier {
         error: {
           code,
           messageAr,
-          details: err?.details,
+          details: err?.details || err?.message,
         },
       };
     }
@@ -134,7 +142,7 @@ export class ServerMembershipVerifier {
       );
     }
 
-    // 4. Fetch Organization from authoritative repository/Firestore
+    // 4. Fetch Organization from test store (in test env) or Admin Firestore SDK (in production)
     const org = await this.fetchOrganization(cleanOrgId);
     if (!org) {
       return {
@@ -162,7 +170,8 @@ export class ServerMembershipVerifier {
       };
     }
 
-    // 5. Fetch Membership document from authoritative repository/Firestore
+    // 5. Fetch Membership document from test store (in test env) or Admin Firestore SDK (in production)
+    // Path: organizations/{organizationId}/members/{verifiedUid}
     const membership = await this.fetchMembership(cleanOrgId, verifiedUid);
     if (!membership) {
       return {
@@ -249,10 +258,7 @@ export class ServerMembershipVerifier {
   }
 
   /**
-   * Fetches organization from isolated test store (in tests) or Firestore
-   * NOTE: In true production, authoritative membership inspection must run via Firebase Admin SDK
-   * with privileged service account credentials on Node server. Firebase Client SDK alone cannot
-   * serve as authoritative server-side membership verification across tenants.
+   * Fetches organization from isolated test store (in tests) or Admin Firestore SDK (organizations/{organizationId})
    */
   private static async fetchOrganization(orgId: string): Promise<Organization | null> {
     // 1. Check test repository ONLY in test environments
@@ -260,44 +266,37 @@ export class ServerMembershipVerifier {
       return this.testOrganizations.get(orgId)!;
     }
 
-    // 2. Production safety guard:
-    // Client SDK in browser or Node without Admin SDK credentials cannot authoritatively
-    // prove server membership across tenant boundaries.
-    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') {
-      console.warn(
-        `ServerMembershipVerifier: Authoritative server verification in production requires Firebase Admin SDK. Client SDK cannot serve as proof of server membership.`
-      );
+    if (this.isTestEnvironment()) {
       return null;
     }
 
-    // 3. Query Firestore if online SDK is initialized (development/staging preview fallback)
-    if (firestoreDb) {
-      try {
-        const orgRef = doc(firestoreDb, 'organizations', orgId);
-        const snapshot = await getDoc(orgRef);
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          return {
-            id: snapshot.id,
-            name: data.name || 'مؤسسة غير مسمية',
-            ownerId: data.ownerId || '',
-            status: data.status || 'active',
-            settings: data.settings || { currency: 'YER', language: 'ar', timezone: 'UTC' },
-            createdAt: data.createdAt || new Date().toISOString(),
-            updatedAt: data.updatedAt || new Date().toISOString(),
-          };
-        }
-      } catch (err) {
-        console.warn(`ServerMembershipVerifier: Failed to fetch organization ${orgId} from Firestore:`, err);
+    // 2. Authoritative query via Firebase Admin Firestore SDK
+    try {
+      const { getAdminFirestore } = await import('../firebase/adminServer');
+      const adminDb = getAdminFirestore();
+      const orgDoc = await adminDb.collection('organizations').doc(orgId).get();
+      if (orgDoc.exists) {
+        const data = orgDoc.data()!;
+        return {
+          id: orgDoc.id,
+          name: data.name || 'مؤسسة غير مسمية',
+          ownerId: data.ownerId || '',
+          status: data.status || 'active',
+          settings: data.settings || { currency: 'YER', language: 'ar', timezone: 'UTC' },
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt || new Date().toISOString(),
+        };
       }
+    } catch (err) {
+      console.warn(`ServerMembershipVerifier: Failed to fetch organization ${orgId} from Admin Firestore:`, err);
     }
 
     return null;
   }
 
   /**
-   * Fetches membership from isolated test store (in tests) or Firestore
-   * Path: organizations/{orgId}/members/{userId}
+   * Fetches membership from isolated test store (in tests) or Admin Firestore SDK
+   * Path: organizations/{organizationId}/members/{verifiedUid}
    */
   private static async fetchMembership(
     orgId: string,
@@ -310,35 +309,33 @@ export class ServerMembershipVerifier {
       return this.testMemberships.get(key)!;
     }
 
-    // 2. Production safety guard
-    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') {
+    if (this.isTestEnvironment()) {
       return null;
     }
 
-    // 3. Query Firestore if online SDK is initialized
-    if (firestoreDb) {
-      try {
-        const memberRef = doc(firestoreDb, 'organizations', orgId, 'members', userId);
-        const snapshot = await getDoc(memberRef);
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          return {
-            organizationId: orgId,
-            userId,
-            role: data.role || 'viewer',
-            status: data.status || 'active',
-            permissions: data.permissions,
-            createdAt: data.createdAt || new Date().toISOString(),
-            updatedAt: data.updatedAt || new Date().toISOString(),
-            invitedBy: data.invitedBy,
-          };
-        }
-      } catch (err) {
-        console.warn(
-          `ServerMembershipVerifier: Failed to fetch membership for org ${orgId}, user ${userId}:`,
-          err
-        );
+    // 2. Authoritative query via Firebase Admin Firestore SDK
+    try {
+      const { getAdminFirestore } = await import('../firebase/adminServer');
+      const adminDb = getAdminFirestore();
+      const memberDoc = await adminDb.collection('organizations').doc(orgId).collection('members').doc(userId).get();
+      if (memberDoc.exists) {
+        const data = memberDoc.data()!;
+        return {
+          organizationId: orgId,
+          userId,
+          role: data.role || 'viewer',
+          status: data.status || 'active',
+          permissions: data.permissions,
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt || new Date().toISOString(),
+          invitedBy: data.invitedBy,
+        };
       }
+    } catch (err) {
+      console.warn(
+        `ServerMembershipVerifier: Failed to fetch membership for org ${orgId}, user ${userId} from Admin Firestore:`,
+        err
+      );
     }
 
     return null;

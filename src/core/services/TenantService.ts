@@ -2,7 +2,7 @@ import { tenantDbManager } from '../database/TenantDatabaseManager';
 import { useTenantStore, resetTenantScopedStores } from '@/shared/stores/tenantStore';
 import { Organization, OrganizationMembership, CapabilityLease } from '@/shared/types/tenant.types';
 import { authService } from './rbac/AuthService.service';
-import {
+import type {
   VerifyMembershipResponse,
 } from './tenant/ServerMembershipVerifier';
 import { capabilityLeaseService } from './tenant/CapabilityLeaseService';
