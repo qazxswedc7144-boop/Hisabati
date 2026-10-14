@@ -1302,6 +1302,134 @@ export class FirebaseMembershipP12TestSuite {
           await tenantService.switchToLocalMode();
         },
       },
+
+      // P1.2-X4) Production Admin SDK Mock/Integration Verification Path
+      {
+        id: 'P1.2-X4-PROD-ADMIN-SDK-MOCK-INTEGRATION',
+        title: 'Production Admin SDK Mock/Integration Verification Path',
+        description: 'اختبار تكاملي محاكي للإنتاج باستخدام حقن التبعيات (Dependency Injection) لإثبات استدعاء verifyIdToken(..., true) واستخدام الـ UID الموثق لجلب المنظمة والعضوية من Admin Firestore',
+        fn: async () => {
+          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
+          const { setAdminAuthMock, setAdminFirestoreMock, clearAdminMocks } = await import('../services/firebase/adminServer');
+
+          const origNodeEnv = process.env.NODE_ENV;
+          process.env.NODE_ENV = 'production';
+
+          let verifyCalledWithRevokeCheck = false;
+          let requestedOrgId = '';
+          let requestedMemberUid = '';
+
+          const mockAuth = {
+            verifyIdToken: async (token: string, checkRevoked: boolean) => {
+              if (token === 'valid_token_123' && checkRevoked === true) {
+                verifyCalledWithRevokeCheck = true;
+                return { uid: 'admin_uid_999', email: 'admin@test.app', name: 'Admin User' };
+              }
+              throw new Error('Token revoked or invalid');
+            },
+          };
+
+          const mockFirestore = {
+            collection: (colName: string) => {
+              if (colName === 'organizations') {
+                return {
+                  doc: (orgId: string) => {
+                    requestedOrgId = orgId;
+                    return {
+                      get: async () => {
+                        if (orgId === 'org_prod_active') {
+                          return {
+                            exists: true,
+                            id: orgId,
+                            data: () => ({ name: 'Production Org', status: 'active', ownerId: 'owner_1' }),
+                          };
+                        }
+                        if (orgId === 'org_prod_suspended') {
+                          return {
+                            exists: true,
+                            id: orgId,
+                            data: () => ({ name: 'Suspended Org', status: 'suspended', ownerId: 'owner_1' }),
+                          };
+                        }
+                        return { exists: false };
+                      },
+                      collection: (subColName: string) => {
+                        if (subColName === 'members') {
+                          return {
+                            doc: (userId: string) => {
+                              requestedMemberUid = userId;
+                              return {
+                                get: async () => {
+                                  if (orgId === 'org_prod_active' && userId === 'admin_uid_999') {
+                                    return {
+                                      exists: true,
+                                      data: () => ({ role: 'admin', status: 'active' }),
+                                    };
+                                  }
+                                  return { exists: false };
+                                },
+                              };
+                            },
+                          };
+                        }
+                        return {};
+                      },
+                    };
+                  },
+                };
+              }
+              return {};
+            },
+          };
+
+          setAdminAuthMock(mockAuth);
+          setAdminFirestoreMock(mockFirestore);
+
+          try {
+            // Test 1: Successful production verification path
+            const res = await ServerMembershipVerifier.verifyMembership({
+              idToken: 'valid_token_123',
+              organizationId: 'org_prod_active',
+            });
+
+            if (!verifyCalledWithRevokeCheck) {
+              throw new Error('فشل أمني: لم يتم استدعاء adminAuth.verifyIdToken(idToken, true) في مسار الإنتاج!');
+            }
+            if (requestedOrgId !== 'org_prod_active') {
+              throw new Error(`معرف المؤسسة المطلوب غير صحيح: ${requestedOrgId}`);
+            }
+            if (requestedMemberUid !== 'admin_uid_999') {
+              throw new Error(`معرف المستخدم الموثق المطلوب لجلب العضوية غير صحيح: ${requestedMemberUid}`);
+            }
+            if (!res.success || res.authMembershipStatus !== 'online_verified' || res.verifiedUid !== 'admin_uid_999') {
+              throw new Error(`فشل التحقق الناجح في مسار الإنتاج: ${JSON.stringify(res)}`);
+            }
+
+            // Test 2: Suspended Organization rejection in production path
+            const resSuspendedOrg = await ServerMembershipVerifier.verifyMembership({
+              idToken: 'valid_token_123',
+              organizationId: 'org_prod_suspended',
+            });
+            if (resSuspendedOrg.success || resSuspendedOrg.error?.code !== 'ORGANIZATION_SUSPENDED') {
+              throw new Error('فشل أمني: لم يتم رفض المؤسسة المعلقة في مسار الإنتاج!');
+            }
+
+            // Test 3: Revoked or bad token rejection in production path
+            const resBadToken = await ServerMembershipVerifier.verifyMembership({
+              idToken: 'revoked_or_bad_token',
+              organizationId: 'org_prod_active',
+            });
+            if (resBadToken.success || resBadToken.authMembershipStatus === 'online_verified') {
+              throw new Error('فشل أمني: تم منح online_verified رغم إبطال أو فشل التحقق من الرمز في مسار الإنتاج!');
+            }
+
+          } finally {
+            process.env.NODE_ENV = origNodeEnv;
+            clearAdminMocks();
+            await tenantService.switchToLocalMode();
+          }
+        },
+      },
     ];
 
     for (const tc of testCases) {

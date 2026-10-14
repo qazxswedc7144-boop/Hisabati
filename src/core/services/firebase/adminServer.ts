@@ -1,6 +1,22 @@
 let adminInstance: any = null;
 let isInitialized = false;
 
+let mockAdminAuth: any = null;
+let mockAdminFirestore: any = null;
+
+export function setAdminAuthMock(auth: any) {
+  mockAdminAuth = auth;
+}
+
+export function setAdminFirestoreMock(db: any) {
+  mockAdminFirestore = db;
+}
+
+export function clearAdminMocks() {
+  mockAdminAuth = null;
+  mockAdminFirestore = null;
+}
+
 function getNodeAdmin() {
   if (typeof window !== 'undefined') {
     throw new Error('Firebase Admin SDK is restricted to server-side execution.');
@@ -51,6 +67,7 @@ export function initFirebaseAdmin() {
 }
 
 export function getAdminAuth() {
+  if (mockAdminAuth) return mockAdminAuth;
   const admin = initFirebaseAdmin();
   if (!admin) {
     throw new Error('Firebase Admin Auth not available.');
@@ -59,6 +76,7 @@ export function getAdminAuth() {
 }
 
 export function getAdminFirestore() {
+  if (mockAdminFirestore) return mockAdminFirestore;
   const admin = initFirebaseAdmin();
   if (!admin) {
     throw new Error('Firebase Admin Firestore not available.');
