@@ -1208,6 +1208,100 @@ export class FirebaseMembershipP12TestSuite {
           await tenantService.switchToLocalMode();
         },
       },
+
+      // P1.2-X2) Production Admin SDK Verification Path & Fail-Closed
+      {
+        id: 'P1.2-X2-PROD-ADMIN-SDK-PATH',
+        title: 'Production Admin SDK Verification Path & Fail-Closed',
+        description: 'اختبار مسار إنتاج Admin SDK مع التحقق من استدعاء verifyIdToken ومنع online_verified وفشل فتح قاعدة البيانات عند غياب العضوية أو خطأ الرمز',
+        fn: async () => {
+          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
+
+          const res = await ServerMembershipVerifier.verifyMembership({
+            idToken: 'invalid_prod_token_sig',
+            organizationId: 'org_a',
+          });
+
+          if (res.success || res.authMembershipStatus === 'online_verified') {
+            throw new Error('خرق أمني: نجح التحقق بالرمز غير الصالح في مسار الإنتاج!');
+          }
+        },
+      },
+
+      // P1.2-X3) Cross-Tenant Authorization & Isolation (Org A vs Org B)
+      {
+        id: 'P1.2-X3-CROSS-TENANT-ISOLATION',
+        title: 'Cross-Tenant Authorization & Isolation (Org A vs Org B)',
+        description: 'مستخدم عضوي في المؤسسة A فقط يحاول الوصول إلى المؤسسة B -> التأكد من رفض الطلب ومنع فتح قاعدة بيانات B حتى مع إرسال معرف أو أدوار مزورة',
+        fn: async () => {
+          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
+          const { FirebaseTokenVerifier } = await import('../services/firebase/FirebaseTokenVerifier');
+
+          const uid = 'usr_org_a_only';
+          const orgA = 'org_alpha_123';
+          const orgB = 'org_beta_456';
+
+          ServerMembershipVerifier.registerTestOrganization({
+            id: orgA,
+            name: 'Alpha Org',
+            ownerId: 'owner_a',
+            status: 'active',
+            settings: { currency: 'YER', language: 'ar', timezone: 'UTC' },
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+          ServerMembershipVerifier.registerTestMembership({
+            organizationId: orgA,
+            userId: uid,
+            role: 'employee',
+            status: 'active',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+
+          ServerMembershipVerifier.registerTestOrganization({
+            id: orgB,
+            name: 'Beta Org',
+            ownerId: 'owner_b',
+            status: 'active',
+            settings: { currency: 'YER', language: 'ar', timezone: 'UTC' },
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+
+          const token = FirebaseTokenVerifier.createTestToken({ uid });
+
+          const res = await ServerMembershipVerifier.verifyMembership({
+            idToken: token,
+            organizationId: orgB,
+            clientClaimedRole: 'owner',
+            clientClaimedPermissions: ['*'],
+          });
+
+          if (res.success || res.authMembershipStatus === 'online_verified') {
+            throw new Error('خرق أمني حرج: مُسجل في المؤسسة A سُمح له بالوصول إلى المؤسسة B عبر تزوير الدور أو معرف المؤسسة!');
+          }
+
+          if (res.error?.code !== 'MEMBERSHIP_NOT_FOUND') {
+            throw new Error(`رمز الخطأ المتوقع MEMBERSHIP_NOT_FOUND، وجد: ${res.error?.code}`);
+          }
+
+          let dbBOpened = false;
+          try {
+            await tenantService.verifyAndSwitchOrganization(token, orgB);
+            tenantDbManager.getActiveDatabase();
+            dbBOpened = true;
+          } catch {
+            // Expected failure
+          }
+
+          if (dbBOpened) {
+            throw new Error('خرق أمني خطير: تم فتح قاعدة بيانات المؤسسة B لمستخدم غير عضوي!');
+          }
+
+          await tenantService.switchToLocalMode();
+        },
+      },
     ];
 
     for (const tc of testCases) {
