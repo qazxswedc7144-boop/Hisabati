@@ -31,11 +31,46 @@ export class TenantDatabaseManager {
     return TenantDatabaseManager.instance;
   }
 
+  // Isolated test harness registry - completely decoupled from production org IDs
+  private static testAllowedOrgs: Set<string> = new Set();
+
+  private static isTestEnvironment(): boolean {
+    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') {
+      return false;
+    }
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env?.PROD) {
+      return false;
+    }
+    return true;
+  }
+
+  public static registerTestFixture(orgId: string): void {
+    if (!this.isTestEnvironment()) {
+      throw new Error('TenantDatabaseManager: registerTestFixture() is forbidden in production builds.');
+    }
+    this.testAllowedOrgs.add(orgId.replace(/[^a-z0-9_]/gi, '_').toLowerCase());
+  }
+
+  public static isTestFixture(orgId: string): boolean {
+    if (!this.isTestEnvironment()) {
+      return false;
+    }
+    const safeId = orgId.replace(/[^a-z0-9_]/gi, '_').toLowerCase();
+    return this.testAllowedOrgs.has(safeId);
+  }
+
+  public static clearTestFixtures(): void {
+    if (!this.isTestEnvironment()) {
+      throw new Error('TenantDatabaseManager: clearTestFixtures() is forbidden in production builds.');
+    }
+    this.testAllowedOrgs.clear();
+  }
+
   /**
    * Safely opens a database for a specific organization.
    * STRICT SECURITY BOUNDARY:
    * Requires an authoritative TenantAccessGrant (server_verified or offline_capability_lease)
-   * unless operating in local mode or unit test fixtures.
+   * unless operating in local mode or registered unit test fixtures.
    * 
    * @param organizationId Valid organization ID
    * @param grant Optional authoritative security grant
@@ -48,16 +83,14 @@ export class TenantDatabaseManager {
     const safeId = this.sanitizeOrgId(organizationId);
 
     // Hardened Security Boundary:
-    // Opening a Tenant DB requires either:
+    // Opening a Tenant DB strictly requires:
     // 1. Local Mode (organizationId === 'local')
     // 2. Authoritative Grant (grant.authorized === true from server verification or valid Capability Lease)
-    // 3. Isolated Unit test fixtures (compat_test, test_priority_org, org_invalid)
+    // 3. Isolated Test Fixture registered explicitly in test harnesses
     const isLocal = safeId === 'local';
-    const isTestFixture =
-      safeId.startsWith('compat_') ||
-      safeId.startsWith('test_priority_') ||
-      safeId === 'org_invalid';
-    const isAuthorized = isLocal || isTestFixture || (grant && grant.authorized === true);
+    const isAuthoritativeGrant = grant?.authorized === true;
+    const isTestFixture = TenantDatabaseManager.isTestFixture(safeId);
+    const isAuthorized = isLocal || isAuthoritativeGrant || isTestFixture;
 
     if (!isAuthorized) {
       throw new Error(

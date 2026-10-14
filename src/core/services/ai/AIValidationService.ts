@@ -1,6 +1,8 @@
 import { StructuredAICommand } from '@/shared/types/ai.types';
 import { accountRepository } from '@/core/repositories/account.repository';
-import { Account } from '@/shared/types';
+import { Account, CurrencyCode } from '@/shared/types';
+import { toDualRepresentation } from '@/core/money/compat';
+import { settingsRepository } from '@/core/repositories/settings.repository';
 
 export interface ValidationResult {
   isValid: boolean;
@@ -10,16 +12,20 @@ export interface ValidationResult {
 export class AIValidationService {
   /**
    * Validates a StructuredAICommand against financial business rules.
-   * Prevents writing invalid, negative, NaN, or archived account transactions.
+   * Resolves currency locally without assuming 'YER' and rejects if unresolved.
    */
   public async validate(command: StructuredAICommand, testAccountMock?: Account): Promise<ValidationResult> {
     const errors: string[] = [];
+    const supportedCurrencies: CurrencyCode[] = ['YER', 'SAR', 'USD'];
 
     // 1. Check accountId existence
+    let account = testAccountMock;
     if (!command.accountId) {
       errors.push('يجب تحديد الحساب المالي المرتبط بالعملية.');
     } else {
-      const account = testAccountMock || await accountRepository.getById(command.accountId);
+      if (!account) {
+        account = await accountRepository.getById(command.accountId);
+      }
       if (!account) {
         errors.push('الحساب المالي المحدد غير موجود في قاعدة البيانات.');
       } else if (account.archived) {
@@ -39,9 +45,32 @@ export class AIValidationService {
       errors.push('نوع العملية غير صالح. يجب أن يكون "له" أو "عليه".');
     }
 
-    // 4. Validate currency
-    if (!['YER', 'SAR', 'USD'].includes(command.currency)) {
-      errors.push('العملة المحددة غير مدعومة.');
+    // 4. Resolve and validate currency locally without blind assumptions
+    let finalCurrency = command.currency as CurrencyCode | undefined;
+
+    if (!finalCurrency || !supportedCurrencies.includes(finalCurrency)) {
+      if (account?.currency && supportedCurrencies.includes(account.currency)) {
+        finalCurrency = account.currency;
+      } else {
+        try {
+          const sysCurr = await settingsRepository.get<CurrencyCode>('currency');
+          if (sysCurr && supportedCurrencies.includes(sysCurr)) {
+            finalCurrency = sysCurr;
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    if (!finalCurrency || !supportedCurrencies.includes(finalCurrency)) {
+      errors.push('العملة المحددة غير مدعومة أو تعذر حسمها من الحساب والنظام.');
+    } else {
+      command.currency = finalCurrency as any;
+      // Re-align dual representation strictly with resolved currency
+      const dual = toDualRepresentation(command.amount, finalCurrency);
+      command.amount = dual.amount;
+      command.amountMinor = dual.amountMinor;
     }
 
     // 5. Update command status

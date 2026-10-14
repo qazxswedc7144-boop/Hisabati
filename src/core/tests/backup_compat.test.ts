@@ -2,10 +2,11 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import 'fake-indexeddb/auto';
 import { getDb } from '../database/db';
 import { backupService } from '../services/backup.service';
-import { tenantDbManager } from '../database/TenantDatabaseManager';
+import { tenantDbManager, TenantDatabaseManager } from '../database/TenantDatabaseManager';
 
 describe('T-COMPAT: Backup Compatibility Tests', () => {
   beforeAll(async () => {
+    TenantDatabaseManager.registerTestFixture('compat_test');
     await tenantDbManager.openTenantDatabase('compat_test');
     const db = getDb();
     await db.accounts.clear();

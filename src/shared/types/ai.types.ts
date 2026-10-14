@@ -109,6 +109,7 @@ export interface AIResponse {
   intent: AIIntent;
   confidence: number;
   mode: AIMode;
+  entities?: Record<string, unknown>;
   card?: AICardData;
   command?: StructuredAICommand;
   data?: Record<string, unknown>;

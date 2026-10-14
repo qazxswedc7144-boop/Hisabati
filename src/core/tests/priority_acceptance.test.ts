@@ -4,7 +4,7 @@ import { notificationService } from '../services/messaging/notification.service'
 import { reminderService } from '../services/messaging/reminder.service';
 import { toMinor, fromMinor } from '../utils/money.utils';
 import { getDb } from '../database/db';
-import { tenantDbManager } from '../database/TenantDatabaseManager';
+import { tenantDbManager, TenantDatabaseManager } from '../database/TenantDatabaseManager';
 
 // Mocking some dependencies
 vi.mock('@/core/utils/deviceId', () => ({
@@ -20,6 +20,7 @@ vi.mock('@/core/services/rbac/RBACGuard.service', () => ({
 
 describe('Priority 1: Acceptance Tests (T-B, T-E, T-F, T-G)', () => {
   beforeEach(async () => {
+    TenantDatabaseManager.registerTestFixture('test_priority_org');
     await tenantDbManager.openTenantDatabase('test_priority_org');
     const db = getDb();
     await db.inAppNotifications.clear();

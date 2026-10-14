@@ -147,7 +147,6 @@ export class TenantService {
               Authorization: `Bearer ${idToken}`,
             },
             body: JSON.stringify({
-              idToken,
               organizationId,
               clientClaimedUid: options?.clientClaimedUid,
               clientClaimedRole: options?.clientClaimedRole,
@@ -422,12 +421,16 @@ export class TenantService {
   /**
    * Switches the active organization.
    * Handles DB switching and state cleanup.
-   * Hardened: Never allows opening Tenant DB based solely on caller-passed client data.
+   * Hardened: Eliminates caller-passed trust parameters (verifiedByBackend).
+   * Opening the database is strictly conditioned on:
+   * 1. Local Mode (org.id === 'local')
+   * 2. Authoritative offline Capability Lease
+   * 3. Authoritative active online session
+   * 4. Isolated test harness fixtures in test environments
    */
   public async switchOrganization(
     org: Organization,
-    membership: OrganizationMembership,
-    verifiedByBackend: boolean = false
+    membership: OrganizationMembership
   ): Promise<void> {
     const store = useTenantStore.getState();
     store.setLoading(true);
@@ -451,8 +454,19 @@ export class TenantService {
         throw new Error('عضوية المستخدم معلقة أو تم إلغاؤها.');
       }
 
-      if (!verifiedByBackend) {
-        // Check for a valid offline Capability Lease
+      // Authoritative verification check
+      let isVerified = false;
+      let grantReason: 'server_verified' | 'offline_capability_lease' | 'unit_test_fixture' | 'local_mode' = 'server_verified';
+
+      if (org.id === 'local') {
+        isVerified = true;
+        grantReason = 'local_mode';
+      } else if (tenantDbManager.constructor && (tenantDbManager.constructor as typeof import('../database/TenantDatabaseManager').TenantDatabaseManager).isTestFixture(org.id)) {
+        // Isolated test fixture verification
+        isVerified = true;
+        grantReason = 'unit_test_fixture';
+      } else {
+        // 1. Check for a valid offline Capability Lease
         const lease = await capabilityLeaseService.getStoredLease(org.id, membership.userId);
         const val = await capabilityLeaseService.validateLease(lease, {
           currentUid: membership.userId,
@@ -460,11 +474,20 @@ export class TenantService {
         });
 
         if (val.valid) {
-          verifiedByBackend = true;
+          isVerified = true;
+          grantReason = 'offline_capability_lease';
+        } else if (
+          store.authMembershipStatus === 'online_verified' &&
+          store.activeOrganization?.id === org.id &&
+          store.currentMembership?.userId === membership.userId
+        ) {
+          // Active verified session
+          isVerified = true;
+          grantReason = 'server_verified';
         }
       }
 
-      if (!verifiedByBackend) {
+      if (!isVerified) {
         // Strict boundary: Never open Tenant DB based on unverified client-provided data
         await tenantDbManager.closeCurrentDatabase();
         store.setContext({
@@ -479,19 +502,19 @@ export class TenantService {
         return;
       }
 
-      // 1. Close current DB and open new one under authoritative grant
+      // Close current DB and open new one strictly under authoritative grant
       await tenantDbManager.openTenantDatabase(org.id, {
         authorized: true,
-        grantReason: 'server_verified',
+        grantReason,
         verifiedUid: membership.userId,
       });
 
-      // 2. Update Context
+      // Update Context
       store.setContext({
         activeOrganization: org,
         currentMembership: membership,
-        isLocalMode: false,
-        authMembershipStatus: 'online_verified',
+        isLocalMode: org.id === 'local',
+        authMembershipStatus: grantReason === 'offline_capability_lease' ? 'offline_cached' : 'online_verified',
       });
     } catch (error: any) {
       store.setError(error.message);

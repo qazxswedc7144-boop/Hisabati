@@ -36,19 +36,38 @@ export interface VerifyMembershipResponse {
  * - Zero trust for client-sent uid, role, or permissions.
  */
 export class ServerMembershipVerifier {
-  // Test/Mock data storage for deterministic headless testing
+  // Test/Mock data storage for deterministic headless testing (ISOLATED TO TEST RUNS)
   private static testOrganizations: Map<string, Organization> = new Map();
   private static testMemberships: Map<string, OrganizationMembership> = new Map(); // key: `${orgId}:${userId}`
 
+  private static isTestEnvironment(): boolean {
+    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') {
+      return false;
+    }
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env?.PROD) {
+      return false;
+    }
+    return true;
+  }
+
   public static registerTestOrganization(org: Organization): void {
+    if (!this.isTestEnvironment()) {
+      throw new Error('ServerMembershipVerifier: registerTestOrganization() is forbidden in production builds.');
+    }
     this.testOrganizations.set(org.id, org);
   }
 
   public static registerTestMembership(membership: OrganizationMembership): void {
+    if (!this.isTestEnvironment()) {
+      throw new Error('ServerMembershipVerifier: registerTestMembership() is forbidden in production builds.');
+    }
     this.testMemberships.set(`${membership.organizationId}:${membership.userId}`, membership);
   }
 
   public static clearTestData(): void {
+    if (!this.isTestEnvironment()) {
+      throw new Error('ServerMembershipVerifier: clearTestData() is forbidden in production builds.');
+    }
     this.testOrganizations.clear();
     this.testMemberships.clear();
   }
@@ -227,15 +246,28 @@ export class ServerMembershipVerifier {
   }
 
   /**
-   * Fetches organization from test store or Firestore
+   * Fetches organization from isolated test store (in tests) or Firestore
+   * NOTE: In true production, authoritative membership inspection must run via Firebase Admin SDK
+   * with privileged service account credentials on Node server. Firebase Client SDK alone cannot
+   * serve as authoritative server-side membership verification across tenants.
    */
   private static async fetchOrganization(orgId: string): Promise<Organization | null> {
-    // 1. Check test repository first
-    if (this.testOrganizations.has(orgId)) {
+    // 1. Check test repository ONLY in test environments
+    if (this.isTestEnvironment() && this.testOrganizations.has(orgId)) {
       return this.testOrganizations.get(orgId)!;
     }
 
-    // 2. Query Firestore if online SDK is initialized
+    // 2. Production safety guard:
+    // Client SDK in browser or Node without Admin SDK credentials cannot authoritatively
+    // prove server membership across tenant boundaries.
+    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') {
+      console.warn(
+        `ServerMembershipVerifier: Authoritative server verification in production requires Firebase Admin SDK. Client SDK cannot serve as proof of server membership.`
+      );
+      return null;
+    }
+
+    // 3. Query Firestore if online SDK is initialized (development/staging preview fallback)
     if (firestoreDb) {
       try {
         const orgRef = doc(firestoreDb, 'organizations', orgId);
@@ -261,7 +293,7 @@ export class ServerMembershipVerifier {
   }
 
   /**
-   * Fetches membership from test store or Firestore
+   * Fetches membership from isolated test store (in tests) or Firestore
    * Path: organizations/{orgId}/members/{userId}
    */
   private static async fetchMembership(
@@ -270,12 +302,17 @@ export class ServerMembershipVerifier {
   ): Promise<OrganizationMembership | null> {
     const key = `${orgId}:${userId}`;
 
-    // 1. Check test repository first
-    if (this.testMemberships.has(key)) {
+    // 1. Check test repository ONLY in test environments
+    if (this.isTestEnvironment() && this.testMemberships.has(key)) {
       return this.testMemberships.get(key)!;
     }
 
-    // 2. Query Firestore if online SDK is initialized
+    // 2. Production safety guard
+    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') {
+      return null;
+    }
+
+    // 3. Query Firestore if online SDK is initialized
     if (firestoreDb) {
       try {
         const memberRef = doc(firestoreDb, 'organizations', orgId, 'members', userId);

@@ -1,4 +1,4 @@
-import { tenantDbManager } from '../database/TenantDatabaseManager';
+import { tenantDbManager, TenantDatabaseManager } from '../database/TenantDatabaseManager';
 import { tenantService } from '../services/TenantService';
 import { useTenantStore } from '@/shared/stores/tenantStore';
 import { authService } from '../services/rbac/AuthService.service';
@@ -68,7 +68,8 @@ export async function runTenantTests(): Promise<{ passed: number; total: number 
         updatedAt: new Date().toISOString(),
       };
 
-      await tenantService.switchOrganization(mockOrg, mockMembership, true);
+      TenantDatabaseManager.registerTestFixture('org_123');
+      await tenantService.switchOrganization(mockOrg, mockMembership);
       const storeAfter = useTenantStore.getState();
       if (storeAfter.activeOrganization?.id !== 'org_123' || storeAfter.isLocalMode) {
         throw new Error('Switch Organization Failed');
@@ -92,6 +93,7 @@ export async function runTenantTests(): Promise<{ passed: number; total: number 
     // 4. Test Invalid Org ID
     await trackTest('TENANT-INVALID-ID', 'Invalid Org ID Sanity Check', async () => {
       try {
+        TenantDatabaseManager.registerTestFixture('org/invalid');
         const dbSanitized = await tenantDbManager.openTenantDatabase('org/invalid');
         if (dbSanitized.name !== 'hisabati_db_org_invalid') {
           throw new Error('Sanity check failed for invalid IDs');
