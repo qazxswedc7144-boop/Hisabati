@@ -41,6 +41,9 @@ export class ServerMembershipVerifier {
   private static testMemberships: Map<string, OrganizationMembership> = new Map(); // key: `${orgId}:${userId}`
 
   private static isTestEnvironment(): boolean {
+    if (typeof process !== 'undefined' && process.env.VITEST === 'true') {
+      return true;
+    }
     if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') {
       return false;
     }
