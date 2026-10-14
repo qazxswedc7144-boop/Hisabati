@@ -5,6 +5,10 @@ import { GoogleGenAI } from '@google/genai';
 import { ServerMembershipVerifier } from './src/core/services/tenant/ServerMembershipVerifier';
 import { FirebaseTokenVerifier, FirebaseTokenVerificationError } from './src/core/services/firebase/FirebaseTokenVerifier';
 import { AIResponseSchema } from './src/core/services/ai/aiValidation';
+import { initFirebaseAdmin } from './src/core/services/firebase/adminServer';
+
+// Initialize Firebase Admin SDK on server start
+initFirebaseAdmin();
 const PORT = 3000;
 
 // Export app and server factory for integration testing and server startup

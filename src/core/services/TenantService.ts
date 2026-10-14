@@ -135,8 +135,9 @@ export class TenantService {
       // 2. Server-side verification (authoritative)
       let result: VerifyMembershipResponse;
 
-      // In browser environment, attempt the hardened backend API endpoint
-      if (typeof window !== 'undefined' && typeof fetch === 'function') {
+      // In browser environment, enforce backend API verification without local fallback
+      const isVitest = typeof process !== 'undefined' && process.env.VITEST === 'true';
+      if (typeof window !== 'undefined' && typeof fetch === 'function' && !isVitest) {
         try {
           const apiRes = await fetch('/api/tenant/verify-membership', {
             method: 'POST',
@@ -167,15 +168,8 @@ export class TenantService {
               },
             };
           }
-        } catch {
-          // Direct fallback for isomorphic / headless test environments
-          const { ServerMembershipVerifier } = await import('./tenant/ServerMembershipVerifier');
-          result = await ServerMembershipVerifier.verifyMembership({
-            idToken,
-            organizationId,
-            clientClaimedUid: options?.clientClaimedUid,
-            clientClaimedRole: options?.clientClaimedRole,
-          });
+        } catch (fetchErr: any) {
+          throw new Error('فشل الاتصال بالخادم للتحقق من العضوية (Fail-Closed): ' + (fetchErr?.message || 'خطأ في الشبكة'));
         }
       } else {
         // Direct execution in Node.js / unit tests
