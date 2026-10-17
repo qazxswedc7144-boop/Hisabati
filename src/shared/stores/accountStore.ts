@@ -40,8 +40,6 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   fetchAccounts: async (includeArchived = false) => {
     set({ isLoading: true });
     try {
-      const { seedMockDataIfEmpty } = await import('@/shared/data/mockData');
-      await seedMockDataIfEmpty();
       const { accountRepository } = await import('@/core/repositories/account.repository');
       const allAccounts = await accountRepository.getAll(includeArchived || get().filterType === 'archived');
       const activeAccounts = allAccounts.filter((a) => !a.deletedAt);

@@ -1,12 +1,12 @@
 import { accountRepository } from '../repositories/account.repository';
 import { transactionRepository } from '../repositories/transaction.repository';
 import { settingsRepository } from '../repositories/settings.repository';
-import { seedMockDataIfEmpty, resetToMockData, clearAllData } from '@/shared/data/mockData';
+import { resetToMockData, clearAllData } from '@/shared/data/mockData';
 import { Account, Transaction, TransactionSummary, CreateAccountDTO, CreateTransactionDTO } from '@/shared/types';
 
 export class DataService {
   async initialize(): Promise<void> {
-    await seedMockDataIfEmpty();
+    // No-op: keep app clean without mock seeding
   }
 
   async getDashboardSummary(): Promise<{

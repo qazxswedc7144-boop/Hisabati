@@ -28,7 +28,6 @@ import { googleDriveService } from '@/core/services/googleDrive.service';
 import { backupService } from '@/core/services/backup.service';
 import { integrityService, IntegrityReport } from '@/core/services/integrity.service';
 import { db } from '@/core/database/db';
-import { seedInitialMockData } from '@/shared/data/mockData';
 import { ConflictResolutionModal } from './ConflictResolutionModal';
 
 export const DataControlCenter: React.FC = () => {
@@ -296,20 +295,6 @@ export const DataControlCenter: React.FC = () => {
   };
 
   // Database Handlers
-  const handleReSeedData = async () => {
-    setIsResettingData(true);
-    try {
-      await seedInitialMockData(true);
-      await fetchAccounts();
-      await fetchRecentTransactions();
-      showToast('تم إعادة تحميل البيانات التجريبية الافتراضية بنجاح', 'success');
-    } catch (e) {
-      showToast('فشل إعادة التعيين', 'error');
-    } finally {
-      setIsResettingData(false);
-    }
-  };
-
   const handleClearDatabase = async () => {
     if (import.meta.env.PROD) {
       showToast('هذا الإجراء متاح في وضع التطوير فقط.', 'error');
@@ -721,15 +706,7 @@ export const DataControlCenter: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap gap-2.5">
-          <button
-            type="button"
-            onClick={handleReSeedData}
-            disabled={isResettingData}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition min-h-[44px] disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${isResettingData ? 'animate-spin' : ''}`} />
-            <span>إعادة تحميل البيانات التجريبية الافتراضية</span>
-          </button>
+
 
           {import.meta.env?.DEV === true && (
             <button
