@@ -81,9 +81,9 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-150">
-      <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92dvh] overflow-y-auto">
+      <div className="w-full max-w-md sm:max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl p-4 sm:p-5 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[88dvh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
           <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
             تعديل العملية المالية
           </h3>
