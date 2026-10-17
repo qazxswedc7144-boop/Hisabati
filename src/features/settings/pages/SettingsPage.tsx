@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Settings,
@@ -19,7 +19,13 @@ import {
   Bot,
   ScanLine,
   ExternalLink,
-  ShieldAlert,
+  Building2,
+  Palette,
+  Globe,
+  Coins,
+  Receipt,
+  Database,
+  Search,
 } from 'lucide-react';
 import { useSettingsStore, useUIStore } from '@/shared/stores';
 import { formatNumber } from '@/core/utils/formatters';
@@ -45,13 +51,43 @@ import {
   PrivacyIntegrationsSection,
 } from '../components';
 
+interface CategoryConfig {
+  id: string;
+  title: string;
+  description: string;
+  icon: React.FC<{ className?: string }>;
+  keywords: string[];
+  components: React.ReactNode[];
+}
+
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useI18n();
   const { settings, updateSettings } = useSettingsStore();
   const showToast = useUIStore((state) => state.showToast);
 
-  // Diagnostics Panel Toggle
+  // Search query state
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Open categories accordion state (default open general or all closed for compact view)
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({
+    general: true,
+    operations: false,
+    security: false,
+    messaging: false,
+    data: false,
+    support: false,
+    diagnostics: false,
+  });
+
+  const toggleCategory = (catId: string) => {
+    setOpenCategories((prev) => ({
+      ...prev,
+      [catId]: !prev[catId],
+    }));
+  };
+
+  // Diagnostics Panel Toggle inside support or diagnostics category
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   // Diagnostic Test Suites States
@@ -86,11 +122,7 @@ export const SettingsPage: React.FC = () => {
   const [isRunningSettingsTests, setIsRunningSettingsTests] = useState(false);
   const [settingsTestSuiteResult, setSettingsTestSuiteResult] = useState<SettingsTestSuiteResult | null>(null);
 
-  // FAQ Accordion State
-  const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
-
-  // Handlers
-  // Test Suite Triggers
+  // Test Suite Handlers
   const handleRunTests = async () => {
     setIsRunningTests(true);
     try {
@@ -187,97 +219,181 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleRunSettingsTests = async () => {
-    setIsRunningSettingsTests(true);
-    try {
-      const result = await SettingsTestSuite.runAll();
-      setSettingsTestSuiteResult(result);
-      showToast(
-        `اكتملت اختبارات الإعدادات والفواتير: ${result.passedCount} نجح من أصل ${result.totalCount}`,
-        result.failedCount === 0 ? 'success' : 'info'
-      );
-    } catch (e: any) {
-      showToast('فشل تشغيل اختبارات الإعدادات والفواتير', 'error');
-    } finally {
-      setIsRunningSettingsTests(false);
-    }
-  };
+  // Categories definition
+  const categories: CategoryConfig[] = [
+    {
+      id: 'general',
+      title: 'إعدادات المنشأة والهوية',
+      description: 'الملف التجاري، الشعار، العملة الأساسية، لغة التطبيق، ونمط العرض',
+      icon: Building2,
+      keywords: ['منشأة', 'شركة', 'عملة', 'لغة', 'مظهر', 'شعار', 'اسم', 'currency', 'language', 'appearance'],
+      components: [
+        <BusinessProfileSection key="bp" />,
+        <CurrencySection key="cur" />,
+        <LanguageSection key="lang" />,
+        <AppearanceSection key="app" />,
+      ],
+    },
+    {
+      id: 'operations',
+      title: 'الفواتير والتفضيلات التشغيلية',
+      description: 'تخصيص الفواتير، الضرائب، وشروط الطباعة',
+      icon: Receipt,
+      keywords: ['فواتير', 'ضريبة', 'طباعة', 'تفضيلات', 'invoice', 'tax'],
+      components: [<InvoicePreferencesSection key="inv" />],
+    },
+    {
+      id: 'security',
+      title: 'الأمان الصلاحيات وفريق العمل',
+      description: 'إدارة المستخدمين، الأدوار، الصلاحيات، وكلمات المرور',
+      icon: Shield,
+      keywords: ['أمان', 'صلاحيات', 'فريق', 'مستخدمين', 'كلمة مرور', 'security', 'team', 'roles'],
+      components: [<SecurityIntegritySection key="sec" />, <TeamAccessSection key="team" />],
+    },
+    {
+      id: 'messaging',
+      title: 'التنبيهات والأتمتة والرسائل',
+      description: 'إدارة قنوات الإشعارات، رسائل WhatsApp، والتذكيرات الآلية',
+      icon: Bell,
+      keywords: ['تنبيهات', 'رسائل', 'واتساب', 'أتمتة', 'whatsapp', 'notifications', 'messaging'],
+      components: [<MessagingSettingsSection key="msg" />],
+    },
+    {
+      id: 'data',
+      title: 'البيانات والنسخ الاحتياطي والمزامنة',
+      description: 'النسخ الاحتياطي السحابي والمحلي، استعادة البيانات، والخصوصية',
+      icon: Database,
+      keywords: ['بيانات', 'نسخ احتياطي', 'مزامنة', 'سحابي', 'تصدير', 'backup', 'sync', 'data'],
+      components: [<DataControlCenter key="data" />, <PrivacyIntegrationsSection key="priv" />],
+    },
+    {
+      id: 'support',
+      title: 'الدعم والمساعدة',
+      description: 'الأسئلة الشائعة، قنوات التواصل، ومعلومات الإصدار',
+      icon: HelpCircle,
+      keywords: ['دعم', 'مساعدة', 'إصدار', 'faq', 'help', 'support'],
+      components: [<HelpSupportSection key="help" />],
+    },
+  ];
+
+  // Filter categories based on search query
+  const filteredCategories = useMemo(() => {
+    if (!searchQuery.trim()) return categories;
+    const q = searchQuery.toLowerCase().trim();
+    return categories.filter(
+      (cat) =>
+        cat.title.toLowerCase().includes(q) ||
+        cat.description.toLowerCase().includes(q) ||
+        cat.keywords.some((kw) => kw.toLowerCase().includes(q))
+    );
+  }, [searchQuery]);
 
   return (
     <div id="settings-page" className="space-y-6 max-w-4xl animate-in fade-in duration-200">
       {/* Header */}
-      <div>
-        <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
-          <Settings className="w-6 h-6 text-teal-600" />
-          {t('settings.title')}
-        </h2>
-        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-          مركز التحكم الشامل بالإعدادات، العملة، الأمان، المزامنة، الفريق، وإدارة البيانات
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <Settings className="w-6 h-6 text-teal-600" />
+            {t('settings.title')}
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+            مركز التحكم الشامل بالإعدادات، العملة، الأمان، المزامنة، الفريق، وإدارة البيانات
+          </p>
+        </div>
+
+        {/* Quick Search */}
+        <div className="relative w-full sm:w-72">
+          <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="بحث سريع في الإعدادات..."
+            className="w-full pl-4 pr-10 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition shadow-2xs"
+          />
+        </div>
       </div>
 
-      {/* 1. إعدادات المنشأة والنشاط التجاري (Business Profile & Branding) */}
-      <BusinessProfileSection />
+      {/* Categories Accordion Cards */}
+      <div className="space-y-4">
+        {filteredCategories.length === 0 ? (
+          <div className="text-center py-12 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+            <p className="text-sm text-slate-500 dark:text-slate-400">لا توجد إعدادات مطابقة لبحثك</p>
+          </div>
+        ) : (
+          filteredCategories.map((cat) => {
+            const Icon = cat.icon;
+            const isOpen = openCategories[cat.id] || searchQuery.trim().length > 0;
 
-      {/* 2. المظهر ونمط العرض (Appearance & Theme) */}
-      <AppearanceSection />
+            return (
+              <div
+                key={cat.id}
+                className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-2xs transition hover:border-slate-300 dark:hover:border-slate-700"
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleCategory(cat.id)}
+                  className="w-full p-5 sm:p-6 flex items-center justify-between text-start hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition min-h-[44px]"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-10 h-10 rounded-2xl bg-teal-50 dark:bg-teal-950/50 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
+                        {cat.title}
+                      </h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                        {cat.description}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-slate-400 p-2">
+                    {isOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                  </div>
+                </button>
 
-      {/* 3. لغة التطبيق وتوجيه الواجهة (Language & Direction) */}
-      <LanguageSection />
+                {isOpen && (
+                  <div className="p-5 sm:p-6 pt-0 border-t border-slate-100 dark:border-slate-800/60 space-y-6 animate-in fade-in duration-150">
+                    <div className="pt-4 space-y-6">{cat.components}</div>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
 
-      {/* 4. العملة الرئيسية للنظام (Base System Currency) */}
-      <CurrencySection />
-
-      {/* 5. التفضيلات التشغيلية ونمط الفواتير (Operational & Invoice Preferences) */}
-      <InvoicePreferencesSection />
-
-      {/* 6. الأمان وسلامة البيانات (Security & Financial Integrity) */}
-      <SecurityIntegritySection />
-
-      {/* 7. إدارة الفريق والوصول (Users & Roles) */}
-      <TeamAccessSection />
-
-      {/* 6. التنبيهات والأتمتة والرسائل (Notifications & Automation) */}
-      <MessagingSettingsSection />
-
-      {/* 9. مركز التحكم بالبيانات والنسخ الاحتياطي والمزامنة (Data Control Center) */}
-      <DataControlCenter />
-
-      {/* 10. التكامل والخصوصية (Integrations & Privacy) */}
-      <PrivacyIntegrationsSection />
-
-      {/* 11. المساعدة والدعم ومعلومات الإصدار (Help & Support) */}
-      <HelpSupportSection />
-
-      {/* 12. أدوات التشخيص والصيانة البرمجية المتقدمة (Diagnostic & Dev Tools) */}
-      <section className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs">
+      {/* Diagnostics & Dev Tools Section (Collapsible Card) */}
+      <div className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-2xs">
         <button
           type="button"
-          onClick={() => setShowDiagnostics(!showDiagnostics)}
-          className="w-full p-5 sm:p-6 flex items-center justify-between text-start hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition"
+          onClick={() => toggleCategory('diagnostics')}
+          className="w-full p-5 sm:p-6 flex items-center justify-between text-start hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition min-h-[44px]"
         >
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center">
-              <Activity className="w-4 h-4 text-teal-600" />
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
+              <Activity className="w-5 h-5 text-teal-600" />
             </div>
             <div>
-              <div className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <div className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <span>أدوات التشخيص والصيانة البرمجية</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono">
                   6 حزم اختبارات
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 فحص أداء محركات النظام، المزامنة، التقارير، والذكاء الاصطناعي مباشرة
               </p>
             </div>
           </div>
-          <div className="text-slate-400">
-            {showDiagnostics ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+          <div className="text-slate-400 p-2">
+            {openCategories['diagnostics'] ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
           </div>
         </button>
 
-        {showDiagnostics && (
+        {openCategories['diagnostics'] && (
           <div className="p-5 sm:p-6 pt-0 border-t border-slate-100 dark:border-slate-800/60 space-y-4 animate-in fade-in duration-150">
             <p className="text-xs text-slate-500 dark:text-slate-400 pt-3">
               تشغيل حزم الاختبارات البرمجية للتأكد من جاهزية المحاسبة الآلية، السحابة، كشف الحسابات وقراءة الفواتير:
@@ -288,7 +404,7 @@ export const SettingsPage: React.FC = () => {
                 type="button"
                 onClick={handleRunTests}
                 disabled={isRunningTests}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition min-h-[38px] disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition min-h-[44px] disabled:opacity-50"
               >
                 <Layers className={`w-3.5 h-3.5 ${isRunningTests ? 'animate-spin' : ''}`} />
                 <span>{isRunningTests ? 'جارٍ الفحص...' : 'المحرك المالي (12 اختبار)'}</span>
@@ -298,7 +414,7 @@ export const SettingsPage: React.FC = () => {
                 type="button"
                 onClick={handleRunReportTests}
                 disabled={isRunningReportTests}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition min-h-[38px] disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition min-h-[44px] disabled:opacity-50"
               >
                 <FileCheck className={`w-3.5 h-3.5 ${isRunningReportTests ? 'animate-spin' : ''}`} />
                 <span>{isRunningReportTests ? 'جارٍ الفحص...' : 'التقارير وExcel/PDF (7 اختبارات)'}</span>
@@ -308,7 +424,7 @@ export const SettingsPage: React.FC = () => {
                 type="button"
                 onClick={handleRunCloudSyncTests}
                 disabled={isRunningCloudSyncTests}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition min-h-[38px] disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition min-h-[44px] disabled:opacity-50"
               >
                 <Cloud className={`w-3.5 h-3.5 ${isRunningCloudSyncTests ? 'animate-spin' : ''}`} />
                 <span>{isRunningCloudSyncTests ? 'جارٍ الفحص...' : 'المزامنة والسحابة (7 اختبارات)'}</span>
@@ -318,7 +434,7 @@ export const SettingsPage: React.FC = () => {
                 type="button"
                 onClick={handleRunMessagingTests}
                 disabled={isRunningMessagingTests}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition min-h-[38px] disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition min-h-[44px] disabled:opacity-50"
               >
                 <Layers className={`w-3.5 h-3.5 ${isRunningMessagingTests ? 'animate-spin' : ''}`} />
                 <span>{isRunningMessagingTests ? 'جارٍ الفحص...' : 'الرسائل والتنبيهات (20 اختبار)'}</span>
@@ -328,7 +444,7 @@ export const SettingsPage: React.FC = () => {
                 type="button"
                 onClick={handleRunAITests}
                 disabled={isRunningAITests}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition min-h-[38px] disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition min-h-[44px] disabled:opacity-50"
               >
                 <Bot className={`w-3.5 h-3.5 ${isRunningAITests ? 'animate-spin' : ''}`} />
                 <span>{isRunningAITests ? 'جارٍ الفحص...' : 'المساعد الذكي (24 اختبار)'}</span>
@@ -338,7 +454,7 @@ export const SettingsPage: React.FC = () => {
                 type="button"
                 onClick={handleRunOCRTests}
                 disabled={isRunningOCRTests}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition min-h-[38px] disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition min-h-[44px] disabled:opacity-50"
               >
                 <ScanLine className={`w-3.5 h-3.5 ${isRunningOCRTests ? 'animate-spin' : ''}`} />
                 <span>{isRunningOCRTests ? 'جارٍ الفحص...' : 'قراءة الفواتير وOCR (18 اختبار)'}</span>
@@ -415,7 +531,7 @@ export const SettingsPage: React.FC = () => {
             )}
           </div>
         )}
-      </section>
+      </div>
     </div>
   );
 };
