@@ -173,15 +173,19 @@ export class ServerMembershipVerifier {
       };
     }
 
-    if (org.status !== 'active') {
+    const validOrgStatuses: string[] = ['active', 'suspended', 'archived'];
+    if (!org.status || typeof org.status !== 'string' || !validOrgStatuses.includes(org.status) || org.status !== 'active') {
+      const isSuspendedOrArchived = org.status === 'suspended' || org.status === 'archived';
       return {
         success: false,
         verifiedByBackend: false,
         verifiedUid,
         authMembershipStatus: 'authenticated_no_membership',
         error: {
-          code: 'ORGANIZATION_SUSPENDED',
-          messageAr: 'هذه المؤسسة معلقة أو مؤرشفة حالياً ولا يمكن الوصول إليها.',
+          code: isSuspendedOrArchived ? 'ORGANIZATION_SUSPENDED' : 'ORGANIZATION_STATUS_INVALID',
+          messageAr: isSuspendedOrArchived
+            ? 'هذه المؤسسة معلقة أو مؤرشفة حالياً ولا يمكن الوصول إليها.'
+            : 'حالة المؤسسة مفقودة أو فارغة أو غير معروفة (Fail-Closed).',
         },
       };
     }
@@ -202,8 +206,22 @@ export class ServerMembershipVerifier {
       };
     }
 
-    // 6. Inspect Membership Status
-    if (membership.status === 'suspended' || (membership as any).status === 'revoked') {
+    // 6. Inspect Membership Status (Fail-Closed: reject missing, empty, or unknown statuses)
+    const validMembershipStatuses: string[] = ['active', 'suspended', 'pending', 'revoked'];
+    if (!membership.status || typeof membership.status !== 'string' || !validMembershipStatuses.includes(membership.status)) {
+      return {
+        success: false,
+        verifiedByBackend: false,
+        verifiedUid,
+        authMembershipStatus: 'pending_server_verification',
+        error: {
+          code: 'MEMBERSHIP_STATUS_INVALID',
+          messageAr: 'حالة عضوية المستخدم مفقودة أو فارغة أو غير معروفة (Fail-Closed).',
+        },
+      };
+    }
+
+    if (membership.status === 'suspended' || (membership.status as string) === 'revoked') {
       return {
         success: false,
         verifiedByBackend: false,
@@ -297,7 +315,7 @@ export class ServerMembershipVerifier {
           id: orgDoc.id,
           name: data.name || 'مؤسسة غير مسمية',
           ownerId: data.ownerId || '',
-          status: data.status || 'active',
+          status: data.status,
           settings: data.settings || { currency: 'YER', language: 'ar', timezone: 'UTC' },
           createdAt: data.createdAt || new Date().toISOString(),
           updatedAt: data.updatedAt || new Date().toISOString(),
@@ -340,7 +358,7 @@ export class ServerMembershipVerifier {
           organizationId: orgId,
           userId,
           role: data.role || 'viewer',
-          status: data.status || 'active',
+          status: data.status,
           permissions: data.permissions,
           createdAt: data.createdAt || new Date().toISOString(),
           updatedAt: data.updatedAt || new Date().toISOString(),

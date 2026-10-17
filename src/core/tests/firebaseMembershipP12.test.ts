@@ -1504,6 +1504,59 @@ export class FirebaseMembershipP12TestSuite {
           }
         },
       },
+      // P1.4.1-ORG-MEMBERSHIP-STATUS-FAIL-CLOSED
+      {
+        id: 'P1.4.1-STATUS-FAIL-CLOSED',
+        title: 'Fail-Closed for Missing, Empty, or Unknown Organization and Membership Status',
+        description: 'التحقق من رفض الوصول افتراضياً في حال كانت حالة المؤسسة أو العضوية مفقودة أو فارغة أو غير معروفة',
+        fn: async () => {
+          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
+          const { FirebaseTokenVerifier } = await import('../services/firebase/FirebaseTokenVerifier');
+
+          const uid = 'usr_status_test';
+          const token = FirebaseTokenVerifier.createTestToken({ uid });
+
+          const testCasesData = [
+            { orgStatus: undefined, memStatus: 'active', label: 'missing org status' },
+            { orgStatus: '', memStatus: 'active', label: 'empty org status' },
+            { orgStatus: 'unknown_org_status', memStatus: 'active', label: 'unknown org status' },
+            { orgStatus: 'active', memStatus: undefined, label: 'missing membership status' },
+            { orgStatus: 'active', memStatus: '', label: 'empty membership status' },
+            { orgStatus: 'active', memStatus: 'unknown_mem_status', label: 'unknown membership status' },
+          ];
+
+          for (const tcData of testCasesData) {
+            const orgId = `org_${Math.random().toString(36).substring(7)}`;
+            ServerMembershipVerifier.registerTestOrganization({
+              id: orgId,
+              name: 'Test Org',
+              ownerId: 'owner_1',
+              status: tcData.orgStatus as any,
+              settings: { currency: 'YER', language: 'ar', timezone: 'UTC' },
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+
+            ServerMembershipVerifier.registerTestMembership({
+              organizationId: orgId,
+              userId: uid,
+              role: 'employee',
+              status: tcData.memStatus as any,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+
+            const res = await ServerMembershipVerifier.verifyMembership({
+              idToken: token,
+              organizationId: orgId,
+            });
+
+            if (res.success || res.authMembershipStatus === 'online_verified') {
+              throw new Error(`فشل أمني خطير: تم قبول التحقق رغم وجود ${tcData.label}!`);
+            }
+          }
+        },
+      },
     ];
 
     for (const tc of testCases) {
