@@ -4,11 +4,24 @@ let isInitialized = false;
 let mockAdminAuth: any = null;
 let mockAdminFirestore: any = null;
 
+export function isProductionEnvironment(): boolean {
+  if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') {
+    return true;
+  }
+  return false;
+}
+
 export function setAdminAuthMock(auth: any) {
+  if (isProductionEnvironment()) {
+    throw new Error('Security Violation: Mock Admin Auth injection is strictly forbidden in production.');
+  }
   mockAdminAuth = auth;
 }
 
 export function setAdminFirestoreMock(db: any) {
+  if (isProductionEnvironment()) {
+    throw new Error('Security Violation: Mock Admin Firestore injection is strictly forbidden in production.');
+  }
   mockAdminFirestore = db;
 }
 
@@ -23,10 +36,11 @@ function getNodeAdmin() {
   }
   if (!adminInstance) {
     try {
-      const req = typeof eval === 'function' ? eval('require') : null;
-      adminInstance = req ? req('firebase-admin') : null;
+      if (typeof require !== 'undefined') {
+        adminInstance = require('firebase-admin');
+      }
     } catch (e) {
-      console.warn('[adminServer] Failed to load firebase-admin via dynamic require:', e);
+      console.warn('[adminServer] Failed to load firebase-admin:', e);
     }
   }
   return adminInstance;
@@ -34,8 +48,14 @@ function getNodeAdmin() {
 
 export function initFirebaseAdmin() {
   if (typeof window !== 'undefined') return null;
+  const isProd = isProductionEnvironment();
   const admin = getNodeAdmin();
-  if (!admin) return null;
+  if (!admin) {
+    if (isProd) {
+      throw new Error('Security Violation: Firebase Admin SDK package is required in production but could not be loaded.');
+    }
+    return null;
+  }
 
   if (!isInitialized && (!admin.apps || admin.apps.length === 0)) {
     try {
@@ -56,10 +76,12 @@ export function initFirebaseAdmin() {
       isInitialized = true;
     } catch (err: any) {
       console.warn('[FirebaseAdmin] Initialization warning or credentials missing:', err);
-      const isProd = typeof process !== 'undefined' && process.env.NODE_ENV === 'production';
-      const isVitest = typeof process !== 'undefined' && process.env.VITEST === 'true';
-      if (isProd && !isVitest && process.env.HISABATI_ALLOW_UNINITIALIZED_ADMIN !== 'true') {
+      if (isProd) {
+        // Fail-Closed: HISABATI_ALLOW_UNINITIALIZED_ADMIN MUST NOT allow bypassing in production!
         throw new Error('Firebase Admin SDK initialization failed in production: ' + (err?.message || err));
+      }
+      if (process.env.HISABATI_ALLOW_UNINITIALIZED_ADMIN !== 'true') {
+        throw new Error('Firebase Admin SDK initialization failed: ' + (err?.message || err));
       }
     }
   }
@@ -67,6 +89,17 @@ export function initFirebaseAdmin() {
 }
 
 export function getAdminAuth() {
+  if (isProductionEnvironment()) {
+    if (mockAdminAuth) {
+      throw new Error('Security Violation: Mock Admin Auth cannot be used in production.');
+    }
+    const admin = initFirebaseAdmin();
+    if (!admin || !admin.apps || admin.apps.length === 0) {
+      throw new Error('Firebase Admin Auth not available in production.');
+    }
+    return admin.auth();
+  }
+
   if (mockAdminAuth) return mockAdminAuth;
   const admin = initFirebaseAdmin();
   if (!admin) {
@@ -76,6 +109,17 @@ export function getAdminAuth() {
 }
 
 export function getAdminFirestore() {
+  if (isProductionEnvironment()) {
+    if (mockAdminFirestore) {
+      throw new Error('Security Violation: Mock Admin Firestore cannot be used in production.');
+    }
+    const admin = initFirebaseAdmin();
+    if (!admin || !admin.apps || admin.apps.length === 0) {
+      throw new Error('Firebase Admin Firestore not available in production.');
+    }
+    return admin.firestore();
+  }
+
   if (mockAdminFirestore) return mockAdminFirestore;
   const admin = initFirebaseAdmin();
   if (!admin) {

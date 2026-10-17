@@ -1312,8 +1312,7 @@ export class FirebaseMembershipP12TestSuite {
           const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
           const { setAdminAuthMock, setAdminFirestoreMock, clearAdminMocks } = await import('../services/firebase/adminServer');
 
-          const origNodeEnv = process.env.NODE_ENV;
-          process.env.NODE_ENV = 'production';
+          ServerMembershipVerifier.setForceAdminSdkForTest(true);
 
           let verifyCalledWithRevokeCheck = false;
           let requestedOrgId = '';
@@ -1386,14 +1385,14 @@ export class FirebaseMembershipP12TestSuite {
           setAdminFirestoreMock(mockFirestore);
 
           try {
-            // Test 1: Successful production verification path
+            // Test 1: Successful verification path using Admin SDK
             const res = await ServerMembershipVerifier.verifyMembership({
               idToken: 'valid_token_123',
               organizationId: 'org_prod_active',
             });
 
             if (!verifyCalledWithRevokeCheck) {
-              throw new Error('فشل أمني: لم يتم استدعاء adminAuth.verifyIdToken(idToken, true) في مسار الإنتاج!');
+              throw new Error('فشل أمني: لم يتم استدعاء adminAuth.verifyIdToken(idToken, true) في مسار Admin SDK!');
             }
             if (requestedOrgId !== 'org_prod_active') {
               throw new Error(`معرف المؤسسة المطلوب غير صحيح: ${requestedOrgId}`);
@@ -1402,31 +1401,106 @@ export class FirebaseMembershipP12TestSuite {
               throw new Error(`معرف المستخدم الموثق المطلوب لجلب العضوية غير صحيح: ${requestedMemberUid}`);
             }
             if (!res.success || res.authMembershipStatus !== 'online_verified' || res.verifiedUid !== 'admin_uid_999') {
-              throw new Error(`فشل التحقق الناجح في مسار الإنتاج: ${JSON.stringify(res)}`);
+              throw new Error(`فشل التحقق الناجح في مسار Admin SDK: ${JSON.stringify(res)}`);
             }
 
-            // Test 2: Suspended Organization rejection in production path
+            // Test 2: Suspended Organization rejection in Admin SDK path
             const resSuspendedOrg = await ServerMembershipVerifier.verifyMembership({
               idToken: 'valid_token_123',
               organizationId: 'org_prod_suspended',
             });
             if (resSuspendedOrg.success || resSuspendedOrg.error?.code !== 'ORGANIZATION_SUSPENDED') {
-              throw new Error('فشل أمني: لم يتم رفض المؤسسة المعلقة في مسار الإنتاج!');
+              throw new Error('فشل أمني: لم يتم رفض المؤسسة المعلقة في مسار Admin SDK!');
             }
 
-            // Test 3: Revoked or bad token rejection in production path
+            // Test 3: Revoked or bad token rejection in Admin SDK path
             const resBadToken = await ServerMembershipVerifier.verifyMembership({
               idToken: 'revoked_or_bad_token',
               organizationId: 'org_prod_active',
             });
             if (resBadToken.success || resBadToken.authMembershipStatus === 'online_verified') {
-              throw new Error('فشل أمني: تم منح online_verified رغم إبطال أو فشل التحقق من الرمز في مسار الإنتاج!');
+              throw new Error('فشل أمني: تم منح online_verified رغم إبطال أو فشل التحقق من الرمز في مسار Admin SDK!');
             }
 
           } finally {
-            process.env.NODE_ENV = origNodeEnv;
+            ServerMembershipVerifier.setForceAdminSdkForTest(false);
             clearAdminMocks();
             await tenantService.switchToLocalMode();
+          }
+        },
+      },
+
+      // P1.2-X5) Production Environment Mock Injection Forbidden & Fail-Closed
+      {
+        id: 'P1.2-X5-PROD-MOCK-INJECTION-REJECTED',
+        title: 'Production Environment: Mock Injection Forbidden & Fail-Closed',
+        description: 'إثبات رفض حقن Mocks في بيئة الإنتاج Fail-Closed ومنع تجاوز تهيئة Firebase Admin SDK',
+        fn: async () => {
+          const { setAdminAuthMock, setAdminFirestoreMock, clearAdminMocks, initFirebaseAdmin } = await import('../services/firebase/adminServer');
+          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
+
+          const origNodeEnv = process.env.NODE_ENV;
+          const origAllowUninit = process.env.HISABATI_ALLOW_UNINITIALIZED_ADMIN;
+
+          try {
+            process.env.NODE_ENV = 'production';
+
+            // 1. setAdminAuthMock must throw fail-closed in production
+            let authMockBlocked = false;
+            try {
+              setAdminAuthMock({ verifyIdToken: async () => ({ uid: 'attacker' }) });
+            } catch (e: any) {
+              if (e.message.includes('forbidden in production') || e.message.includes('Security Violation')) {
+                authMockBlocked = true;
+              }
+            }
+            if (!authMockBlocked) {
+              throw new Error('خرق أمني خطير: تم قبول setAdminAuthMock() في بيئة الإنتاج دون اعتراض!');
+            }
+
+            // 2. setAdminFirestoreMock must throw fail-closed in production
+            let firestoreMockBlocked = false;
+            try {
+              setAdminFirestoreMock({ collection: () => ({}) });
+            } catch (e: any) {
+              if (e.message.includes('forbidden in production') || e.message.includes('Security Violation')) {
+                firestoreMockBlocked = true;
+              }
+            }
+            if (!firestoreMockBlocked) {
+              throw new Error('خرق أمني خطير: تم قبول setAdminFirestoreMock() في بيئة الإنتاج دون اعتراض!');
+            }
+
+            // 3. ServerMembershipVerifier.setForceAdminSdkForTest must be blocked in production
+            let forceSdkBlocked = false;
+            try {
+              ServerMembershipVerifier.setForceAdminSdkForTest(true);
+            } catch (e: any) {
+              forceSdkBlocked = true;
+            }
+            if (!forceSdkBlocked) {
+              throw new Error('خرق أمني: تم السماح باستدعاء setForceAdminSdkForTest(true) في بيئة الإنتاج!');
+            }
+
+            // 4. In production, HISABATI_ALLOW_UNINITIALIZED_ADMIN='true' MUST NOT bypass initialization error
+            process.env.HISABATI_ALLOW_UNINITIALIZED_ADMIN = 'true';
+            let bypassedAdminInit = false;
+            try {
+              const admin = initFirebaseAdmin();
+              if (admin && admin.apps && admin.apps.length === 0) {
+                bypassedAdminInit = true;
+              }
+            } catch {
+              // Expected error: initialization failed in production
+            }
+            if (bypassedAdminInit) {
+              throw new Error('خرق أمني: سُمح بتجاوز تهيئة Firebase Admin في بيئة الإنتاج عبر HISABATI_ALLOW_UNINITIALIZED_ADMIN!');
+            }
+          } finally {
+            process.env.NODE_ENV = origNodeEnv;
+            process.env.HISABATI_ALLOW_UNINITIALIZED_ADMIN = origAllowUninit;
+            clearAdminMocks();
+            ServerMembershipVerifier.setForceAdminSdkForTest(false);
           }
         },
       },

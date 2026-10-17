@@ -39,35 +39,51 @@ export class ServerMembershipVerifier {
   private static testOrganizations: Map<string, Organization> = new Map();
   private static testMemberships: Map<string, OrganizationMembership> = new Map(); // key: `${orgId}:${userId}`
 
+  private static forceAdminSdkForTest = false;
+
+  public static setForceAdminSdkForTest(force: boolean): void {
+    if (this.isStrictProduction() && force) {
+      throw new Error('Security Violation: setForceAdminSdkForTest is forbidden in production environment.');
+    }
+    this.forceAdminSdkForTest = force;
+  }
+
+  private static isStrictProduction(): boolean {
+    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') {
+      return true;
+    }
+    return false;
+  }
+
   private static isTestEnvironment(): boolean {
+    if (this.forceAdminSdkForTest) {
+      return false; // Force Admin SDK code path during integration testing
+    }
     if (typeof process !== 'undefined' && process.env.VITEST === 'true') {
       return true;
     }
-    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') {
-      return false;
-    }
-    if (typeof import.meta !== 'undefined' && (import.meta as any).env?.PROD) {
+    if (this.isStrictProduction()) {
       return false;
     }
     return true;
   }
 
   public static registerTestOrganization(org: Organization): void {
-    if (!this.isTestEnvironment()) {
+    if (this.isStrictProduction()) {
       throw new Error('ServerMembershipVerifier: registerTestOrganization() is forbidden in production builds.');
     }
     this.testOrganizations.set(org.id, org);
   }
 
   public static registerTestMembership(membership: OrganizationMembership): void {
-    if (!this.isTestEnvironment()) {
+    if (this.isStrictProduction()) {
       throw new Error('ServerMembershipVerifier: registerTestMembership() is forbidden in production builds.');
     }
     this.testMemberships.set(`${membership.organizationId}:${membership.userId}`, membership);
   }
 
   public static clearTestData(): void {
-    if (!this.isTestEnvironment()) {
+    if (this.isStrictProduction()) {
       throw new Error('ServerMembershipVerifier: clearTestData() is forbidden in production builds.');
     }
     this.testOrganizations.clear();
