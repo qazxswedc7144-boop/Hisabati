@@ -5,27 +5,38 @@ import { calculateSHA256 } from '@/core/utils/crypto';
  * CapabilityLeaseService:
  * Manages tamper-resistant, cryptographically verified Offline Capability Leases.
  * 
- * Rules:
- * - Lease is NOT a membership, NOT the source of truth.
- * - Leases are issued ONLY upon successful server-side verification.
- * - Offline clients CANNOT create, escalate, or modify memberships or roles.
- * - Any local tampering with role, permissions, expiresAt, or hash causes immediate rejection.
+ * P0 Security Hardening:
+ * - Eliminates static client-side salts.
+ * - Enforces authoritative issuance tracking and runtime cryptographic binding.
+ * - Applies Fail-Closed: any local payload tampering (role, permissions, org, uid, expiration) or unverified persistent lease is instantly rejected.
  */
 export class CapabilityLeaseService {
   private static instance: CapabilityLeaseService;
   
   public static readonly DEFAULT_DURATION_MS = 24 * 60 * 60 * 1000; // 24 Hours
   
-  // Internal secret salt protecting lease signatures against local client forging
-  private static readonly LEASE_HMAC_SALT = 'hisabati_auth_lease_secret_salt_v1_secure';
+  // Runtime volatile cryptographic secret (never stored in localStorage, prevents static salt forging)
+  private runtimeSecret: string = '';
 
-  // In-memory registry of active leases (key: `${orgId}:${uid}`)
+  // In-memory registry of active authoritative leases (key: `${orgId}:${uid}`)
   private memoryLeases: Map<string, CapabilityLease> = new Map();
 
   // Revocation tombstone registry (key: `${orgId}:${uid}`)
   private revokedLeases: Set<string> = new Set();
 
-  private constructor() {}
+  private constructor() {
+    this.generateRuntimeSecret();
+  }
+
+  private generateRuntimeSecret(): void {
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+      const array = new Uint8Array(32);
+      window.crypto.getRandomValues(array);
+      this.runtimeSecret = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+    } else {
+      this.runtimeSecret = Math.random().toString(36) + Date.now().toString(36);
+    }
+  }
 
   public static getInstance(): CapabilityLeaseService {
     if (!CapabilityLeaseService.instance) {
@@ -52,11 +63,11 @@ export class CapabilityLeaseService {
   }
 
   /**
-   * Generates cryptographic integrity hash of the canonical payload.
+   * Generates cryptographic integrity hash of the canonical payload bound with runtime secret.
    */
-  public static async computeIntegrityHash(lease: Omit<CapabilityLease, 'integrityHash'>): Promise<string> {
+  public async computeIntegrityHash(lease: Omit<CapabilityLease, 'integrityHash'>): Promise<string> {
     const canonical = CapabilityLeaseService.buildCanonicalPayload(lease);
-    return await calculateSHA256(`${canonical}|${CapabilityLeaseService.LEASE_HMAC_SALT}`);
+    return await calculateSHA256(`${canonical}|${this.runtimeSecret}`);
   }
 
   /**
@@ -87,7 +98,7 @@ export class CapabilityLeaseService {
       isRevoked: false,
     };
 
-    const integrityHash = await CapabilityLeaseService.computeIntegrityHash(draftLease);
+    const integrityHash = await this.computeIntegrityHash(draftLease);
 
     const fullLease: CapabilityLease = {
       ...draftLease,
@@ -106,6 +117,7 @@ export class CapabilityLeaseService {
 
   /**
    * Validates a Capability Lease against expiration, user/org binding, and cryptographic integrity.
+   * Enforces Fail-Closed and tamper resistance against local payload modification.
    */
   public async validateLease(
     lease: CapabilityLease | null | undefined,
@@ -162,7 +174,43 @@ export class CapabilityLeaseService {
       };
     }
 
-    // 5. Cryptographic Integrity Validation
+    // 5. Authoritative Issuance & Tamper Check (Fail-Closed)
+    const authoritative = this.memoryLeases.get(key) || this.readFromPersistentStorage(key);
+    if (!authoritative) {
+      return {
+        valid: false,
+        code: 'LEASE_INTEGRITY_FAILED',
+        messageAr: 'فشل التحقق: التصريح غير مسجل في السجل الموثق (Fail-Closed).',
+      };
+    }
+
+    if (lease.verifiedRole !== authoritative.verifiedRole) {
+      return {
+        valid: false,
+        code: 'LEASE_INTEGRITY_FAILED',
+        messageAr: 'تم اكتشاف تلاعب محلي في دور المستخدم (Role Tampered).',
+      };
+    }
+
+    const presentedPerms = [...(lease.verifiedPermissions || [])].sort().join(',');
+    const authPerms = [...(authoritative.verifiedPermissions || [])].sort().join(',');
+    if (presentedPerms !== authPerms) {
+      return {
+        valid: false,
+        code: 'LEASE_INTEGRITY_FAILED',
+        messageAr: 'تم اكتشاف تلاعب محلي في صلاحيات العضوية (Permissions Tampered).',
+      };
+    }
+
+    if (lease.expiresAt > authoritative.expiresAt) {
+      return {
+        valid: false,
+        code: 'LEASE_INTEGRITY_FAILED',
+        messageAr: 'تم اكتشاف تمديد غير مسموح به في صلاحية التصريح.',
+      };
+    }
+
+    // 6. Cryptographic Integrity Validation
     const draft: Omit<CapabilityLease, 'integrityHash'> = {
       leaseId: lease.leaseId,
       organizationId: lease.organizationId,
@@ -175,12 +223,12 @@ export class CapabilityLeaseService {
       isRevoked: lease.isRevoked,
     };
 
-    const expectedHash = await CapabilityLeaseService.computeIntegrityHash(draft);
+    const expectedHash = await this.computeIntegrityHash(draft);
     if (expectedHash !== lease.integrityHash) {
       return {
         valid: false,
         code: 'LEASE_INTEGRITY_FAILED',
-        messageAr: 'فشل فحص نزاهة التصريح: تم اكتشاف تلاعب محلي في الدور أو الصلاحيات أو مدة الصلاحية.',
+        messageAr: 'فشل فحص نزاهة التصريح: تم اكتشاف تلاعب محلي في البصمة الرقمية.',
       };
     }
 
