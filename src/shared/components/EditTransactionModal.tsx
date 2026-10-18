@@ -95,123 +95,125 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 pt-4">
-          {/* Transaction Type Tabs */}
-          <div>
-            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">
-              نوع العملية
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setType('debit')}
-                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs sm:text-sm font-bold transition min-h-[44px] ${
-                  type === 'debit'
-                    ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
-                    : 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200/80 dark:border-emerald-900/40 text-emerald-800 dark:text-emerald-300'
-                }`}
-              >
-                <ArrowUpRight className="w-4 h-4" />
-                <span>لي (أعطيته / مسحوب)</span>
-              </button>
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-4 py-3 pe-1 ps-1">
+            {/* Transaction Type Tabs */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">
+                نوع العملية
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setType('debit')}
+                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs sm:text-sm font-bold transition min-h-[44px] ${
+                    type === 'debit'
+                      ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
+                      : 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200/80 dark:border-emerald-900/40 text-emerald-800 dark:text-emerald-300'
+                  }`}
+                >
+                  <ArrowUpRight className="w-4 h-4" />
+                  <span>لي (أعطيته / مسحوب)</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setType('credit')}
-                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs sm:text-sm font-bold transition min-h-[44px] ${
-                  type === 'credit'
-                    ? 'bg-rose-600 border-rose-600 text-white shadow-xs'
-                    : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200/80 dark:border-rose-900/40 text-rose-800 dark:text-rose-300'
-                }`}
+                <button
+                  type="button"
+                  onClick={() => setType('credit')}
+                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs sm:text-sm font-bold transition min-h-[44px] ${
+                    type === 'credit'
+                      ? 'bg-rose-600 border-rose-600 text-white shadow-xs'
+                      : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200/80 dark:border-rose-900/40 text-rose-800 dark:text-rose-300'
+                  }`}
+                >
+                  <ArrowDownLeft className="w-4 h-4" />
+                  <span>علي (استلمت منه / وارد)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Account Selection */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">
+                الحساب المرتبط
+              </label>
+              <select
+                value={accountId}
+                onChange={(e) => setAccountId(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-semibold focus:ring-2 focus:ring-teal-500 min-h-[44px]"
               >
-                <ArrowDownLeft className="w-4 h-4" />
-                <span>علي (استلمت منه / وارد)</span>
-              </button>
+                {accounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name} {acc.archived ? '(مؤرشف)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Amount */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">
+                المبلغ ({currency})
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="0.01"
+                required
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-base font-bold focus:ring-2 focus:ring-teal-500 min-h-[44px]"
+              />
+            </div>
+
+            {/* Date */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                <span>تاريخ العملية</span>
+              </label>
+              <input
+                type="date"
+                required
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-medium focus:ring-2 focus:ring-teal-500 min-h-[44px]"
+              />
+            </div>
+
+            {/* Note */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5 flex items-center gap-1">
+                <FileText className="w-3.5 h-3.5 text-slate-400" />
+                <span>ملاحظات وبيان العملية</span>
+              </label>
+              <input
+                type="text"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="مثال: دفعة من الحساب، بضاعة، حوالة..."
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-medium focus:ring-2 focus:ring-teal-500 min-h-[44px]"
+              />
+            </div>
+
+            {/* Receipt Number */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5 flex items-center gap-1">
+                <Hash className="w-3.5 h-3.5 text-slate-400" />
+                <span>رقم السند / الإيصال (اختياري)</span>
+              </label>
+              <input
+                type="text"
+                value={receiptNumber}
+                onChange={(e) => setReceiptNumber(e.target.value)}
+                placeholder="رقم الفاتورة أو الإيصال"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-medium focus:ring-2 focus:ring-teal-500 min-h-[44px]"
+              />
             </div>
           </div>
 
-          {/* Account Selection */}
-          <div>
-            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">
-              الحساب المرتبط
-            </label>
-            <select
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-semibold focus:ring-2 focus:ring-teal-500 min-h-[44px]"
-            >
-              {accounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.name} {acc.archived ? '(مؤرشف)' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Amount */}
-          <div>
-            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">
-              المبلغ ({currency})
-            </label>
-            <input
-              type="number"
-              step="any"
-              min="0.01"
-              required
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-base font-bold focus:ring-2 focus:ring-teal-500 min-h-[44px]"
-            />
-          </div>
-
-          {/* Date */}
-          <div>
-            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5 flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-              <span>تاريخ العملية</span>
-            </label>
-            <input
-              type="date"
-              required
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-medium focus:ring-2 focus:ring-teal-500 min-h-[44px]"
-            />
-          </div>
-
-          {/* Note */}
-          <div>
-            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5 flex items-center gap-1">
-              <FileText className="w-3.5 h-3.5 text-slate-400" />
-              <span>ملاحظات وبيان العملية</span>
-            </label>
-            <input
-              type="text"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="مثال: دفعة من الحساب، بضاعة، حوالة..."
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-medium focus:ring-2 focus:ring-teal-500 min-h-[44px]"
-            />
-          </div>
-
-          {/* Receipt Number */}
-          <div>
-            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5 flex items-center gap-1">
-              <Hash className="w-3.5 h-3.5 text-slate-400" />
-              <span>رقم السند / الإيصال (اختياري)</span>
-            </label>
-            <input
-              type="text"
-              value={receiptNumber}
-              onChange={(e) => setReceiptNumber(e.target.value)}
-              placeholder="رقم الفاتورة أو الإيصال"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-medium focus:ring-2 focus:ring-teal-500 min-h-[44px]"
-            />
-          </div>
-
           {/* Submit Actions */}
-          <div className="flex items-center gap-3 pt-3">
+          <div className="flex items-center gap-3 pt-3 mt-2 border-t border-slate-100 dark:border-slate-800 shrink-0">
             <button
               type="button"
               onClick={onClose}
