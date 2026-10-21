@@ -29,6 +29,7 @@ import { SyncHardeningPart1TestSuite } from './syncHardeningPart1.test';
 import { ImmutableLedgerTestSuite } from './immutableLedger.test';
 import { TrashCycleTestSuite } from './trashCycle.test';
 import { runTenantTests } from './tenant.test';
+import { CapabilityLeaseSecurityTestSuite } from './capabilityLeaseSecurity.test';
 import { tenantService } from '../services/TenantService';
 import { accountService } from '../services/account.service';
 
@@ -627,6 +628,25 @@ async function main() {
     totalCount += tenantResult.total;
   } catch (err: any) {
     console.error('Tenant suite crashed:', err);
+    totalFailed += 1;
+    totalCount += 1;
+  }
+
+  // --- Capability Lease Cryptographic Security Hardening ---
+  console.log('\n--- [Security P0] Capability Lease Cryptographic Security Tests ---');
+  try {
+    const leaseSecResult = await CapabilityLeaseSecurityTestSuite.runAll();
+    console.log(`Capability Lease Security Result: Passed ${leaseSecResult.passed}/${leaseSecResult.total} (${Math.round(leaseSecResult.durationMs)}ms)`);
+    totalPassed += leaseSecResult.passed;
+    totalFailed += leaseSecResult.failed;
+    totalCount += leaseSecResult.total;
+    if (leaseSecResult.failed > 0) {
+      for (const r of leaseSecResult.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ [${r.id}] ${r.title}: ${r.error}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Capability Lease Security suite crashed:', err);
     totalFailed += 1;
     totalCount += 1;
   }

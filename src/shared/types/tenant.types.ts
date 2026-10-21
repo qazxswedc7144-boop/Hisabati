@@ -30,6 +30,8 @@ export interface CapabilityLease {
   verificationRevision: number;
   integrityHash: string; // Cryptographic HMAC / SHA-256 digest of canonical fields
   isRevoked?: boolean;
+  issuer?: string;
+  audience?: string;
 }
 
 export type LeaseErrorCode =

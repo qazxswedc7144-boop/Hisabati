@@ -59,6 +59,8 @@ export class CapabilityLeaseService {
       lease.issuedAt.toString(),
       lease.expiresAt.toString(),
       lease.verificationRevision.toString(),
+      lease.issuer || '',
+      lease.audience || '',
     ].join('|');
   }
 
@@ -127,11 +129,27 @@ export class CapabilityLeaseService {
       now?: number;
     }
   ): Promise<LeaseValidationResult> {
-    if (!lease || !lease.leaseId || !lease.integrityHash) {
+    if (!lease || typeof lease !== 'object' || !lease.leaseId || !lease.organizationId || !lease.verifiedUid || !lease.verifiedRole || typeof lease.issuedAt !== 'number' || typeof lease.expiresAt !== 'number' || !lease.integrityHash) {
       return {
         valid: false,
-        code: 'LEASE_NOT_FOUND',
-        messageAr: 'لم يتم العثور على تصريح Capability Lease صالح.',
+        code: 'LEASE_MALFORMED',
+        messageAr: 'بيانات التصريح غير صالحة أو تالفة (Malformed Payload).',
+      };
+    }
+
+    if (lease.issuer && lease.issuer !== 'hisabati-auth-server') {
+      return {
+        valid: false,
+        code: 'LEASE_INTEGRITY_FAILED',
+        messageAr: 'جهة إصدار التصريح غير صالحة أو غير موثوقة (Invalid Issuer).',
+      };
+    }
+
+    if (lease.audience && lease.audience !== context.targetOrgId) {
+      return {
+        valid: false,
+        code: 'LEASE_ORG_MISMATCH',
+        messageAr: 'جمهور التصريح (Audience) لا يتطابق مع المؤسسة المستهدفة.',
       };
     }
 
