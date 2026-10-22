@@ -3,6 +3,7 @@ import http from 'http';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import { ServerMembershipVerifier } from './src/core/services/tenant/ServerMembershipVerifier';
+import { ServerLeaseIssuer } from './src/core/services/tenant/ServerLeaseIssuer';
 import { FirebaseTokenVerifier, FirebaseTokenVerificationError } from './src/core/services/firebase/FirebaseTokenVerifier';
 import { AIResponseSchema } from './src/core/services/ai/aiValidation';
 import { initFirebaseAdmin } from './src/core/services/firebase/adminServer';
@@ -731,6 +732,59 @@ ${JSON.stringify(accountContext || {}).slice(0, 5000)}
       });
     } catch (err: any) {
       return handleApiError(res, err, 'حدث خطأ غير متوقع أثناء التحقق الخادمي من العضوية.');
+    }
+  });
+
+  // ============================================================================
+  // Server-side Capability Lease Issuance Endpoint (Asymmetric ECDSA Signed)
+  // ============================================================================
+  app.post('/api/tenant/issue-lease', tenantLimiter, requireFirebaseAuth, async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const bearerToken =
+        typeof authHeader === 'string' && authHeader.toLowerCase().startsWith('bearer ')
+          ? authHeader.slice(7).trim()
+          : undefined;
+
+      const idToken = (req.body?.idToken || bearerToken) as string | undefined;
+      const organizationId = req.body?.organizationId as string | undefined;
+
+      if (!idToken || typeof idToken !== 'string') {
+        return res.status(400).json({ error: 'رمز الدخول مفقود أو غير صالح.' });
+      }
+
+      if (!organizationId || typeof organizationId !== 'string') {
+        return res.status(400).json({ error: 'معرف المؤسسة مفقود.' });
+      }
+
+      // 1. Authoritative verification via ServerMembershipVerifier
+      const verification = await ServerMembershipVerifier.verifyMembership({
+        idToken,
+        organizationId,
+      });
+
+      if (!verification.success || !verification.membership || !verification.verifiedUid) {
+        return res.status(403).json({
+          error: verification.error?.messageAr || 'فشل التحقق من العضوية لإصدار التصريح.',
+          code: verification.error?.code || 'LEASE_ISSUANCE_FORBIDDEN',
+        });
+      }
+
+      // 2. Issue cryptographically signed lease using server private key
+      const lease = await ServerLeaseIssuer.issueLease({
+        organizationId,
+        verifiedUid: verification.verifiedUid,
+        verifiedRole: verification.membership.role,
+        verifiedPermissions: verification.membership.permissions || [],
+        verificationRevision: verification.verificationRevision,
+      });
+
+      return res.json({
+        success: true,
+        lease,
+      });
+    } catch (err: any) {
+      return handleApiError(res, err, 'حدث خطأ أثناء إصدار تصريح القدرات الخادمي.');
     }
   });
 

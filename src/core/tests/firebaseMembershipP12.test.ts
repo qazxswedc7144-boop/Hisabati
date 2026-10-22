@@ -3,6 +3,7 @@ import { tenantService } from '../services/TenantService';
 import { tenantDbManager } from '../database/TenantDatabaseManager';
 import { useTenantStore } from '@/shared/stores/tenantStore';
 import { rbacGuard } from '../services/rbac/RBACGuard.service';
+import { ServerLeaseIssuer } from '../services/tenant/ServerLeaseIssuer';
 import { AuditActor } from '@/shared/types';
 
 export interface SecurityTestResultItem {
@@ -26,6 +27,7 @@ export class FirebaseMembershipP12TestSuite {
   public static async runAll(): Promise<SecurityTestSuiteSummary> {
     const startTime = performance.now();
     const results: SecurityTestResultItem[] = [];
+    await ServerLeaseIssuer.initialize();
 
     const testCases: Array<{
       id: string;
@@ -688,7 +690,7 @@ export class FirebaseMembershipP12TestSuite {
           const uid = 'usr_lease_valid';
           const orgId = 'org_lease_scope';
 
-          const lease = await capabilityLeaseService.createLease({
+          const lease = await ServerLeaseIssuer.issueLease({
             organizationId: orgId,
             verifiedUid: uid,
             verifiedRole: 'accountant',
@@ -735,7 +737,7 @@ export class FirebaseMembershipP12TestSuite {
           const uid = 'usr_lease_expired';
           const orgId = 'org_expired_scope';
 
-          const expiredLease = await capabilityLeaseService.createLease({
+          const expiredLease = await ServerLeaseIssuer.issueLease({
             organizationId: orgId,
             verifiedUid: uid,
             verifiedRole: 'accountant',
@@ -780,7 +782,7 @@ export class FirebaseMembershipP12TestSuite {
           const uid = 'usr_lease_tamper';
           const orgId = 'org_tamper_scope';
 
-          const validLease = await capabilityLeaseService.createLease({
+          const validLease = await ServerLeaseIssuer.issueLease({
             organizationId: orgId,
             verifiedUid: uid,
             verifiedRole: 'viewer',
@@ -820,7 +822,7 @@ export class FirebaseMembershipP12TestSuite {
           const attackerUid = 'usr_bob';
           const orgId = 'org_corp';
 
-          const leaseAlice = await capabilityLeaseService.createLease({
+          const leaseAlice = await ServerLeaseIssuer.issueLease({
             organizationId: orgId,
             verifiedUid: victimUid,
             verifiedRole: 'owner',
@@ -854,7 +856,7 @@ export class FirebaseMembershipP12TestSuite {
           const orgA = 'org_retail_a';
           const orgB = 'org_vault_b';
 
-          const leaseA = await capabilityLeaseService.createLease({
+          const leaseA = await ServerLeaseIssuer.issueLease({
             organizationId: orgA,
             verifiedUid: uid,
             verifiedRole: 'admin',
@@ -887,7 +889,7 @@ export class FirebaseMembershipP12TestSuite {
           const uid = 'usr_escalator_perms';
           const orgId = 'org_secure_bank';
 
-          const normalLease = await capabilityLeaseService.createLease({
+          const normalLease = await ServerLeaseIssuer.issueLease({
             organizationId: orgId,
             verifiedUid: uid,
             verifiedRole: 'viewer',
@@ -925,7 +927,7 @@ export class FirebaseMembershipP12TestSuite {
           const uid = 'usr_role_escalator';
           const orgId = 'org_gov_dept';
 
-          const viewerLease = await capabilityLeaseService.createLease({
+          const viewerLease = await ServerLeaseIssuer.issueLease({
             organizationId: orgId,
             verifiedUid: uid,
             verifiedRole: 'viewer',
@@ -963,7 +965,7 @@ export class FirebaseMembershipP12TestSuite {
           const uid = 'usr_exp_extender';
           const orgId = 'org_finite_term';
 
-          const lease = await capabilityLeaseService.createLease({
+          const lease = await ServerLeaseIssuer.issueLease({
             organizationId: orgId,
             verifiedUid: uid,
             verifiedRole: 'employee',

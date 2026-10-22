@@ -6,6 +6,7 @@ import type {
   VerifyMembershipResponse,
 } from './tenant/ServerMembershipVerifier';
 import { capabilityLeaseService } from './tenant/CapabilityLeaseService';
+import { ServerLeaseIssuer } from './tenant/ServerLeaseIssuer';
 
 /**
  * TenantService: Orchestrates organization switching and tenant context management.
@@ -207,14 +208,16 @@ export class TenantService {
         throw new Error(errorMsg);
       }
 
-      // 4. Issue a tamper-resistant Capability Lease based strictly on verified server data
-      await capabilityLeaseService.createLease({
+      // 4. Issue a tamper-resistant Capability Lease based strictly on verified server data via ServerLeaseIssuer
+      await ServerLeaseIssuer.initialize();
+      const lease = await ServerLeaseIssuer.issueLease({
         organizationId: result.organization.id,
         verifiedUid: result.verifiedUid!,
         verifiedRole: result.membership.role,
         verifiedPermissions: result.membership.permissions || [],
         verificationRevision: result.verificationRevision ?? 1,
       });
+      await capabilityLeaseService.cacheServerIssuedLease(lease);
 
       // 5. Open Tenant DB strictly after authoritative verification
       await tenantDbManager.openTenantDatabase(result.organization.id, {

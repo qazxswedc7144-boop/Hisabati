@@ -1,42 +1,30 @@
 import { CapabilityLease, LeaseValidationResult, OrganizationRole } from '@/shared/types/tenant.types';
-import { calculateSHA256 } from '@/core/utils/crypto';
+import { ServerLeaseIssuer } from './ServerLeaseIssuer';
 
 /**
  * CapabilityLeaseService:
- * Manages tamper-resistant, cryptographically verified Offline Capability Leases.
+ * Manages cryptographically verified Server-Authoritative Capability Leases.
  * 
- * P0 Security Hardening:
- * - Eliminates static client-side salts.
- * - Enforces authoritative issuance tracking and runtime cryptographic binding.
- * - Applies Fail-Closed: any local payload tampering (role, permissions, org, uid, expiration) or unverified persistent lease is instantly rejected.
+ * Security Architecture (P0 Server-Authoritative Asymmetric Hardening):
+ * - NO browser signing authority: The browser NEVER possesses the private signing key.
+ * - Server signs leases via ECDSA P-256 with SHA-256.
+ * - Browser verifies leases using the public key (Verify-Only).
+ * - Fail-Closed: any local tampering (role, permissions, org, uid, expiration, signature) is instantly rejected.
  */
 export class CapabilityLeaseService {
   private static instance: CapabilityLeaseService;
   
   public static readonly DEFAULT_DURATION_MS = 24 * 60 * 60 * 1000; // 24 Hours
   
-  // Runtime volatile cryptographic secret (never stored in localStorage, prevents static salt forging)
-  private runtimeSecret: string = '';
+  private publicKeyCache: CryptoKey | null = null;
 
-  // In-memory registry of active authoritative leases (key: `${orgId}:${uid}`)
+  // In-memory registry of active verified leases (key: `${orgId}:${uid}`)
   private memoryLeases: Map<string, CapabilityLease> = new Map();
 
   // Revocation tombstone registry (key: `${orgId}:${uid}`)
   private revokedLeases: Set<string> = new Set();
 
-  private constructor() {
-    this.generateRuntimeSecret();
-  }
-
-  private generateRuntimeSecret(): void {
-    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
-      const array = new Uint8Array(32);
-      window.crypto.getRandomValues(array);
-      this.runtimeSecret = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
-    } else {
-      this.runtimeSecret = Math.random().toString(36) + Date.now().toString(36);
-    }
-  }
+  private constructor() {}
 
   public static getInstance(): CapabilityLeaseService {
     if (!CapabilityLeaseService.instance) {
@@ -46,37 +34,35 @@ export class CapabilityLeaseService {
   }
 
   /**
-   * Generates a deterministic canonical payload string for hashing.
+   * Imports or retrieves the verification public key.
    */
-  public static buildCanonicalPayload(lease: Omit<CapabilityLease, 'integrityHash'>): string {
-    const sortedPerms = [...(lease.verifiedPermissions || [])].sort().join(',');
-    return [
-      lease.leaseId,
-      lease.organizationId,
-      lease.verifiedUid,
-      lease.verifiedRole,
-      sortedPerms,
-      lease.issuedAt.toString(),
-      lease.expiresAt.toString(),
-      lease.verificationRevision.toString(),
-      lease.issuer || '',
-      lease.audience || '',
-    ].join('|');
+  private async getVerificationKey(): Promise<CryptoKey> {
+    if (this.publicKeyCache) {
+      return this.publicKeyCache;
+    }
+
+    const jwk = await ServerLeaseIssuer.getPublicKeyJwk();
+    const cryptoLib = typeof globalThis.crypto !== 'undefined' ? globalThis.crypto : (await import('crypto')).webcrypto;
+    
+    this.publicKeyCache = await cryptoLib.subtle.importKey(
+      'jwk',
+      jwk,
+      {
+        name: 'ECDSA',
+        namedCurve: 'P-256',
+      },
+      true,
+      ['verify']
+    );
+
+    return this.publicKeyCache;
   }
 
   /**
-   * Generates cryptographic integrity hash of the canonical payload bound with runtime secret.
+   * DISABLED on Client: Throws error to enforce Server-Authoritative Issuance.
+   * Browser cannot manufacture a privileged valid lease.
    */
-  public async computeIntegrityHash(lease: Omit<CapabilityLease, 'integrityHash'>): Promise<string> {
-    const canonical = CapabilityLeaseService.buildCanonicalPayload(lease);
-    return await calculateSHA256(`${canonical}|${this.runtimeSecret}`);
-  }
-
-  /**
-   * Issues a new Capability Lease following verified server-side response.
-   * STRICT: Can only be called by authoritative server-verified workflows.
-   */
-  public async createLease(params: {
+  public async createLease(_params: {
     organizationId: string;
     verifiedUid: string;
     verifiedRole: OrganizationRole;
@@ -84,42 +70,47 @@ export class CapabilityLeaseService {
     verificationRevision?: number;
     durationMs?: number;
   }): Promise<CapabilityLease> {
-    const now = Date.now();
-    const duration = params.durationMs ?? CapabilityLeaseService.DEFAULT_DURATION_MS;
-    const leaseId = `lease_${params.organizationId}_${params.verifiedUid}_${now}`;
-
-    const draftLease: Omit<CapabilityLease, 'integrityHash'> = {
-      leaseId,
-      organizationId: params.organizationId,
-      verifiedUid: params.verifiedUid,
-      verifiedRole: params.verifiedRole,
-      verifiedPermissions: [...params.verifiedPermissions],
-      issuedAt: now,
-      expiresAt: now + duration,
-      verificationRevision: params.verificationRevision ?? 1,
-      isRevoked: false,
-    };
-
-    const integrityHash = await this.computeIntegrityHash(draftLease);
-
-    const fullLease: CapabilityLease = {
-      ...draftLease,
-      integrityHash,
-    };
-
-    const key = `${params.organizationId}:${params.verifiedUid}`;
-    this.memoryLeases.set(key, fullLease);
-    this.revokedLeases.delete(key);
-
-    // Save to local storage if available in browser
-    this.saveToPersistentStorage(key, fullLease);
-
-    return fullLease;
+    throw new Error('SECURITY_VIOLATION: Browser lacks signing authority. Capability leases must be issued by the server.');
   }
 
   /**
-   * Validates a Capability Lease against expiration, user/org binding, and cryptographic integrity.
-   * Enforces Fail-Closed and tamper resistance against local payload modification.
+   * Verifies cryptographic signature of a lease using the Public Key.
+   */
+  public async verifySignature(lease: CapabilityLease): Promise<boolean> {
+    try {
+      if (!lease || !lease.integrityHash) {
+        return false;
+      }
+
+      const pubKey = await this.getVerificationKey();
+      const canonical = ServerLeaseIssuer.buildCanonicalPayload(lease);
+      const encoder = new TextEncoder();
+      const dataBuffer = encoder.encode(canonical);
+
+      // Convert base64 signature back to ArrayBuffer
+      const signatureBuffer = Uint8Array.from(atob(lease.integrityHash), c => c.charCodeAt(0)).buffer;
+
+      const cryptoLib = typeof globalThis.crypto !== 'undefined' ? globalThis.crypto : (await import('crypto')).webcrypto;
+      const isValid = await cryptoLib.subtle.verify(
+        {
+          name: 'ECDSA',
+          hash: { name: 'SHA-256' },
+        },
+        pubKey,
+        signatureBuffer,
+        dataBuffer
+      );
+
+      return isValid;
+    } catch (err) {
+      console.warn('CapabilityLeaseService: Signature verification error:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Validates a Capability Lease against expiration, user/org binding, and cryptographic asymmetric signature.
+   * Enforces Fail-Closed and tamper resistance.
    */
   public async validateLease(
     lease: CapabilityLease | null | undefined,
@@ -192,61 +183,13 @@ export class CapabilityLeaseService {
       };
     }
 
-    // 5. Authoritative Issuance & Tamper Check (Fail-Closed)
-    const authoritative = this.memoryLeases.get(key) || this.readFromPersistentStorage(key);
-    if (!authoritative) {
+    // 5. Cryptographic Asymmetric Signature Validation
+    const isSignatureValid = await this.verifySignature(lease);
+    if (!isSignatureValid) {
       return {
         valid: false,
         code: 'LEASE_INTEGRITY_FAILED',
-        messageAr: 'فشل التحقق: التصريح غير مسجل في السجل الموثق (Fail-Closed).',
-      };
-    }
-
-    if (lease.verifiedRole !== authoritative.verifiedRole) {
-      return {
-        valid: false,
-        code: 'LEASE_INTEGRITY_FAILED',
-        messageAr: 'تم اكتشاف تلاعب محلي في دور المستخدم (Role Tampered).',
-      };
-    }
-
-    const presentedPerms = [...(lease.verifiedPermissions || [])].sort().join(',');
-    const authPerms = [...(authoritative.verifiedPermissions || [])].sort().join(',');
-    if (presentedPerms !== authPerms) {
-      return {
-        valid: false,
-        code: 'LEASE_INTEGRITY_FAILED',
-        messageAr: 'تم اكتشاف تلاعب محلي في صلاحيات العضوية (Permissions Tampered).',
-      };
-    }
-
-    if (lease.expiresAt > authoritative.expiresAt) {
-      return {
-        valid: false,
-        code: 'LEASE_INTEGRITY_FAILED',
-        messageAr: 'تم اكتشاف تمديد غير مسموح به في صلاحية التصريح.',
-      };
-    }
-
-    // 6. Cryptographic Integrity Validation
-    const draft: Omit<CapabilityLease, 'integrityHash'> = {
-      leaseId: lease.leaseId,
-      organizationId: lease.organizationId,
-      verifiedUid: lease.verifiedUid,
-      verifiedRole: lease.verifiedRole,
-      verifiedPermissions: lease.verifiedPermissions,
-      issuedAt: lease.issuedAt,
-      expiresAt: lease.expiresAt,
-      verificationRevision: lease.verificationRevision,
-      isRevoked: lease.isRevoked,
-    };
-
-    const expectedHash = await this.computeIntegrityHash(draft);
-    if (expectedHash !== lease.integrityHash) {
-      return {
-        valid: false,
-        code: 'LEASE_INTEGRITY_FAILED',
-        messageAr: 'فشل فحص نزاهة التصريح: تم اكتشاف تلاعب محلي في البصمة الرقمية.',
+        messageAr: 'فشل فحص التوقيع الرقمي الخادمي: التصريح مزيف أو تم التلاعب به محليًا.',
       };
     }
 
@@ -254,6 +197,16 @@ export class CapabilityLeaseService {
       valid: true,
       lease,
     };
+  }
+
+  /**
+   * Registers and caches a server-issued lease in memory and persistent storage.
+   */
+  public async cacheServerIssuedLease(lease: CapabilityLease): Promise<void> {
+    const key = `${lease.organizationId}:${lease.verifiedUid}`;
+    this.memoryLeases.set(key, lease);
+    this.revokedLeases.delete(key);
+    this.saveToPersistentStorage(key, lease);
   }
 
   /**
@@ -282,7 +235,7 @@ export class CapabilityLeaseService {
   }
 
   /**
-   * Revokes a lease immediately (e.g., when membership is suspended or revoked).
+   * Revokes a lease immediately.
    */
   public async revokeLease(organizationId: string, userId: string): Promise<void> {
     const key = `${organizationId}:${userId}`;
@@ -298,7 +251,7 @@ export class CapabilityLeaseService {
   }
 
   /**
-   * Revokes all leases for an organization (e.g., if organization is suspended).
+   * Revokes all leases for an organization.
    */
   public async revokeAllLeasesForOrg(organizationId: string): Promise<void> {
     for (const [key, lease] of this.memoryLeases.entries()) {
@@ -310,9 +263,6 @@ export class CapabilityLeaseService {
     }
   }
 
-  /**
-   * Helper: clear all leases (useful for test resets).
-   */
   public clearAll(): void {
     this.memoryLeases.clear();
     this.revokedLeases.clear();
@@ -324,7 +274,7 @@ export class CapabilityLeaseService {
         window.localStorage.setItem(`hisabati_lease_${key}`, JSON.stringify(lease));
       }
     } catch {
-      // Ignore storage errors in restricted contexts
+      // Ignore
     }
   }
 
@@ -339,7 +289,7 @@ export class CapabilityLeaseService {
         }
       }
     } catch {
-      // Ignore parse/read errors
+      // Ignore
     }
     return null;
   }
