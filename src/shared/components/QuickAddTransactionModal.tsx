@@ -82,14 +82,30 @@ export const QuickAddTransactionModal: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (uploadEvent) => {
-        setDocumentRef(uploadEvent.target?.result as string);
-        showToast('تم إرفاق صورة المستند بنجاح', 'success');
-      };
-      reader.readAsDataURL(file);
+    try {
+      const file = e.target.files?.[0];
+      if (file) {
+        if (file.size > 10 * 1024 * 1024) {
+          showToast('حجم الصورة كبير جداً، يرجى اختيار صورة أقل من 10 ميجابايت', 'error');
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (uploadEvent) => {
+          setDocumentRef(uploadEvent.target?.result as string);
+          showToast('تم إرفاق صورة المستند بنجاح', 'success');
+        };
+        reader.onerror = () => {
+          showToast('تعذر قراءة ملف الصورة، يرجى المحاولة مرة أخرى', 'error');
+        };
+        reader.readAsDataURL(file);
+      }
+    } catch (err) {
+      console.error('Image attachment error:', err);
+      showToast('حدث خطأ أثناء إرفاق الصورة', 'error');
+    } finally {
+      if (e.target) {
+        e.target.value = '';
+      }
     }
   };
 
@@ -166,23 +182,40 @@ export const QuickAddTransactionModal: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const numAmount = parseFloat(amount);
+    if (isSubmitting) return;
 
+    let targetAccountId = accountId;
+    if (!targetAccountId && accountSearch.trim()) {
+      const matched = accounts.find(
+        (a) => normalizeSearchText(a.name) === normalizeSearchText(accountSearch)
+      );
+      if (matched) {
+        targetAccountId = matched.id;
+        setAccountId(matched.id);
+      } else if (filteredAccounts.length === 1) {
+        targetAccountId = filteredAccounts[0].id;
+        setAccountId(filteredAccounts[0].id);
+        setAccountSearch(filteredAccounts[0].name);
+      }
+    }
+
+    const numAmount = parseFloat(amount);
     const validation = validateTransactionForm({
-      accountId,
+      accountId: targetAccountId,
       amount: numAmount,
       date,
     });
 
     if (!validation.isValid) {
       setErrors(validation.errors);
+      showToast('يرجى التحقق من صحة الحقول (اختر الحساب وأدخل مبلغاً صحيحاً)', 'error');
       return;
     }
 
     setIsSubmitting(true);
     try {
       await addTransaction({
-        accountId,
+        accountId: targetAccountId,
         type,
         amount: numAmount,
         date,
@@ -200,7 +233,7 @@ export const QuickAddTransactionModal: React.FC = () => {
         'success'
       );
 
-      // Requirement 4: Persistent Modal - Do NOT close! Reset amount, note, receiptNumber and keep modal open
+      // Persistent Modal - Do NOT close! Reset amount, note, receiptNumber, documentRef and keep modal open
       setAmount('');
       setNote('');
       setReceiptNumber('');
@@ -465,14 +498,6 @@ export const QuickAddTransactionModal: React.FC = () => {
                   onChange={(e) => setNote(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition min-h-[38px]"
                 />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="absolute start-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-teal-600 transition"
-                  title="التقاط أو إرفاق صورة"
-                >
-                  <Camera className="w-4 h-4" />
-                </button>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -483,21 +508,21 @@ export const QuickAddTransactionModal: React.FC = () => {
                 />
               </div>
               {documentRef && (
-                <div className="mt-1.5 flex items-center gap-2 p-1.5 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700">
+                <div className="mt-2 flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
                   <img
                     src={documentRef}
                     alt="المرفق"
-                    className="w-8 h-8 object-cover rounded-md border"
+                    className="w-10 h-10 object-cover rounded-lg border border-slate-300 dark:border-slate-600 shrink-0"
                   />
-                  <span className="text-[10px] text-slate-600 dark:text-slate-300 truncate flex-1">
-                    تم إرفاق صورة السند/المستند
+                  <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 truncate flex-1">
+                    صورة المستند مرفقة
                   </span>
                   <button
                     type="button"
                     onClick={() => setDocumentRef('')}
-                    className="text-xs text-rose-500 hover:text-rose-700 font-bold px-1.5 py-0.5"
+                    className="text-xs text-rose-500 hover:text-rose-700 font-bold px-2 py-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
                   >
-                    حذف
+                    إزالة
                   </button>
                 </div>
               )}

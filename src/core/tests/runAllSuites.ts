@@ -30,6 +30,7 @@ import { ImmutableLedgerTestSuite } from './immutableLedger.test';
 import { TrashCycleTestSuite } from './trashCycle.test';
 import { runTenantTests } from './tenant.test';
 import { CapabilityLeaseSecurityTestSuite } from './capabilityLeaseSecurity.test';
+import { runQuickAddModalTests } from './quickAddModal.test';
 import { tenantService } from '../services/TenantService';
 import { accountService } from '../services/account.service';
 
@@ -647,6 +648,25 @@ async function main() {
     }
   } catch (err: any) {
     console.error('Capability Lease Security suite crashed:', err);
+    totalFailed += 1;
+    totalCount += 1;
+  }
+
+  // --- QuickAddTransactionModal & Transaction Form Tests ---
+  console.log('\n--- [UI/Modal] QuickAddTransactionModal & Form Submission Tests ---');
+  try {
+    const qaResult = await runQuickAddModalTests();
+    console.log(`QuickAdd Modal Result: Passed ${qaResult.passedCount}/${qaResult.totalCount}`);
+    totalPassed += qaResult.passedCount;
+    totalFailed += qaResult.failedCount;
+    totalCount += qaResult.totalCount;
+    if (qaResult.failedCount > 0) {
+      for (const r of qaResult.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ [${r.id}] ${r.name}: ${r.error}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('QuickAdd Modal suite crashed:', err);
     totalFailed += 1;
     totalCount += 1;
   }
