@@ -365,44 +365,36 @@ const netBalance = filteredAccounts.reduce((sum, acc) => sum + (acc.currentBalan
           ))}
         </div>
       )}
-      {/* Floating Action Bar (Bottom) */}
+      {/* Floating Action Bar (Bottom) - Equal 3 Columns */}
 <div className="fixed bottom-[72px] left-0 right-0 z-40 px-3 max-w-4xl mx-auto pointer-events-none">
-  <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-2xl p-2 flex items-center justify-between gap-2 shadow-xl pointer-events-auto">
+  <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl pointer-events-auto overflow-hidden">
     
-    {/* + Button (لإضافة حساب جديد) */}
-    <button
-      onClick={() => openAddAccount()}
-      aria-label="إضافة حساب جديد"
-      className="w-12 h-12 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 flex items-center justify-center text-white shrink-0 shadow-sm transition active:scale-[0.95]"
-    >
-      <Plus className="w-6 h-6 stroke-[3]" />
-    </button>
-
-    {/* Metric Cards (Left of Button) */}
-    <div className="flex-1 flex flex-row gap-1.5 overflow-x-auto no-scrollbar">
-      {/* Card 1: عليه */}
-      <div className="flex-1 min-w-[75px] py-1.5 px-1 rounded-xl bg-rose-50/80 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/40 text-center flex flex-col justify-center">
-        <span className="block text-[10px] font-bold text-rose-600/90 dark:text-rose-400">عليه</span>
-        <span className="block text-[11px] font-black text-rose-700 dark:text-rose-300 tabular-nums truncate">
-          {formatCurrency(totalOwedByMe, currency)}
+    <div className="grid grid-cols-3 divide-x divide-x-reverse divide-slate-200 dark:divide-slate-800">
+      
+      {/* 1. الرصيد (اليمين) */}
+      <div className="py-2.5 px-1 bg-slate-50/50 dark:bg-slate-800/30 text-center flex flex-col justify-center">
+        <span className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">الرصيد</span>
+        <span className="block text-xs sm:text-sm font-black text-slate-700 dark:text-slate-200 tabular-nums truncate">
+          {formatCurrency(Math.abs(netBalance), currency)}
         </span>
       </div>
 
-      {/* Card 2: له */}
-      <div className="flex-1 min-w-[75px] py-1.5 px-1 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 text-center flex flex-col justify-center">
-        <span className="block text-[10px] font-bold text-emerald-600/90 dark:text-emerald-400">له</span>
-        <span className="block text-[11px] font-black text-emerald-700 dark:text-emerald-300 tabular-nums truncate">
+      {/* 2. لــه (المنتصف) */}
+      <div className="py-2.5 px-1 bg-emerald-50/50 dark:bg-emerald-950/20 text-center flex flex-col justify-center">
+        <span className="block text-[11px] font-bold text-emerald-600 dark:text-emerald-400 mb-0.5">لــه</span>
+        <span className="block text-xs sm:text-sm font-black text-emerald-700 dark:text-emerald-300 tabular-nums truncate">
           {formatCurrency(totalOwedToMe, currency)}
         </span>
       </div>
 
-      {/* Card 3: الرصيد المتبقي */}
-      <div className="flex-1 min-w-[75px] py-1.5 px-1 rounded-xl bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-center flex flex-col justify-center">
-        <span className="block text-[10px] font-bold text-slate-500 dark:text-slate-400">الرصيد</span>
-        <span className="block text-[11px] font-black text-slate-700 dark:text-slate-200 tabular-nums truncate">
-          {formatCurrency(Math.abs(netBalance), currency)}
+      {/* 3. عليه (اليسار) */}
+      <div className="py-2.5 px-1 bg-rose-50/50 dark:bg-rose-950/20 text-center flex flex-col justify-center">
+        <span className="block text-[11px] font-bold text-rose-600 dark:text-rose-400 mb-0.5">عليه</span>
+        <span className="block text-xs sm:text-sm font-black text-rose-700 dark:text-rose-300 tabular-nums truncate">
+          {formatCurrency(totalOwedByMe, currency)}
         </span>
       </div>
+
     </div>
     
   </div>
