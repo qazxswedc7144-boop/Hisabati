@@ -166,22 +166,22 @@ export const AccountDetailsPage: React.FC = () => {
   };
 
   return (
-    <div id="account-details-page" className="space-y-6 animate-in fade-in duration-200">
+    <div id="account-details-page" className="space-y-4 animate-in fade-in duration-200">
       {/* Top Breadcrumb & Action Bar */}
       <div
-        className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-none flex-nowrap"
+        className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-none flex-nowrap pb-1"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         <button
           id="btn-back-to-accounts"
           onClick={() => navigate('/accounts')}
           aria-label="العودة للحسابات"
-          className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition shrink-0"
+          className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition shrink-0"
         >
           <ArrowRight className="w-4 h-4" />
         </button>
 
-        <div className="flex items-center gap-2 flex-nowrap shrink-0">
+        <div className="flex items-center gap-1.5 flex-nowrap shrink-0">
           {/* Statement Button */}
           <button
             id="btn-account-statement"
@@ -189,9 +189,9 @@ export const AccountDetailsPage: React.FC = () => {
             onClick={() => setShowStatementModal(true)}
             aria-label="كشف الحساب"
             title="كشف الحساب"
-            className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[44px] min-h-[44px] flex items-center justify-center border border-slate-200/60 dark:border-slate-800 shrink-0"
+            className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[40px] min-h-[40px] flex items-center justify-center border border-slate-200/60 dark:border-slate-800 shrink-0"
           >
-            <PdfXlsExportIcon className="w-5 h-5" />
+            <PdfXlsExportIcon className="w-4 h-4" />
           </button>
 
           {/* Schedule Debt Collection Alert Button */}
@@ -200,7 +200,7 @@ export const AccountDetailsPage: React.FC = () => {
               id="btn-account-schedule-alert"
               onClick={() => openScheduleModal(account)}
               aria-label="جدولة تنبيه تحصيل دين لهذا الحساب"
-              className="p-2 sm:px-3 sm:py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition min-w-[40px] min-h-[40px] flex items-center justify-center text-xs font-bold gap-1.5 shrink-0"
+              className="px-2.5 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition min-h-[40px] flex items-center justify-center text-xs font-bold gap-1.5 shrink-0"
               title="جدولة تنبيه تحصيل دين لهذا الحساب"
             >
               <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400" />
@@ -212,7 +212,7 @@ export const AccountDetailsPage: React.FC = () => {
           <button
             onClick={handleToggleArchive}
             aria-label={account.archived === 1 ? 'استعادة من الأرشيف' : 'أرشفة الحساب'}
-            className={`p-2 rounded-xl border transition min-w-[40px] min-h-[40px] flex items-center justify-center text-xs font-bold gap-1.5 shrink-0 ${
+            className={`px-2.5 py-1.5 rounded-xl border transition min-h-[40px] flex items-center justify-center text-xs font-bold gap-1.5 shrink-0 ${
               account.archived === 1
                 ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 text-amber-700 dark:text-amber-400'
                 : 'border-slate-200/80 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -248,55 +248,57 @@ export const AccountDetailsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Account Hero Card */}
-      <div className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-7 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100 dark:border-slate-800">
-          <div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100">
+      {/* Account Hero Card - Compact Reorganized */}
+      <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-xs space-y-4">
+        {/* Top: Name, Status, Phone, Note */}
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100">
                 {account.name}
               </h2>
-              <BalanceBadge balance={account.currentBalance} size="lg" />
+              <BalanceBadge balance={account.currentBalance} size="md" />
               {account.archived === 1 && (
-                <span className="text-xs font-bold px-2.5 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
                   مؤرشف
                 </span>
               )}
             </div>
 
             {account.phone && (
-              <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-1" dir="ltr">
-                <Phone className="w-4 h-4 text-slate-400" />
+              <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5" dir="ltr">
+                <Phone className="w-3.5 h-3.5 text-slate-400" />
                 <span>{account.phone}</span>
               </p>
             )}
 
             {account.note && (
-              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-2 bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl inline-block max-w-md">
+              <p className="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 px-2.5 py-1.5 rounded-xl inline-block max-w-md">
                 {account.note}
               </p>
             )}
           </div>
 
+          {/* Compact Primary Action Button (height 48-52px) */}
           <button
             id="btn-add-trx-for-account"
             onClick={() => openQuickAdd(account.id)}
-            className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-bold text-sm shadow-md shadow-teal-700/20 active:scale-[0.98] transition min-h-[46px]"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-bold text-xs sm:text-sm shadow-sm shadow-teal-700/20 active:scale-[0.98] transition min-h-[48px] shrink-0"
           >
-            <Plus className="w-5 h-5 stroke-[2.5]" />
+            <Plus className="w-4 h-4 stroke-[2.5]" />
             <span>تسجيل عملية لهذا الحساب</span>
           </button>
         </div>
 
-        {/* 3 Metric Balance Highlights (Calculated from transactions) */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-5">
+        {/* 3 Metric Balance Highlights */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
           {/* Current Net Balance */}
-          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-800">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 block mb-1">
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-800">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-0.5">
               الرصيد المتبقي
             </span>
             <div
-              className={`text-xl sm:text-2xl font-black tabular-nums ${
+              className={`text-lg sm:text-xl font-black tabular-nums ${
                 account.currentBalance > 0
                   ? 'text-emerald-600 dark:text-emerald-400'
                   : account.currentBalance < 0
@@ -306,33 +308,33 @@ export const AccountDetailsPage: React.FC = () => {
             >
               {formatCurrency(Math.abs(account.currentBalance), currency)}
             </div>
-            <span className="text-[11px] font-semibold text-slate-400 mt-0.5 block">
+            <span className="text-[10px] font-semibold text-slate-400 mt-0.5 block">
               {account.currentBalance > 0 ? 'لك عنده (مستحق)' : account.currentBalance < 0 ? 'له عندك (مطلوب)' : 'الحساب مصفر'}
             </span>
           </div>
 
           {/* Total Debit (لك) */}
-          <div className="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40">
-            <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 block mb-1">
+          <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40">
+            <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 block mb-0.5">
               إجمالي لك (أعطيته)
             </span>
-            <div className="text-xl sm:text-2xl font-black text-emerald-800 dark:text-emerald-300 tabular-nums">
+            <div className="text-lg sm:text-xl font-black text-emerald-800 dark:text-emerald-300 tabular-nums">
               {formatCurrency(account.totalDebit, currency)}
             </div>
-            <span className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80 mt-0.5 block">
+            <span className="text-[10px] text-emerald-600/80 dark:text-emerald-400/80 mt-0.5 block">
               مجموع المبالغ المقيدة له
             </span>
           </div>
 
           {/* Total Credit (عليك) */}
-          <div className="p-4 rounded-2xl bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-800/40">
-            <span className="text-xs font-bold text-rose-700 dark:text-rose-400 block mb-1">
+          <div className="p-3 rounded-xl bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-800/40">
+            <span className="text-[11px] font-bold text-rose-700 dark:text-rose-400 block mb-0.5">
               إجمالي عليك (استلمت منه)
             </span>
-            <div className="text-xl sm:text-2xl font-black text-rose-800 dark:text-rose-300 tabular-nums">
+            <div className="text-lg sm:text-xl font-black text-rose-800 dark:text-rose-300 tabular-nums">
               {formatCurrency(account.totalCredit, currency)}
             </div>
-            <span className="text-[11px] text-rose-600/80 dark:text-rose-400/80 mt-0.5 block">
+            <span className="text-[10px] text-rose-600/80 dark:text-rose-400/80 mt-0.5 block">
               مجموع التسديدات والواردات
             </span>
           </div>
@@ -340,50 +342,55 @@ export const AccountDetailsPage: React.FC = () => {
       </div>
 
       {/* Transaction Statement Table / List */}
-      <div className="space-y-3 pt-2">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <FileText className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+      <div className="space-y-2 pt-1">
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <FileText className="w-4 h-4 text-teal-600 dark:text-teal-400" />
             <span>كشف الحساب والعمليات ({transactions.length})</span>
           </h3>
-          <span className="text-xs text-slate-400">مرتبة تنازلياً مع الرصيد بعد كل حركة</span>
+          <span className="text-[11px] text-slate-400">مرتبة تنازلياً مع الرصيد</span>
         </div>
 
         {transactions.length === 0 ? (
-          <EmptyState
-            title="لا توجد عمليات مسجلة لهذا الحساب"
-            description="اضغط على زر الإضافة لتسجيل أول حركة مالية لهذا الحساب."
-            actionLabel="+ تسجيل عملية الآن"
-            onAction={() => openQuickAdd(account.id)}
-          />
+          <div className="p-6 text-center rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+              لا توجد عمليات مسجلة لهذا الحساب حتى الآن.
+            </p>
+            <button
+              onClick={() => openQuickAdd(account.id)}
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-sm transition min-h-[40px]"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>تسجيل عملية الآن</span>
+            </button>
+          </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800 shadow-xs">
               {transactions.map((trx) => (
                 <div
                   key={trx.id}
-                  className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition"
+                  className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition"
                 >
-                  {/* ... contents ... */}
-                  <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                  <div className="flex items-start sm:items-center gap-3 min-w-0">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 sm:mt-0 ${
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 sm:mt-0 ${
                         trx.type === 'debit'
                           ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400'
                           : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
                       }`}
                     >
                       {trx.type === 'debit' ? (
-                        <ArrowUpRight className="w-5 h-5" />
+                        <ArrowUpRight className="w-4 h-4" />
                       ) : (
-                        <ArrowDownLeft className="w-5 h-5" />
+                        <ArrowDownLeft className="w-4 h-4" />
                       )}
                     </div>
 
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span
-                          className={`text-xs font-bold px-2 py-0.5 rounded-md ${
+                          className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
                             trx.type === 'debit'
                               ? 'bg-emerald-100/80 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                               : 'bg-rose-100/80 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
@@ -402,14 +409,14 @@ export const AccountDetailsPage: React.FC = () => {
                         {trx.note || 'عملية نقدية'}
                       </p>
 
-                      <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                      <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                         <Calendar className="w-3 h-3" />
                         <span>{formatDate(trx.date, 'full')}</span>
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between sm:justify-end gap-3.5 shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100 dark:border-slate-800/60">
+                  <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100 dark:border-slate-800/60">
                     <div className="text-start sm:text-end">
                       <div
                         className={`text-sm sm:text-base font-extrabold tabular-nums ${
@@ -477,16 +484,16 @@ export const AccountDetailsPage: React.FC = () => {
             </div>
 
             {hasMore && (
-              <div className="flex justify-center pt-2 pb-6">
+              <div className="flex justify-center pt-2 pb-4">
                 <button
                   onClick={() => loadMoreTransactions(account.id)}
                   disabled={isLoadingTrx}
-                  className="px-6 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center gap-2 disabled:opacity-50"
+                  className="px-5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center gap-2 disabled:opacity-50"
                 >
                   {isLoadingTrx ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                   ) : (
-                    <Clock className="w-4 h-4" />
+                    <Clock className="w-3.5 h-3.5" />
                   )}
                   <span>تحميل المزيد من العمليات</span>
                 </button>
