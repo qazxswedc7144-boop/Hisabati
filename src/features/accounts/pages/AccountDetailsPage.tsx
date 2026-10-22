@@ -166,7 +166,7 @@ export const AccountDetailsPage: React.FC = () => {
   };
 
   return (
-    <div id="account-details-page" className="space-y-4 animate-in fade-in duration-200">
+    <div id="account-details-page" className="space-y-4 animate-in fade-in duration-200 pb-32">
       {/* Top Breadcrumb & Action Bar */}
       <div
         className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-none flex-nowrap pb-1"
@@ -248,98 +248,33 @@ export const AccountDetailsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Account Hero Card - Compact Reorganized */}
-      <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-xs space-y-4">
-        {/* Top: Name, Status, Phone, Note */}
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100">
-                {account.name}
-              </h2>
-              <BalanceBadge balance={account.currentBalance} size="md" />
-              {account.archived === 1 && (
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                  مؤرشف
-                </span>
-              )}
-            </div>
+      {/* Account Hero Card - Simplified */}
+<div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-xs space-y-3">
+  <div className="flex items-center gap-2.5 flex-wrap">
+    <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100">
+      {account.name}
+    </h2>
+    <BalanceBadge balance={account.currentBalance} size="md" />
+    {account.archived === 1 && (
+      <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+        مؤرشف
+      </span>
+    )}
+  </div>
 
-            {account.phone && (
-              <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5" dir="ltr">
-                <Phone className="w-3.5 h-3.5 text-slate-400" />
-                <span>{account.phone}</span>
-              </p>
-            )}
+  {account.phone && (
+    <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5" dir="ltr">
+      <Phone className="w-3.5 h-3.5 text-slate-400" />
+      <span>{account.phone}</span>
+    </p>
+  )}
 
-            {account.note && (
-              <p className="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 px-2.5 py-1.5 rounded-xl inline-block max-w-md">
-                {account.note}
-              </p>
-            )}
-          </div>
-
-          {/* Compact Primary Action Button (height 48-52px) */}
-          <button
-            id="btn-add-trx-for-account"
-            onClick={() => openQuickAdd(account.id)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-bold text-xs sm:text-sm shadow-sm shadow-teal-700/20 active:scale-[0.98] transition min-h-[48px] shrink-0"
-          >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span>تسجيل عملية لهذا الحساب</span>
-          </button>
-        </div>
-
-        {/* 3 Metric Balance Highlights */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-          {/* Current Net Balance */}
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-800">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-0.5">
-              الرصيد المتبقي
-            </span>
-            <div
-              className={`text-lg sm:text-xl font-black tabular-nums ${
-                account.currentBalance > 0
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : account.currentBalance < 0
-                  ? 'text-rose-600 dark:text-rose-400'
-                  : 'text-slate-700 dark:text-slate-300'
-              }`}
-            >
-              {formatCurrency(Math.abs(account.currentBalance), currency)}
-            </div>
-            <span className="text-[10px] font-semibold text-slate-400 mt-0.5 block">
-              {account.currentBalance > 0 ? 'لك عنده (مستحق)' : account.currentBalance < 0 ? 'له عندك (مطلوب)' : 'الحساب مصفر'}
-            </span>
-          </div>
-
-          {/* Total Debit (لك) */}
-          <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40">
-            <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 block mb-0.5">
-              إجمالي لك (أعطيته)
-            </span>
-            <div className="text-lg sm:text-xl font-black text-emerald-800 dark:text-emerald-300 tabular-nums">
-              {formatCurrency(account.totalDebit, currency)}
-            </div>
-            <span className="text-[10px] text-emerald-600/80 dark:text-emerald-400/80 mt-0.5 block">
-              مجموع المبالغ المقيدة له
-            </span>
-          </div>
-
-          {/* Total Credit (عليك) */}
-          <div className="p-3 rounded-xl bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-800/40">
-            <span className="text-[11px] font-bold text-rose-700 dark:text-rose-400 block mb-0.5">
-              إجمالي عليك (استلمت منه)
-            </span>
-            <div className="text-lg sm:text-xl font-black text-rose-800 dark:text-rose-300 tabular-nums">
-              {formatCurrency(account.totalCredit, currency)}
-            </div>
-            <span className="text-[10px] text-rose-600/80 dark:text-rose-400/80 mt-0.5 block">
-              مجموع التسديدات والواردات
-            </span>
-          </div>
-        </div>
-      </div>
+  {account.note && (
+    <p className="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 px-2.5 py-1.5 rounded-xl inline-block max-w-md">
+      {account.note}
+    </p>
+  )}
+</div>
 
       {/* Transaction Statement Table / List */}
       <div className="space-y-2 pt-1">
@@ -503,6 +438,49 @@ export const AccountDetailsPage: React.FC = () => {
         )}
       </div>
 
+      {/* Floating Action Bar (Bottom) */}
+<div className="fixed bottom-[72px] left-0 right-0 z-40 px-3 max-w-4xl mx-auto pointer-events-none">
+  <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-2xl p-2 flex items-center justify-between gap-2 shadow-xl pointer-events-auto">
+    
+    {/* + Button (Rightmost in RTL) */}
+    <button
+      onClick={() => openQuickAdd(account.id)}
+      aria-label="تسجيل عملية"
+      className="w-12 h-12 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 flex items-center justify-center text-white shrink-0 shadow-sm transition active:scale-[0.95]"
+    >
+      <Plus className="w-6 h-6 stroke-[3]" />
+    </button>
+
+    {/* Metric Cards (Left of Button) */}
+    <div className="flex-1 flex flex-row gap-1.5 overflow-x-auto no-scrollbar">
+      {/* Card 1: عليه */}
+      <div className="flex-1 min-w-[75px] py-1.5 px-1 rounded-xl bg-rose-50/80 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/40 text-center flex flex-col justify-center">
+        <span className="block text-[10px] font-bold text-rose-600/90 dark:text-rose-400">عليه</span>
+        <span className="block text-[11px] font-black text-rose-700 dark:text-rose-300 tabular-nums truncate">
+          {formatCurrency(account.totalCredit, currency)}
+        </span>
+      </div>
+
+      {/* Card 2: له */}
+      <div className="flex-1 min-w-[75px] py-1.5 px-1 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 text-center flex flex-col justify-center">
+        <span className="block text-[10px] font-bold text-emerald-600/90 dark:text-emerald-400">له</span>
+        <span className="block text-[11px] font-black text-emerald-700 dark:text-emerald-300 tabular-nums truncate">
+          {formatCurrency(account.totalDebit, currency)}
+        </span>
+      </div>
+
+      {/* Card 3: الرصيد المتبقي */}
+      <div className="flex-1 min-w-[75px] py-1.5 px-1 rounded-xl bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-center flex flex-col justify-center">
+        <span className="block text-[10px] font-bold text-slate-500 dark:text-slate-400">الرصيد</span>
+        <span className="block text-[11px] font-black text-slate-700 dark:text-slate-200 tabular-nums truncate">
+          {formatCurrency(Math.abs(account.currentBalance), currency)}
+        </span>
+      </div>
+    </div>
+    
+  </div>
+</div>
+      
       {/* Account Statement Modal */}
       <AccountStatementModal
         isOpen={showStatementModal}
