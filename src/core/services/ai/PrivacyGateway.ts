@@ -1,10 +1,54 @@
 /**
- * P1-1 Privacy Gateway
- * Ensures that minimal data is sent to Gemini, real account IDs and PII are stripped,
- * sensitive account names are tokenized ([ACCOUNT_1], [ACCOUNT_2]),
- * prompt injection attempts are neutralized, and financial numbers are preserved only when necessary.
+ * P1-1 & P1-B Privacy Gateway
+ * Robust Allowlist/Schema-based recursive sanitization for context and prompt,
+ * stripping PII, accountIds, tenantIds, organizationIds, userIds, emails, phones, tokens, keys, and credentials,
+ * and neutralizing prompt injection.
  */
 export class PrivacyGateway {
+  private static readonly FORBIDDEN_KEYS = new Set([
+    'accountid',
+    'tenantid',
+    'organizationid',
+    'userid',
+    'id',
+    'email',
+    'phone',
+    'token',
+    'key',
+    'credentials',
+    'password',
+    'secret',
+    'auth',
+    'session',
+    'access_token',
+    'refreshtoken',
+  ]);
+
+  private static readonly ALLOWED_FINANCIAL_KEYS = new Set([
+    'amount',
+    'amountminor',
+    'currency',
+    'type',
+    'date',
+    'totaldebit',
+    'totalcredit',
+    'currentbalance',
+    'transactioncount',
+    'balance',
+    'total',
+    'subtotal',
+    'tax',
+    'net',
+    'summary',
+    'metrics',
+    'totals',
+    'count',
+    'category',
+    'mode',
+    'intent',
+    'timestamp',
+  ]);
+
   /**
    * Sanitizes and protects user prompt against prompt injection and leaks.
    */
@@ -18,12 +62,13 @@ export class PrivacyGateway {
       .replace(/<\/?(SYSTEM_INSTRUCTION|MINIMAL_CONTEXT|USER_INPUT)>/gi, match => `[ESCAPED_${match.replace(/[\<\>\/]/g, '')}]`)
       .replace(/<\/?script>/gi, '[BLOCKED_TAG]');
 
-    // 2. Neutralize prompt injection override phrases (e.g., "تجاهل قواعد الخصوصية", "ignore instructions")
+    // 2. Neutralize prompt injection override phrases (Arabic & English)
     const injectionPatterns = [
       /تجاهل\s+(قواعد|التعليمات|الأوامر|الخصوصية)/gi,
       /ignore\s+(previous|all)\s+instructions/gi,
       /system\s+override/gi,
       /أرسل\s+جميع\s+(أسماء|الحسابات|الأرصدة)/gi,
+      /reveal\s+(all|database|credentials)/gi,
     ];
 
     for (const pattern of injectionPatterns) {
@@ -39,42 +84,74 @@ export class PrivacyGateway {
   }
 
   /**
-   * Tokenizes account names or sensitive names in prompt or context.
-   * Replaces known account names with [ACCOUNT_1], [ACCOUNT_2], etc.
+   * Recursively sanitizes objects and arrays using Allowlist/Schema discipline.
+   * Strips all forbidden PII keys at any nesting level and retains only safe allowed keys/financial values.
+   */
+  private sanitizeValue(val: unknown, accountIndexRef: { counter: number }): unknown {
+    if (val === null || val === undefined) {
+      return val;
+    }
+
+    if (Array.isArray(val)) {
+      return val.map((item) => this.sanitizeValue(item, accountIndexRef));
+    }
+
+    if (typeof val === 'object') {
+      const sanitizedObj: Record<string, unknown> = {};
+      const record = val as Record<string, unknown>;
+
+      for (const [rawKey, rawVal] of Object.entries(record)) {
+        const lowerKey = rawKey.toLowerCase();
+
+        // 1. Drop forbidden PII or secret keys immediately
+        if (PrivacyGateway.FORBIDDEN_KEYS.has(lowerKey)) {
+          continue;
+        }
+
+        // 2. Handle account names / titles with tokenization
+        if (lowerKey === 'accountname' || lowerKey === 'name') {
+          sanitizedObj[rawKey] = `[ACCOUNT_${accountIndexRef.counter++}]`;
+          continue;
+        }
+
+        // 3. Allow allowed financial/structural keys or safe nested objects/arrays
+        if (
+          PrivacyGateway.ALLOWED_FINANCIAL_KEYS.has(lowerKey) ||
+          typeof rawVal === 'object' ||
+          Array.isArray(rawVal)
+        ) {
+          sanitizedObj[rawKey] = this.sanitizeValue(rawVal, accountIndexRef);
+        }
+      }
+
+      return sanitizedObj;
+    }
+
+    if (typeof val === 'string') {
+      // Remove inline email/phone/token patterns if present inside strings
+      return val
+        .replace(/[\w.-]+@[\w.-]+\.\w+/g, '[FILTERED_EMAIL]')
+        .replace(/(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g, '[FILTERED_PHONE]');
+    }
+
+    return val;
+  }
+
+  /**
+   * Tokenizes and recursively sanitizes prompt and multi-level nested context.
    */
   public tokenizePromptAndContext(
     prompt: string,
     context?: Record<string, unknown>
   ): { sanitizedPrompt: string; sanitizedContext: Record<string, unknown> } {
     const sanitizedPrompt = this.sanitizePrompt(prompt);
+    const accountIndexRef = { counter: 1 };
 
-    const sanitizedContext: Record<string, unknown> = {};
+    let sanitizedContext: Record<string, unknown> = {};
     if (context && typeof context === 'object') {
-      for (const [key, value] of Object.entries(context)) {
-        // Drop any accountId, tenantId, organizationId, userId, token, key, PII
-        if (['accountId', 'id', 'tenantId', 'organizationId', 'userId', 'token', 'key', 'email', 'phone'].includes(key)) {
-          continue;
-        }
-        if (typeof value === 'string') {
-          sanitizedContext[key] = value.replace(/(account_id|tenant_id|org_id|id|token|key|email)[\s:=]+[\w@.-]+/gi, '[FILTERED]');
-        } else if (Array.isArray(value)) {
-          sanitizedContext[key] = value.map((item, index) => {
-            if (item && typeof item === 'object') {
-              const copy = { ...(item as Record<string, unknown>) };
-              if ('name' in copy) {
-                copy.name = `[ACCOUNT_${index + 1}]`;
-              }
-              delete copy.id;
-              delete copy.accountId;
-              delete copy.tenantId;
-              delete copy.organizationId;
-              return copy;
-            }
-            return item;
-          });
-        } else {
-          sanitizedContext[key] = value;
-        }
+      const sanitized = this.sanitizeValue(context, accountIndexRef);
+      if (sanitized && typeof sanitized === 'object' && !Array.isArray(sanitized)) {
+        sanitizedContext = sanitized as Record<string, unknown>;
       }
     }
 
@@ -86,21 +163,12 @@ export class PrivacyGateway {
    */
   public sanitizeContext(context?: Record<string, unknown>): Record<string, unknown> {
     if (!context || typeof context !== 'object') return {};
-    const [, sanitizedContext] = Object.entries(context).reduce(
-      ([idx, acc], [k, v]) => {
-        if (['accountId', 'id', 'tenantId', 'organizationId', 'userId', 'token', 'key', 'email', 'phone'].includes(k)) {
-          return [idx, acc];
-        }
-        if (k === 'accountName' && typeof v === 'string') {
-          acc[k] = `[ACCOUNT_${idx}]`;
-          return [idx + 1, acc];
-        }
-        acc[k] = v;
-        return [idx, acc];
-      },
-      [1, {} as Record<string, unknown>]
-    );
-    return sanitizedContext;
+    const accountIndexRef = { counter: 1 };
+    const sanitized = this.sanitizeValue(context, accountIndexRef);
+    if (sanitized && typeof sanitized === 'object' && !Array.isArray(sanitized)) {
+      return sanitized as Record<string, unknown>;
+    }
+    return {};
   }
 }
 

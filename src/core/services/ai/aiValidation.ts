@@ -47,3 +47,29 @@ export function validateAIResponse(input: unknown): ValidatedAIResponse {
     provider: 'gemini-server-fallback',
   };
 }
+
+export const StructuredAICommandSchema = z.object({
+  id: z.string().min(1, { message: 'معرف الأمر مفقود' }),
+  intent: z.enum(['CREATE_TRANSACTION_REQUEST', 'EDIT_TRANSACTION_REQUEST', 'DELETE_TRANSACTION_REQUEST'], { message: 'intent غير صالح للأمر المالي' }),
+  accountId: z.string().min(1, { message: 'accountId مفقود أو غير صالح' }),
+  accountName: z.string().optional(),
+  targetAccount: z.unknown().optional(),
+  amount: z.number().min(0, { message: 'amount يجب ألا يكون سالباً' }),
+  amountMinor: z.number().int({ message: 'amountMinor يجب أن يكون عدداً صحيحاً' }).nonnegative({ message: 'amountMinor يجب ألا يكون سالباً' }),
+  currency: z.enum(['YER', 'SAR', 'USD', 'AED'], { message: 'عملة غير مدعومة أو غير صالحة' }),
+  type: z.enum(['debit', 'credit'], { message: 'نوع المعركة غير صالح' }),
+  date: z.string().min(1, { message: 'التاريخ مفقود' }),
+  note: z.string().optional(),
+  confidence: z.number().min(0).max(1),
+  status: z.enum(['PENDING_VALIDATION', 'READY_FOR_CONFIRMATION', 'CONFIRMED', 'EXECUTED', 'REJECTED', 'CANCELLED']),
+  validationErrors: z.array(z.string()).optional(),
+  disambiguationOptions: z.array(z.unknown()).optional(),
+  operationId: z.string().min(1, { message: 'operationId مفقود أو غير صالح' }),
+  executedTransactionId: z.string().optional(),
+});
+
+export type ValidatedStructuredAICommand = z.infer<typeof StructuredAICommandSchema>;
+
+export function validateStructuredAICommand(input: unknown) {
+  return StructuredAICommandSchema.safeParse(input);
+}

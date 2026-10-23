@@ -11,6 +11,7 @@ import { aiTools } from './AITools';
 import { aiAuditRepository } from '@/core/repositories/aiAudit.repository';
 import { aiPrivacyService } from './AIPrivacyService';
 import { aiValidationService } from './AIValidationService';
+import { validateStructuredAICommand } from './aiValidation';
 import { Transaction } from '@/shared/types';
 
 export class AIService {
@@ -141,6 +142,16 @@ export class AIService {
       targetId: commandId,
       details: `تنفيذ أمر ذكي: ${command.intent}`,
     });
+
+    // Strict Zod Runtime Schema validation
+    const schemaResult = validateStructuredAICommand(command);
+    if (!schemaResult.success || command.status === 'REJECTED' || command.status === 'CANCELLED') {
+      throw new Error('لا يمكن تنفيذ أمر مالي غير صالح أو غير معتمد (Invalid or unvalidated command schema)');
+    }
+
+    if (!command.accountId || !command.operationId || typeof command.amountMinor !== 'number' || command.amountMinor < 0) {
+      throw new Error('بيانات الأمر المالي ناقصة أو غير صالحة');
+    }
 
     // Strict re-validation before execution
     const valResult = await aiValidationService.validate(command);

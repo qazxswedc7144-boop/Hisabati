@@ -1,3 +1,5 @@
+import { privacyGateway } from './PrivacyGateway';
+
 /**
  * AIPrivacyService
  * Ensures privacy compliance, sensitive data masking, and minimal context delivery.
@@ -25,6 +27,23 @@ export class AIPrivacyService {
   }
 
   /**
+   * Sanitizes and protects user prompt against prompt injection and leaks.
+   */
+  public sanitizePrompt(prompt: string): string {
+    return privacyGateway.sanitizePrompt(prompt);
+  }
+
+  /**
+   * Tokenizes and recursively sanitizes prompt and multi-level nested context.
+   */
+  public tokenizePromptAndContext(
+    prompt: string,
+    context?: Record<string, unknown>
+  ): { sanitizedPrompt: string; sanitizedContext: Record<string, unknown> } {
+    return privacyGateway.tokenizePromptAndContext(prompt, context);
+  }
+
+  /**
    * Returns minimal necessary context for AI queries without leaking full database
    */
   public buildMinimalContextSummary(params: {
@@ -49,3 +68,4 @@ export class AIPrivacyService {
 }
 
 export const aiPrivacyService = new AIPrivacyService();
+

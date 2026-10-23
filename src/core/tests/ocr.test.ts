@@ -3,6 +3,7 @@ import { ImagePreprocessor } from '@/core/services/ocr/ImagePreprocessor';
 import { localHeuristicOCRProvider } from '@/core/services/ocr/providers/LocalHeuristicOCRProvider';
 import { ocrService } from '@/core/services/ocr/OCRService';
 import { db } from '@/core/database/db';
+import { GeminiOcrResponseSchema } from '@/core/services/ai/ocrValidation';
 
 export interface OCRTestResultItem {
   id: string;
@@ -337,6 +338,98 @@ export class OCRTestSuite {
           }
           if (res.totalAmount.value !== 3450) {
             throw new Error(`Expected total 3450, got ${res.totalAmount.value}`);
+          }
+        },
+      },
+      {
+        id: 'OCR-19',
+        title: 'Zod Validation: Missing Required Fields',
+        description: 'رفض استجابة OCR عند نقص الحقول الأساسية مثل totalAmount أو documentType',
+        fn: async () => {
+          const invalidPayload = {
+            vendorName: { value: 'متجر', confidence: 0.9 },
+          };
+          const result = GeminiOcrResponseSchema.safeParse(invalidPayload);
+          if (result.success) {
+            throw new Error('Expected Zod validation to fail on missing fields');
+          }
+        },
+      },
+      {
+        id: 'OCR-20',
+        title: 'Zod Validation: Wrong Field Types',
+        description: 'رفض استجابة OCR عند اختلاف أنواع البيانات مثل وضع نص بدل رقم في totalAmount',
+        fn: async () => {
+          const invalidPayload = {
+            documentType: { value: 'invoice', confidence: 0.9 },
+            vendorName: { value: 'متجر', confidence: 0.9 },
+            customerName: { value: null, confidence: 0.9 },
+            invoiceNumber: { value: '123', confidence: 0.9 },
+            date: { value: '2026-01-01', confidence: 0.9 },
+            currency: { value: 'YER', confidence: 0.9 },
+            subtotal: { value: 100, confidence: 0.9 },
+            tax: { value: 10, confidence: 0.9 },
+            totalAmount: 'not-a-number',
+            lineItems: [],
+            rawText: 'sample text',
+            overallConfidence: 0.9,
+            warnings: [],
+          };
+          const result = GeminiOcrResponseSchema.safeParse(invalidPayload);
+          if (result.success) {
+            throw new Error('Expected Zod validation to fail on wrong type for totalAmount');
+          }
+        },
+      },
+      {
+        id: 'OCR-21',
+        title: 'Zod Validation: Confidence Out of Range (> 1.0 or < 0)',
+        description: 'رفض استجابة OCR إذا كانت نسبة الثقة (confidence) خارج النطاق [0, 1]',
+        fn: async () => {
+          const invalidPayload = {
+            documentType: { value: 'invoice', confidence: 1.5 },
+            vendorName: { value: 'متجر', confidence: 0.9 },
+            customerName: { value: null, confidence: 0.9 },
+            invoiceNumber: { value: '123', confidence: 0.9 },
+            date: { value: '2026-01-01', confidence: 0.9 },
+            currency: { value: 'YER', confidence: 0.9 },
+            subtotal: { value: 100, confidence: 0.9 },
+            tax: { value: 10, confidence: 0.9 },
+            totalAmount: 110,
+            lineItems: [],
+            rawText: 'sample text',
+            overallConfidence: 0.9,
+            warnings: [],
+          };
+          const result = GeminiOcrResponseSchema.safeParse(invalidPayload);
+          if (result.success) {
+            throw new Error('Expected Zod validation to fail on out of range confidence');
+          }
+        },
+      },
+      {
+        id: 'OCR-22',
+        title: 'Zod Validation: Malformed / Invalid Currency Value',
+        description: 'رفض استجابة OCR عند استخدام عملة غير مدعومة خارج القائمة المسموحة',
+        fn: async () => {
+          const invalidPayload = {
+            documentType: { value: 'invoice', confidence: 0.9 },
+            vendorName: { value: 'متجر', confidence: 0.9 },
+            customerName: { value: null, confidence: 0.9 },
+            invoiceNumber: { value: '123', confidence: 0.9 },
+            date: { value: '2026-01-01', confidence: 0.9 },
+            currency: { value: 'EUR', confidence: 0.9 },
+            subtotal: { value: 100, confidence: 0.9 },
+            tax: { value: 10, confidence: 0.9 },
+            totalAmount: 110,
+            lineItems: [],
+            rawText: 'sample text',
+            overallConfidence: 0.9,
+            warnings: [],
+          };
+          const result = GeminiOcrResponseSchema.safeParse(invalidPayload);
+          if (result.success) {
+            throw new Error('Expected Zod validation to fail on unsupported currency');
           }
         },
       },

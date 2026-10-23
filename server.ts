@@ -6,6 +6,7 @@ import { ServerMembershipVerifier } from './src/core/services/tenant/ServerMembe
 import { ServerLeaseIssuer } from './src/core/services/tenant/ServerLeaseIssuer';
 import { FirebaseTokenVerifier, FirebaseTokenVerificationError } from './src/core/services/firebase/FirebaseTokenVerifier';
 import { AIResponseSchema } from './src/core/services/ai/aiValidation';
+import { GeminiOcrResponseSchema } from './src/core/services/ai/ocrValidation';
 import { initFirebaseAdmin } from './src/core/services/firebase/adminServer';
 
 // Initialize Firebase Admin SDK on server start
@@ -408,8 +409,16 @@ const requireFirebaseAuth = async (
         throw new Error('لم يقم النموذج بإرجاع كائن JSON صالح.');
       }
 
-      const parsedData = JSON.parse(jsonMatch[0]);
-      return res.json({ result: parsedData, provider: 'gemini-vision' });
+      const rawParsed = JSON.parse(jsonMatch[0]);
+      const parseResult = GeminiOcrResponseSchema.safeParse(rawParsed);
+      if (!parseResult.success) {
+        return res.status(422).json({
+          error: 'استجابة نموذج التعرف الضوئي غير صالحة أو لا تتطابق مع المعايير المطلوبة.',
+          code: 'OCR_INVALID_RESPONSE_STRUCTURE',
+        });
+      }
+
+      return res.json({ result: parseResult.data, provider: 'gemini-vision' });
     } catch (err: any) {
       return handleApiError(res, err, 'حدث خطأ أثناء فحص المستند بالذكاء الاصطناعي.');
     }

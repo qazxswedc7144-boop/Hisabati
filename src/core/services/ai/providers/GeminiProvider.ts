@@ -79,10 +79,10 @@ export class GeminiProvider implements AIProvider {
         const validated = validateAIResponse(json);
         return {
           text: validated.text,
-          intent: validated.intent as any,
+          intent: validated.intent,
           confidence: validated.confidence,
-          mode: validated.mode as any,
-          entities: validated.entities as any,
+          mode: validated.mode,
+          entities: validated.entities,
           provider: this.id,
           model: validated.model || 'gemini-2.5-flash',
         };

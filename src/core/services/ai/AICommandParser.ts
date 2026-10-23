@@ -1,16 +1,15 @@
 import { StructuredAICommand, Currency } from '@/shared/types/ai.types';
 import { ParsedIntentResult } from './AIIntentService';
 import { accountResolver } from './AccountResolver';
-import { Account, CurrencyCode } from '@/shared/types';
+import { Account, CurrencyCode, TransactionType } from '@/shared/types';
 import { toDualRepresentation } from '@/core/money/compat';
 import { settingsRepository } from '@/core/repositories/settings.repository';
+import { validateStructuredAICommand } from './aiValidation';
 
 export class AICommandParser {
   /**
    * Constructs a strongly-typed StructuredAICommand from parsed intent and entities.
-   * Eliminates the danger of assuming 'YER' as a fallback baseline.
-   * Currency is strictly resolved from: candidate -> target account -> system settings.
-   * If unresolved, the command is rejected without arbitrary guessing.
+   * Validates against StructuredAICommandSchema to ensure runtime integrity.
    */
   public async parseCommand(
     parsed: ParsedIntentResult,
@@ -21,8 +20,8 @@ export class AICommandParser {
     const date = parsed.entities.dateCandidate || new Date().toISOString().split('T')[0];
     const currencyCandidate = parsed.entities.currencyCandidate;
     const rawAmount = parsed.entities.amount || 0;
-    const type = parsed.entities.transactionTypeCandidate || 'debit';
-    const supportedCurrencies: CurrencyCode[] = ['YER', 'SAR', 'USD'];
+    const type: TransactionType = parsed.entities.transactionTypeCandidate === 'credit' ? 'credit' : 'debit';
+    const supportedCurrencies: CurrencyCode[] = ['YER', 'SAR', 'USD', 'AED'];
     const validationErrors: string[] = [];
 
     // 1. Resolve target account first so account currency can be determined
@@ -78,24 +77,37 @@ export class AICommandParser {
       validationErrors.push('تعذر حسم عملة العملية المالية من الحساب أو إعدادات النظام. يرجى تحديد العملة.');
     }
 
+    const validIntent: StructuredAICommand['intent'] = 
+      ['CREATE_TRANSACTION_REQUEST', 'EDIT_TRANSACTION_REQUEST', 'DELETE_TRANSACTION_REQUEST'].includes(parsed.intent)
+        ? (parsed.intent as StructuredAICommand['intent'])
+        : 'CREATE_TRANSACTION_REQUEST';
+
     const command: StructuredAICommand = {
       id,
-      intent: (parsed.intent as StructuredAICommand['intent']) || 'CREATE_TRANSACTION_REQUEST',
+      intent: validIntent,
       amount: safeDecimal,
       amountMinor: safeMinor,
-      currency: resolvedCurrency as Currency,
-      type: type as any,
+      currency: (resolvedCurrency || 'YER') as Currency,
+      type,
       date,
       note: parsed.entities.noteCandidate || 'عملية مسجلة عبر المساعد الذكي',
       confidence: parsed.confidence,
       status: validationErrors.length === 0 ? 'PENDING_VALIDATION' : 'REJECTED',
       operationId,
-      accountId: matchedAccount?.id,
+      accountId: matchedAccount?.id || '',
       accountName: parsed.entities.accountNameCandidate,
       targetAccount: matchedAccount,
       disambiguationOptions,
       validationErrors: validationErrors.length > 0 ? validationErrors : undefined,
     };
+
+    // 4. Strict Zod Schema validation
+    const validationResult = validateStructuredAICommand(command);
+    if (!validationResult.success) {
+      command.status = 'REJECTED';
+      const zodErrors = validationResult.error.issues ? validationResult.error.issues.map(e => e.message) : ['خطأ في التحقق'];
+      command.validationErrors = [...(command.validationErrors || []), ...zodErrors];
+    }
 
     return command;
   }
