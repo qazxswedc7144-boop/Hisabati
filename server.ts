@@ -8,6 +8,7 @@ import { FirebaseTokenVerifier, FirebaseTokenVerificationError } from './src/cor
 import { AIResponseSchema, validateInvoiceAuditResponse } from './src/core/services/ai/aiValidation';
 import { GeminiOcrResponseSchema } from './src/core/services/ai/ocrValidation';
 import { initFirebaseAdmin } from './src/core/services/firebase/adminServer';
+import { privacyGateway } from './src/core/services/ai/PrivacyGateway';
 
 // Initialize Firebase Admin SDK on server start
 initFirebaseAdmin();
@@ -507,7 +508,8 @@ const requireFirebaseAuth = async (
 </SYSTEM_INSTRUCTION>
       `.trim();
 
-      const safeContextStr = JSON.stringify(context || {}).slice(0, 15000);
+      const { sanitizedPrompt, sanitizedContext } = privacyGateway.tokenizePromptAndContext(prompt, context);
+      const safeContextStr = JSON.stringify(sanitizedContext || {}).slice(0, 15000);
 
       const combinedPrompt = `
 ${systemInstruction}
@@ -517,7 +519,7 @@ ${safeContextStr}
 </MINIMAL_CONTEXT>
 
 <USER_INPUT>
-${prompt.trim()}
+${sanitizedPrompt}
 </USER_INPUT>
       `.trim();
 
