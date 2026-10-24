@@ -1,5 +1,5 @@
 import { CapabilityLease, LeaseValidationResult, OrganizationRole } from '@/shared/types/tenant.types';
-import { ServerLeaseIssuer } from './ServerLeaseIssuer';
+import { LeaseCryptoShared } from './LeaseCryptoShared';
 
 /**
  * CapabilityLeaseService:
@@ -41,7 +41,26 @@ export class CapabilityLeaseService {
       return this.publicKeyCache;
     }
 
-    const jwk = await ServerLeaseIssuer.getPublicKeyJwk();
+    let jwk = LeaseCryptoShared.getPublicKeyJwk();
+    const isVitest = typeof process !== 'undefined' && process.env.VITEST === 'true';
+
+    if (!jwk && typeof window !== 'undefined' && typeof fetch === 'function' && !isVitest) {
+      try {
+        const res = await fetch('/api/tenant/public-key');
+        const data = await res.json();
+        if (data.success && data.publicKeyJwk) {
+          jwk = data.publicKeyJwk;
+          LeaseCryptoShared.setPublicKeyJwk(jwk!);
+        }
+      } catch (err) {
+        console.warn('CapabilityLeaseService: Failed to fetch public key from server:', err);
+      }
+    }
+
+    if (!jwk) {
+      throw new Error('VERIFICATION_KEY_MISSING: Public key JWK not initialized.');
+    }
+
     const cryptoLib = typeof globalThis.crypto !== 'undefined' ? globalThis.crypto : (await import('crypto')).webcrypto;
     
     this.publicKeyCache = await cryptoLib.subtle.importKey(
@@ -83,7 +102,7 @@ export class CapabilityLeaseService {
       }
 
       const pubKey = await this.getVerificationKey();
-      const canonical = ServerLeaseIssuer.buildCanonicalPayload(lease);
+      const canonical = LeaseCryptoShared.buildCanonicalPayload(lease);
       const encoder = new TextEncoder();
       const dataBuffer = encoder.encode(canonical);
 

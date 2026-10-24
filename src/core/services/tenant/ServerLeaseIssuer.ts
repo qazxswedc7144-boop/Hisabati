@@ -1,5 +1,5 @@
 import { OrganizationRole, CapabilityLease } from '@/shared/types/tenant.types';
-import { ServerMembershipVerifier } from './ServerMembershipVerifier';
+import { LeaseCryptoShared } from './LeaseCryptoShared';
 
 /**
  * ServerLeaseIssuer: Server-side authoritative asymmetric signing for Capability Leases.
@@ -12,7 +12,6 @@ import { ServerMembershipVerifier } from './ServerMembershipVerifier';
 export class ServerLeaseIssuer {
   private static privateKey: CryptoKey | null = null;
   private static publicKey: CryptoKey | null = null;
-  private static publicKeyJwk: JsonWebKey | null = null;
   private static isInitialized = false;
 
   /**
@@ -37,7 +36,10 @@ export class ServerLeaseIssuer {
 
       this.privateKey = keyPair.privateKey;
       this.publicKey = keyPair.publicKey;
-      this.publicKeyJwk = await cryptoLib.subtle.exportKey('jwk', keyPair.publicKey);
+      
+      const jwk = await cryptoLib.subtle.exportKey('jwk', keyPair.publicKey);
+      LeaseCryptoShared.setPublicKeyJwk(jwk);
+
       this.isInitialized = true;
     } catch (err) {
       console.error('ServerLeaseIssuer: Failed to generate cryptographic keypair:', err);
@@ -49,26 +51,14 @@ export class ServerLeaseIssuer {
     if (!this.isInitialized) {
       await this.initialize();
     }
-    return this.publicKeyJwk!;
+    return LeaseCryptoShared.getPublicKeyJwk()!;
   }
 
   /**
    * Generates canonical payload string for signing/verification.
    */
   public static buildCanonicalPayload(lease: Omit<CapabilityLease, 'integrityHash'>): string {
-    const sortedPerms = [...(lease.verifiedPermissions || [])].sort().join(',');
-    return [
-      lease.leaseId,
-      lease.organizationId,
-      lease.verifiedUid,
-      lease.verifiedRole,
-      sortedPerms,
-      lease.issuedAt.toString(),
-      lease.expiresAt.toString(),
-      lease.verificationRevision.toString(),
-      lease.issuer || 'hisabati-auth-server',
-      lease.audience || lease.organizationId,
-    ].join('|');
+    return LeaseCryptoShared.buildCanonicalPayload(lease);
   }
 
   /**

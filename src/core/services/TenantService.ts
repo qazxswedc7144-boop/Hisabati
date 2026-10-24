@@ -6,7 +6,7 @@ import type {
   VerifyMembershipResponse,
 } from './tenant/ServerMembershipVerifier';
 import { capabilityLeaseService } from './tenant/CapabilityLeaseService';
-import { ServerLeaseIssuer } from './tenant/ServerLeaseIssuer';
+
 
 /**
  * TenantService: Orchestrates organization switching and tenant context management.
@@ -208,15 +208,44 @@ export class TenantService {
         throw new Error(errorMsg);
       }
 
-      // 4. Issue a tamper-resistant Capability Lease based strictly on verified server data via ServerLeaseIssuer
-      await ServerLeaseIssuer.initialize();
-      const lease = await ServerLeaseIssuer.issueLease({
-        organizationId: result.organization.id,
-        verifiedUid: result.verifiedUid!,
-        verifiedRole: result.membership.role,
-        verifiedPermissions: result.membership.permissions || [],
-        verificationRevision: result.verificationRevision ?? 1,
-      });
+      // 4. Issue a tamper-resistant Capability Lease via server endpoint POST /api/tenant/issue-lease
+      let lease: CapabilityLease;
+
+      if (typeof window !== 'undefined' && typeof fetch === 'function' && !isVitest) {
+        try {
+          const apiRes = await fetch('/api/tenant/issue-lease', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-hisabati-client': 'hisabati-web',
+              'x-hisabati-session': 'session-verify-active',
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({
+              idToken,
+              organizationId: result.organization.id,
+            }),
+          });
+          const apiData = await apiRes.json();
+          if (apiRes.ok && apiData.success && apiData.lease) {
+            lease = apiData.lease;
+          } else {
+            throw new Error(apiData.error || 'فشل إصدار تصريح القدرات من الخادم.');
+          }
+        } catch (leaseErr: any) {
+          throw new Error('فشل إصدار تصريح القدرات من الخادم (Fail-Closed): ' + (leaseErr?.message || 'خطأ في الشبكة'));
+        }
+      } else {
+        const { ServerLeaseIssuer } = await import('./tenant/ServerLeaseIssuer');
+        await ServerLeaseIssuer.initialize();
+        lease = await ServerLeaseIssuer.issueLease({
+          organizationId: result.organization.id,
+          verifiedUid: result.verifiedUid!,
+          verifiedRole: result.membership.role,
+          verifiedPermissions: result.membership.permissions || [],
+          verificationRevision: result.verificationRevision ?? 1,
+        });
+      }
       await capabilityLeaseService.cacheServerIssuedLease(lease);
 
       // 5. Open Tenant DB strictly after authoritative verification

@@ -797,6 +797,19 @@ ${JSON.stringify(accountContext || {}).slice(0, 5000)}
     }
   });
 
+  // ============================================================================
+  // Server-side Public Key JWK Endpoint (For Browser Signature Verification)
+  // ============================================================================
+  app.get('/api/tenant/public-key', async (_req, res) => {
+    try {
+      await ServerLeaseIssuer.initialize();
+      const publicKeyJwk = await ServerLeaseIssuer.getPublicKeyJwk();
+      return res.json({ success: true, publicKeyJwk });
+    } catch (err: any) {
+      return handleApiError(res, err, 'فشل جلب مفتاح التحقق العام.');
+    }
+  });
+
   return app;
 }
 
