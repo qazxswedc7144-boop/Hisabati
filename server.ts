@@ -5,7 +5,7 @@ import { GoogleGenAI } from '@google/genai';
 import { ServerMembershipVerifier } from './src/core/services/tenant/ServerMembershipVerifier';
 import { ServerLeaseIssuer } from './src/core/services/tenant/ServerLeaseIssuer';
 import { FirebaseTokenVerifier, FirebaseTokenVerificationError } from './src/core/services/firebase/FirebaseTokenVerifier';
-import { AIResponseSchema } from './src/core/services/ai/aiValidation';
+import { AIResponseSchema, validateInvoiceAuditResponse } from './src/core/services/ai/aiValidation';
 import { GeminiOcrResponseSchema } from './src/core/services/ai/ocrValidation';
 import { initFirebaseAdmin } from './src/core/services/firebase/adminServer';
 
@@ -665,7 +665,11 @@ ${JSON.stringify(accountContext || {}).slice(0, 5000)}
       }
 
       const parsedData = JSON.parse(jsonMatch[0]);
-      return res.json({ audit: parsedData, provider: 'gemini-ai' });
+      const validationResult = validateInvoiceAuditResponse(parsedData);
+      if (!validationResult.success) {
+        throw new Error('فشل التحقق من بنية استجابة تدقيق الفاتورة (Zod Validation Failed)');
+      }
+      return res.json({ audit: validationResult.data, provider: 'gemini-ai' });
     } catch (err: any) {
       return handleApiError(res, err, 'حدث خطأ أثناء تدقيق الفاتورة بالذكاء الاصطناعي.');
     }

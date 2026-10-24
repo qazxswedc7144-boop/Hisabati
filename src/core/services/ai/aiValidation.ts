@@ -73,3 +73,17 @@ export type ValidatedStructuredAICommand = z.infer<typeof StructuredAICommandSch
 export function validateStructuredAICommand(input: unknown) {
   return StructuredAICommandSchema.safeParse(input);
 }
+
+export const InvoiceAuditResponseSchema = z.object({
+  summaryAr: z.string().min(1, { message: 'ملخص التدقيق مفقود' }).max(1000),
+  recommendationAr: z.string().min(1, { message: 'التوصية المحاسبية مفقودة' }).max(1000),
+  riskLevel: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'], { message: 'مستوى المخاطر غير صالح' }),
+  aiObservations: z.array(z.string().max(500)).default([]),
+});
+
+export type ValidatedInvoiceAuditResponse = z.infer<typeof InvoiceAuditResponseSchema>;
+
+export function validateInvoiceAuditResponse(input: unknown) {
+  return InvoiceAuditResponseSchema.safeParse(input);
+}
+

@@ -10,6 +10,7 @@ import {
   aiService,
   validateAIResponse,
   validateStructuredAICommand,
+  validateInvoiceAuditResponse,
 } from '@/core/services/ai';
 import { db } from '@/core/database/db';
 import { Account, CreateAccountDTO, StructuredAICommand } from '@/shared/types';
@@ -757,6 +758,35 @@ export class AITestSuite {
         const sanitizedEn = aiPrivacyService.sanitizePrompt(englishInjection);
         if (sanitizedEn.toLowerCase().includes('ignore previous') && !sanitizedEn.includes('[BLOCKED_INJECTION_ATTEMPT]')) {
           throw new Error('Failed to neutralize English prompt injection');
+        }
+      }
+    );
+
+    await runTest(
+      'AI-28',
+      'Invoice Audit Zod Validation: Valid & Malformed Response Rejection',
+      'التحقق من صحة استجابة تدقيق الفاتورة عبر Zod (قبول الاستجابة السليمة ورفض التالفة أو المفقودة الحقول أو غير الصالحة)',
+      () => {
+        // 1. Valid response
+        const validAudit = {
+          summaryAr: 'الفاتورة سليمة ومتطابقة حسابياً',
+          recommendationAr: 'يمكن اعتماد الفاتورة وترحيلها',
+          riskLevel: 'LOW',
+          aiObservations: ['لا توجد ملاحظات سلبية'],
+        };
+        const resValid = validateInvoiceAuditResponse(validAudit);
+        if (!resValid.success) {
+          throw new Error('Failed to accept valid invoice audit response');
+        }
+
+        // 2. Malformed / missing required fields
+        const invalidAudit = {
+          summaryAr: 'فقط ملخص',
+          riskLevel: 'INVALID_RISK',
+        };
+        const resInvalid = validateInvoiceAuditResponse(invalidAudit);
+        if (resInvalid.success) {
+          throw new Error('Failed to reject invalid invoice audit response');
         }
       }
     );
