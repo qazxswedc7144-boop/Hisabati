@@ -775,10 +775,6 @@ for (const item of inputLineItems) {
 const safeAccountContext = privacyGateway.sanitizeContext(
   accountContext as Record<string, unknown> | undefined
 );
-
-const safeAccountContext = privacyGateway.sanitizeContext(
-  accountContext as Record<string, unknown> | undefined
-);
       const auditPrompt = `
       <SYSTEM_INSTRUCTION>
 أنت مدقق حسابات محترف وخبير فحص فواتير لتطبيق "حساباتي | Hisabati".
