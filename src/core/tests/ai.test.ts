@@ -900,6 +900,46 @@ export class AITestSuite {
   }
 );
 
+    await runTest(
+  'AI-30',
+  'PrivacyGateway Sensitive Key Normalization',
+  'التحقق من حجب مفاتيح API والرموز والأسرار بصيغ مختلفة',
+  async () => {
+    const { privacyGateway } = await import(
+      '@/core/services/ai/PrivacyGateway'
+    );
+
+    const context = {
+      apiKey: 'secret_api_key_value',
+      clientSecret: 'secret_client_value',
+      accessToken: 'secret_access_token',
+      refreshToken: 'secret_refresh_token',
+      firebaseIdToken: 'secret_firebase_token',
+      balance: 2500,
+    };
+
+    const sanitized = privacyGateway.sanitizeContext(context);
+    const json = JSON.stringify(sanitized);
+
+    const forbidden = [
+      'secret_api_key_value',
+      'secret_client_value',
+      'secret_access_token',
+      'secret_refresh_token',
+      'secret_firebase_token',
+    ];
+
+    for (const value of forbidden) {
+      if (json.includes(value)) {
+        throw new Error(`Sensitive value leaked: ${value}`);
+      }
+    }
+
+    if (!json.includes('2500')) {
+      throw new Error('Allowed financial balance was removed');
+    }
+  }
+);
     const passedCount = results.filter((r) => r.passed).length;
     const failedCount = results.filter((r) => !r.passed).length;
 
