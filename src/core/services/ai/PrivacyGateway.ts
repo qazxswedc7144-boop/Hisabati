@@ -148,7 +148,6 @@ const isForbiddenKey =
 if (isForbiddenKey) {
   continue;
 }
-        }
 
         // Replace account names with stable, non-identifying placeholders.
         if (lowerKey === 'accountname' || lowerKey === 'name') {
