@@ -399,74 +399,43 @@ private async _performFullSyncInternal(): Promise<{
     let inFlightPendingItems: SyncQueueItem[] = [];
 
     try {
-      // 1. Fetch remote sync state file if exists
+      // 1. Fetch remote sync state file if exists (Step A)
       const files = await googleDriveService.listFiles();
       const syncFile = files.find((f) => f.name === SYNC_STATE_FILE);
 
       let remoteData: any = null;
+      let remoteRevisionAtStart = 0;
 
       if (syncFile) {
         const downloaded: any = await googleDriveService.downloadJsonFile(syncFile.id);
 
         if (downloaded?.isEncrypted === true && downloaded.data && downloaded.iv) {
-          // V2: Encrypted container
           try {
             const decrypted = await decryptBackupPayload(downloaded.data, downloaded.iv);
             remoteData = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
           } catch (decryptErr: any) {
             console.error('[Sync] فشل فك تشفير ملف المزامنة:', decryptErr?.message);
-            throw new Error(
-              'فشل فك تشفير ملف المزامنة. قد يكون الملف تالفًا أو مُشفَّرًا بمفتاح جهاز آخر.'
-            );
+            throw new Error('فشل فك تشفير ملف المزامنة. قد يكون الملف تالفًا أو مُشفَّرًا بمفتاح جهاز آخر.');
           }
-        } else if (
-          downloaded &&
-          typeof downloaded === 'object' &&
-          (downloaded.revision !== undefined || downloaded.version !== undefined || Array.isArray(downloaded.accounts))
-        ) {
-          // V1: Legacy plaintext — accept temporarily + flag for upgrade
-          console.warn('[Sync] ملف مزامنة نصي (V1) مكتشف. سيُشفَّر خلال الرفع القادم.');
+        } else if (downloaded && typeof downloaded === 'object') {
           remoteData = downloaded;
           (remoteData as any).__needsEncryptionUpgrade = true;
-        } else {
-          remoteData = null;
         }
+        
+        remoteRevisionAtStart = remoteData?.revision || 0;
       }
 
-      // SYNC-07: Revision Safety Logic
+      // SYNC-07: Local Metadata Check
       const metaEntry = await db.settings.get(SETTINGS_SYNC_METADATA);
       const localMeta = (metaEntry?.value as Record<string, any>) || { lastRevision: 0 };
-      const remoteRevision = remoteData?.revision || 0;
 
-      // If remote has a higher revision, it means another device pushed.
-      // This is expected in a healthy sync (we pull then push).
-      // But if we have local pending changes AND remote has moved, 
-      // we must pull and integrate remote changes before we can push our own.
-      
-      const localPendingCount = await db.syncQueue.where('status').equals('pending').count();
-      
-      if (remoteRevision < localMeta.lastRevision && localPendingCount === 0) {
-        // This could happen if remote was reset or rolled back. 
-        // We warn but proceed to "fix" the cloud with our current state if we are the authority.
-        await this.logAudit('SYNC_START', `تحذير: المراجعة السحابية (${remoteRevision}) أقدم من المحلية (${localMeta.lastRevision})`, true);
-      }
-
-      // 2. Load Local Tombstones & Permanent Delete Markers
-      const localDeletes = await db.syncQueue
-        .where('operation')
-        .equals('DELETE')
-        .toArray();
-
+      // 2. Prepare Local Tombstones
+      const localDeletes = await db.syncQueue.where('operation').equals('DELETE').toArray();
       const permTombEntry = await db.settings.get('hisabati_permanent_tombstones');
       const permanentTombstones: Array<{ id: string; entityType: string; deletedAt: string }> =
         permTombEntry && Array.isArray(permTombEntry.value) ? permTombEntry.value : [];
 
-      const localTombstoneIds = new Set<string>();
-      // Add permanent delete markers (never expire)
-      for (const pt of permanentTombstones) {
-        localTombstoneIds.add(pt.id);
-      }
-      // Add local queue deletes and ensure they are in permanent tombstones
+      const localTombstoneIds = new Set<string>(permanentTombstones.map(pt => pt.id));
       for (const d of localDeletes) {
         localTombstoneIds.add(d.entityId);
         if (!permanentTombstones.some((pt) => pt.id === d.entityId)) {
@@ -474,119 +443,96 @@ private async _performFullSyncInternal(): Promise<{
         }
       }
 
-      // 3. Process Remote Tombstones (deletions from another device)
+      // 3. Process Remote Changes (Pull Phase)
       SyncContextRegistry.beginSyncApply();
       try {
-        if (remoteData?.tombstones && Array.isArray(remoteData.tombstones)) {
-          for (const remTomb of remoteData.tombstones) {
-            localTombstoneIds.add(remTomb.id);
-            if (!permanentTombstones.some((pt) => pt.id === remTomb.id)) {
+        if (remoteData) {
+          // SYNC-08: Validate and Sanitize Remote Data
+          this.sanitizeRemoteData(remoteData);
+
+          // Handle Remote Tombstones
+          if (Array.isArray(remoteData.tombstones)) {
+            for (const remTomb of remoteData.tombstones) {
+              if (localTombstoneIds.has(remTomb.id)) continue;
+              localTombstoneIds.add(remTomb.id);
               permanentTombstones.push({ id: remTomb.id, entityType: remTomb.entityType, deletedAt: remTomb.deletedAt });
-            }
-            if (remTomb.entityType === 'transaction') {
-              const exists = await db.transactions.get(remTomb.id);
-              if (exists) {
-                await transactionEngine.deleteTransaction(remTomb.id, undefined, { isRemote: true });
-                pulledCount++;
-              }
-            } else if (remTomb.entityType === 'account') {
-              const exists = await db.accounts.get(remTomb.id);
-              if (exists) {
-                const { accountService } = await import('./account.service');
-                await accountService.deleteAccount(remTomb.id, true, false, { isRemote: true });
-                pulledCount++;
+              
+              if (remTomb.entityType === 'transaction') {
+                const exists = await db.transactions.get(remTomb.id);
+                if (exists) {
+                  await transactionEngine.deleteTransaction(remTomb.id, undefined, { isRemote: true });
+                  pulledCount++;
+                }
+              } else if (remTomb.entityType === 'account') {
+                const exists = await db.accounts.get(remTomb.id);
+                if (exists) {
+                  const { accountService } = await import('./account.service');
+                  await accountService.deleteAccount(remTomb.id, true, false, { isRemote: true });
+                  pulledCount++;
+                }
               }
             }
           }
-        }
 
-        // Persist accumulated permanent tombstones
-        await db.settings.put({
-          id: 'hisabati_permanent_tombstones',
-          key: 'hisabati_permanent_tombstones',
-          value: permanentTombstones,
-          updatedAt: new Date().toISOString(),
-        });
-
-        // Remote State Validation (SYNC-07)
-        if (remoteData) {
-          if (!Array.isArray(remoteData.accounts)) remoteData.accounts = [];
-          if (!Array.isArray(remoteData.transactions)) remoteData.transactions = [];
-          if (!Array.isArray(remoteData.tombstones)) remoteData.tombstones = [];
-          if (!Array.isArray(remoteData.settings)) remoteData.settings = [];
-
-          // Basic schema checks to prevent poisoning
-          remoteData.accounts = remoteData.accounts.filter((a: any) => {
-            const isValid = a && typeof a === 'object' && a.id && a.name;
-            if (!isValid) this.logAudit('MALFORMED_DATA_REJECTED', `حساب غير صالح في البيانات السحابية. ID: ${a?.id || 'مجهول'}`, false);
-            return isValid;
+          // Persist tombstones early
+          await db.settings.put({
+            id: 'hisabati_permanent_tombstones',
+            key: 'hisabati_permanent_tombstones',
+            value: permanentTombstones,
+            updatedAt: new Date().toISOString(),
           });
-          remoteData.transactions = remoteData.transactions.filter((t: any) => {
-            const isValid = t && typeof t === 'object' && t.id && t.accountId && typeof t.amount === 'number' && !isNaN(t.amount);
-            if (!isValid) this.logAudit('MALFORMED_DATA_REJECTED', `معاملة غير صالحة في البيانات السحابية. ID: ${t?.id || 'مجهول'}`, false);
-            return isValid;
-          });
-          remoteData.settings = remoteData.settings.filter((s: any) => {
-            const isValid = s && typeof s === 'object' && s.id && s.key && SETTINGS_WHITELIST.includes(s.key);
-            if (!isValid) {
-              if (s?.key) this.logAudit('MALFORMED_DATA_REJECTED', `إعداد غير صالح أو غير مصرح به في البيانات السحابية. Key: ${s.key}`, false);
-            }
-            return isValid;
-          });
-        }
 
-        // 4. If remote data exists, merge safe additions and detect conflicts
-        if (remoteData && Array.isArray(remoteData.accounts) && Array.isArray(remoteData.transactions)) {
-          // Merge Settings (SYNC-04)
-          if (remoteData.settings && remoteData.settings.length > 0) {
+          // Merge Settings, Accounts, Transactions
+          const localAccounts = await db.accounts.toArray();
+          const localAccMap = new Map(localAccounts.map(a => [a.id, a]));
+          
+          // Merge Settings
+          if (Array.isArray(remoteData.settings)) {
             const localSettingsMap = new Map((await db.settings.toArray()).map(s => [s.key, s]));
             for (const remSet of remoteData.settings) {
-               if (!SETTINGS_WHITELIST.includes(remSet.key)) continue;
-               if (typeof remSet.value !== "string" && typeof remSet.value !== "number" && typeof remSet.value !== "boolean") { this.logAudit("MALFORMED_DATA_REJECTED", `قيمة إعداد غير صالحة. Key: ${remSet.key}`, false); continue; }
-               const local = localSettingsMap.get(remSet.key);
-               if (!local || new Date(remSet.updatedAt || 0) > new Date(local.updatedAt || 0)) {
-                 await db.settings.put(remSet);
-               }
+              if (!SETTINGS_WHITELIST.includes(remSet.key)) continue;
+              const local = localSettingsMap.get(remSet.key);
+              if (!local || new Date(remSet.updatedAt || 0) > new Date(local.updatedAt || 0)) {
+                await db.settings.put(remSet);
+              }
             }
           }
 
-          const localAccounts = await db.accounts.toArray();
-          const localTransactions = await db.transactions.toArray();
-
-          const localAccMap = new Map(localAccounts.map((a) => [a.id, a]));
-          const localTrxMap = new Map(localTransactions.map((t) => [t.id, t]));
-          const localOpIdMap = new Map(localTransactions.filter((t) => !!t.operationId).map((t) => [t.operationId!, t]));
-
-          // Merge Remote Accounts (skipping tombstoned accounts)
+          // Merge Accounts
           const { accountService } = await import('./account.service');
           for (const remAcc of remoteData.accounts) {
-            if (localTombstoneIds.has(remAcc.id)) {
-              continue; // Do not resurrect deleted account
-            }
-
+            if (localTombstoneIds.has(remAcc.id)) continue;
             const local = localAccMap.get(remAcc.id);
-            if (!local) {
-              await accountService.createAccount({
-                ...remAcc,
-                operationId: remAcc.id // Use entity ID as operationId for idempotency
-              }, { isRemote: true });
-              pulledCount++;
-            } else if (remAcc.updatedAt > local.updatedAt) {
-              await accountService.updateAccount(remAcc.id, remAcc, { isRemote: true });
-              pulledCount++;
+            try {
+              if (!local) {
+                await accountService.createAccount({ ...remAcc, operationId: remAcc.id }, { isRemote: true });
+                pulledCount++;
+              } else if (remAcc.updatedAt > local.updatedAt) {
+                await accountService.updateAccount(remAcc.id, remAcc, { isRemote: true });
+                pulledCount++;
+              }
+            } catch (err: any) {
+              this.logAudit('MALFORMED_DATA_REJECTED', `فشل دمج الحساب: ${err.message}. ID: ${remAcc.id}`, false);
             }
           }
 
-          // Merge Remote Transactions (skipping tombstoned transactions)
-          for (const remTrx of remoteData.transactions) {
-            if (localTombstoneIds.has(remTrx.id)) {
-              continue; // Do not resurrect deleted transaction (SYNC-09)
-            }
+          // Refresh localAccMap after pull so transactions can resolve currency correctly
+          const refreshedAccounts = await db.accounts.toArray();
+          localAccMap.clear();
+          refreshedAccounts.forEach(a => localAccMap.set(a.id, a));
 
-            // Ensure amountMinor is canonical (SYNC-05) & resolve currency hierarchy strictly
+          // Merge Transactions
+          const localTransactions = await db.transactions.toArray();
+          const localTrxMap = new Map(localTransactions.map(t => [t.id, t]));
+          const localOpIdMap = new Map(localTransactions.filter(t => !!t.operationId).map(t => [t.operationId!, t]));
+          const systemCurrencySetting = await db.settings.get('currency');
+
+          for (const remTrx of remoteData.transactions) {
+            if (localTombstoneIds.has(remTrx.id)) continue;
+
+            // Financial Validation (SYNC-08)
             try {
               const accountObj = localAccMap.get(remTrx.accountId);
-              const systemCurrencySetting = await db.settings.get('currency');
               const resolvedCurrency = resolveRequiredCurrency({
                 transactionCurrency: remTrx.currency,
                 accountCurrency: accountObj?.currency,
@@ -596,70 +542,42 @@ private async _performFullSyncInternal(): Promise<{
               if (remTrx.amountMinor === undefined && remTrx.amount !== undefined) {
                 remTrx.amountMinor = decimalToMinor(remTrx.amount, resolvedCurrency);
               }
-              if (!remTrx.currency) {
-                remTrx.currency = resolvedCurrency;
+              if (!remTrx.currency) remTrx.currency = resolvedCurrency;
+
+              if (remTrx.amountMinor === undefined || !Number.isInteger(remTrx.amountMinor)) {
+                throw new Error('قيمة amountMinor غير صالحة');
               }
-            } catch (currencyErr: any) {
-              await this.logAudit('MALFORMED_DATA_REJECTED', `تم تجاهل عملية مالية قادمة من السحابة بسبب تعذر حل العملة أو غيابها. ID: ${remTrx.id}: ${currencyErr?.message}`, false);
-              continue; // REJECT
+            } catch (err: any) {
+              this.logAudit('MALFORMED_DATA_REJECTED', `تم تجاهل حركة مالية: ${err.message}. ID: ${remTrx.id}`, false);
+              continue;
             }
 
-            if (remTrx.amountMinor === undefined || isNaN(remTrx.amountMinor) || !Number.isInteger(remTrx.amountMinor)) {
-               await this.logAudit('MALFORMED_DATA_REJECTED', `تم تجاهل عملية مالية قادمة من السحابة بسبب قيمة amountMinor غير صالحة. ID: ${remTrx.id}`, false);
-               continue; // REJECT
-            }
+            const localMatch = localTrxMap.get(remTrx.id) || (remTrx.operationId ? localOpIdMap.get(remTrx.operationId) : undefined);
 
-            const existingById = localTrxMap.get(remTrx.id);
-            const existingByOp = remTrx.operationId ? localOpIdMap.get(remTrx.operationId) : undefined;
-            const localMatch = existingById || existingByOp;
-
-            if (!localMatch) {
-              // Safe remote insertion through Financial Boundary
-              await transactionEngine.createTransaction({
-                ...remTrx,
-                operationId: remTrx.operationId || `remote_${remTrx.id}`
-              }, undefined, { isRemote: true });
-              pulledCount++;
-            } else {
-              // Critical Financial Conflict Evaluation (SYNC-06, SYNC-07)
-              const localAmount = Number(localMatch.amount);
-              const remoteAmount = Number(remTrx.amount);
-              const localMinor = Number(localMatch.amountMinor ?? localAmount);
-              const remoteMinor = Number(remTrx.amountMinor ?? remoteAmount);
-
-              const hasFinancialConflict =
-                localMinor !== remoteMinor ||
-                localAmount !== remoteAmount ||
-                localMatch.type !== remTrx.type ||
-                localMatch.accountId !== remTrx.accountId;
-
-              // [SYNC-06 FIX]: Be more aggressive in protecting local data from blind overwrites.
-              if (hasFinancialConflict) {
-                // Meaningful financial conflict detected: NEVER resolve by blind Last-Write-Wins!
-                // Preserve both versions cleanly
-                newlyDetectedConflicts.push({
-                  id: 'cf_' + remTrx.id,
-                  entityType: 'transaction',
-                  entityId: remTrx.id,
-                  localVersion: {
-                    title: `المعاملة محلياً (${localMatch.amount} ${localMatch.type === 'debit' ? 'لك' : 'عليك'})`,
-                    updatedAt: localMatch.updatedAt || '',
-                    data: localMatch,
-                  },
-                  remoteVersion: {
-                    title: `المعاملة في السحابة (${remTrx.amount} ${remTrx.type === 'debit' ? 'لك' : 'عليك'})`,
-                    updatedAt: remTrx.updatedAt || '',
-                    data: remTrx,
-                  },
-                  detectedAt: new Date().toISOString(),
-                  resolved: false,
-                });
-                // We DO NOT update the local record here. Local "wins" in the DB for now until user resolves.
-              } else if (remTrx.updatedAt > (localMatch.updatedAt || '')) {
-                // Safe non-financial metadata update through Financial Boundary
-                await transactionEngine.updateTransaction(localMatch.id, remTrx, undefined, { isRemote: true });
+            try {
+              if (!localMatch) {
+                await transactionEngine.createTransaction({ ...remTrx, operationId: remTrx.operationId || `remote_${remTrx.id}` }, undefined, { isRemote: true });
                 pulledCount++;
+              } else {
+                const hasConflict = localMatch.amountMinor !== remTrx.amountMinor || localMatch.type !== remTrx.type || localMatch.accountId !== remTrx.accountId;
+                if (hasConflict) {
+                  newlyDetectedConflicts.push({
+                    id: 'cf_' + remTrx.id,
+                    entityType: 'transaction',
+                    entityId: remTrx.id,
+                    localVersion: { title: `محلي (${localMatch.amount})`, updatedAt: localMatch.updatedAt || '', data: localMatch },
+                    remoteVersion: { title: `سحابي (${remTrx.amount})`, updatedAt: remTrx.updatedAt || '', data: remTrx },
+                    detectedAt: new Date().toISOString(),
+                    resolved: false,
+                  });
+                } else if (remTrx.updatedAt > (localMatch.updatedAt || '')) {
+                  await transactionEngine.updateTransaction(localMatch.id, remTrx, undefined, { isRemote: true });
+                  pulledCount++;
+                }
               }
+            } catch (err: any) {
+              console.error(`[SyncEngine] Transaction merge failed for ${remTrx.id}:`, err);
+              this.logAudit('MALFORMED_DATA_REJECTED', `فشل دمج الحركة المالية: ${err.message}. ID: ${remTrx.id}`, false);
             }
           }
         }
@@ -667,71 +585,34 @@ private async _performFullSyncInternal(): Promise<{
         SyncContextRegistry.endSyncApply();
       }
 
-      // 4.5. Recover Stale Processing Items (SYNC-01)
-      // Since we hold the exclusive multi-tab lock, any item currently in 'processing'
-      // belongs to a crashed or aborted previous sync attempt. We revert them to 'pending'.
-      const staleProcessingItems = await db.syncQueue
-        .where('status')
-        .equals('processing')
-        .toArray();
-      
-      for (const stale of staleProcessingItems) {
-        await db.syncQueue.update(stale.id!, {
-          status: 'pending',
-          updatedAt: new Date().toISOString()
-        } as any);
-      }
+      // 4. Recover Stale Processing/Prepared Items (SYNC-06)
+      await db.syncQueue.where('status').anyOf('processing', 'prepared', 'uploaded').modify({ status: 'pending', updatedAt: new Date().toISOString() });
 
-      // 5. Gather and Transition Local Pending Queue to 'processing'
-      inFlightPendingItems = await db.syncQueue
-        .where('status')
-        .equals('pending')
-        .sortBy('createdAt');
-
+      // 5. Transition Local Pending to 'prepared' (Step B)
+      inFlightPendingItems = await db.syncQueue.where('status').equals('pending').sortBy('createdAt');
       pushedCount = inFlightPendingItems.length;
 
       for (const item of inFlightPendingItems) {
-        await db.syncQueue.update(item.id, { status: 'processing' });
+        await db.syncQueue.update(item.id, { status: 'prepared' });
       }
 
-      // 6. Build Combined Tombstones Array (Permanent delete markers are retained indefinitely without 60-day expiry pruning)
-      const combinedTombstonesMap = new Map<string, SyncTombstone>();
-      for (const pt of permanentTombstones) {
-        combinedTombstonesMap.set(pt.id, {
-          id: pt.id,
-          entityType: pt.entityType as any,
-          deletedAt: pt.deletedAt,
-        });
-      }
-      if (remoteData?.tombstones) {
-        for (const t of remoteData.tombstones) {
-          combinedTombstonesMap.set(t.id, t);
+      // 6. SYNC-07: Final Revision Race Check (Step C)
+      if (syncFile) {
+        const latestFiles = await googleDriveService.listFiles();
+        const latestSyncFile = latestFiles.find(f => f.name === SYNC_STATE_FILE);
+        const latestRevision = latestSyncFile?.metadata?.revision || 0;
+        
+        if (latestRevision > remoteRevisionAtStart) {
+          throw new Error('تعذر الرفع: تم تحديث البيانات السحابية بواسطة جهاز آخر أثناء المعالجة المحلية. يرجى المحاولة مرة أخرى.');
         }
       }
-      for (const del of localDeletes) {
-        combinedTombstonesMap.set(del.entityId, {
-          id: del.entityId,
-          entityType: del.entityType,
-          deletedAt: del.createdAt,
-        });
-      }
-      const combinedTombstones = Array.from(combinedTombstonesMap.values());
 
-      // 7. Push Updated State to Google Drive
-      const updatedAccounts = (await db.accounts.toArray()).filter(
-        (a) => !localTombstoneIds.has(a.id)
-      );
-      const updatedTransactions = (await db.transactions.toArray()).filter(
-        (t) => !localTombstoneIds.has(t.id)
-      );
-
-      const localSettings = await db.settings.toArray();
-      const syncableSettings = localSettings.filter(s => SETTINGS_WHITELIST.includes(s.key));
-      const systemCurrencySetting = localSettings.find(s => s.key === 'currency')?.value;
-      const accountCurrencyMap = new Map(updatedAccounts.map(a => [a.id, a.currency]));
-
-      // SYNC-07: Increment revision for push
-      const nextRevision = Math.max(remoteRevision, localMeta.lastRevision) + (pushedCount > 0 ? 1 : 0);
+      // 7. Push Updated State (Step D)
+      const nextRevision = Math.max(remoteRevisionAtStart, localMeta.lastRevision) + (pushedCount > 0 ? 1 : 0);
+      
+      const updatedAccounts = (await db.accounts.toArray()).filter(a => !localTombstoneIds.has(a.id));
+      const updatedTransactions = (await db.transactions.toArray()).filter(t => !localTombstoneIds.has(t.id));
+      const syncableSettings = (await db.settings.toArray()).filter(s => SETTINGS_WHITELIST.includes(s.key));
 
       const newCloudState = {
         revision: nextRevision,
@@ -740,56 +621,26 @@ private async _performFullSyncInternal(): Promise<{
         deviceName: getDeviceName(),
         lastModified: new Date().toISOString(),
         accounts: updatedAccounts,
-        transactions: updatedTransactions.map((t) => {
-          let resolvedAmountMinor = t.amountMinor;
-          if (resolvedAmountMinor === undefined) {
-            try {
-              const accountCurrency = t.accountId ? accountCurrencyMap.get(t.accountId) : undefined;
-              const resolvedCurrency = resolveRequiredCurrency({
-                transactionCurrency: t.currency,
-                accountCurrency,
-                systemCurrency: typeof systemCurrencySetting === 'string' ? systemCurrencySetting : undefined,
-              });
-              resolvedAmountMinor = decimalToMinor(t.amount, resolvedCurrency);
-            } catch (currencyErr: any) {
-              console.error(
-                `[SyncEngine Safety] Failed to resolve valid currency for transaction "${t.id}" (amount: ${t.amount}): ${currencyErr?.message}`
-              );
-              // Safely preserve transaction without fabricating invalid financial values
-              resolvedAmountMinor = undefined;
-            }
-          }
-
-          return {
-            ...t,
-            amountMinor: resolvedAmountMinor,
-          };
-        }),
-        tombstones: combinedTombstones,
+        transactions: updatedTransactions,
+        tombstones: permanentTombstones.map(pt => ({ id: pt.id, entityType: pt.entityType, deletedAt: pt.deletedAt })),
         settings: syncableSettings,
       };
 
-      // In-place safe update: patch existing file or upload new
       const encryptedContainer = await this.buildEncryptedSyncContainer(newCloudState);
-      const uploadMeta = {
-        accountCount: updatedAccounts.length,
-        transactionCount: updatedTransactions.length,
-        revision: nextRevision,
-        isEncrypted: true,
-      };
+      const uploadMeta = { accountCount: updatedAccounts.length, transactionCount: updatedTransactions.length, revision: nextRevision, isEncrypted: true };
+
+      // Transition to 'uploaded' state before network call
+      for (const item of inFlightPendingItems) {
+        await db.syncQueue.update(item.id, { status: 'uploaded' });
+      }
 
       if (syncFile) {
-        try {
-          await googleDriveService.updateJsonFile(syncFile.id, SYNC_STATE_FILE, encryptedContainer, uploadMeta);
-        } catch (err: any) {
-          await googleDriveService.uploadJsonFile(SYNC_STATE_FILE, encryptedContainer, uploadMeta);
-          if (syncFile.id) await googleDriveService.deleteFile(syncFile.id).catch(() => {});
-        }
+        await googleDriveService.updateJsonFile(syncFile.id, SYNC_STATE_FILE, encryptedContainer, uploadMeta);
       } else {
         await googleDriveService.uploadJsonFile(SYNC_STATE_FILE, encryptedContainer, uploadMeta);
       }
 
-      // 8. POST-UPLOAD SUCCESS: Mark items as completed & update local revision
+      // 8. Atomic Completion (Step E)
       const activeDb = getDb();
       await activeDb.transaction('rw', [activeDb.syncQueue, activeDb.settings], async () => {
         for (const item of inFlightPendingItems) {
@@ -798,106 +649,73 @@ private async _performFullSyncInternal(): Promise<{
         await activeDb.settings.put({
           id: SETTINGS_SYNC_METADATA,
           key: SETTINGS_SYNC_METADATA,
-          value: {
-            ...localMeta,
-            lastRevision: nextRevision,
-            lastSyncTime: new Date().toISOString(),
-            status: 'synced'
-          },
+          value: { ...localMeta, lastRevision: nextRevision, lastSyncTime: new Date().toISOString(), status: 'synced' },
           updatedAt: new Date().toISOString()
         });
       });
 
-      if (remoteData && (remoteData as any).__needsEncryptionUpgrade) {
-        await this.logAudit(
-          'SYNC_SUCCESS',
-          'تمت ترقية ملف المزامنة من V1 (نصي) إلى V2 (AES-GCM-256 مشفر).',
-          true
-        );
-      }
-
-      // Keep recent completed items to prevent database growth
-      const allCompleted = await db.syncQueue.where('status').equals('completed').toArray();
-      if (allCompleted.length > 80) {
-        const sorted = allCompleted.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-        const toDelete = sorted.slice(0, allCompleted.length - 50);
-        for (const d of toDelete) {
-          if (d.id) await db.syncQueue.delete(d.id);
-        }
-      }
-
-      // 9. Prune Old Sync Audit Logs (SYNC-06)
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-      await db.syncAuditLogs.where('timestamp').below(thirtyDaysAgo).delete();
-
-      // 10. Recalculate local balances & audit
+      // Housekeeping
+      await this.logAudit('SYNC_SUCCESS', `اكتملت المزامنة بنجاح (وارد: ${pulledCount}، صادر: ${pushedCount})`, true);
       await transactionEngine.recalculateAllBalances();
       await integrityService.auditIntegrity();
-
-      // 10. Merge and Persist Conflicts
-      const existingPersisted = (await this.getPersistedConflicts()).filter((c) => !c.resolved);
-      const mergedConflictsMap = new Map<string, SyncConflictItem>();
-      existingPersisted.forEach((c) => mergedConflictsMap.set(c.id, c));
-      newlyDetectedConflicts.forEach((c) => mergedConflictsMap.set(c.id, c));
-      const activeConflicts = Array.from(mergedConflictsMap.values());
+      
+      // Merge Conflicts
+      const existingPersisted = (await this.getPersistedConflicts()).filter(c => !c.resolved);
+      const activeConflicts = [...existingPersisted, ...newlyDetectedConflicts];
       await this.savePersistedConflicts(activeConflicts);
-
-      const lastSyncStr = new Date().toISOString();
-      // SYNC-05: Move metadata to DB
-      await db.settings.put({
-        id: 'hisabati_last_sync_time',
-        key: 'hisabati_last_sync_time',
-        value: lastSyncStr,
-        updatedAt: lastSyncStr
-      });
-
-      await this.logAudit(
-        'SYNC_SUCCESS',
-        `اكتملت المزامنة بنجاح (وارد: ${pulledCount}، صادر: ${pushedCount}، تعارضات: ${activeConflicts.length})`,
-        true
-      );
 
       const finalStatus: SyncStatusType = activeConflicts.length > 0 ? 'conflict' : 'synced';
       await this.notifyStatusAtomic(finalStatus);
-      if (activeConflicts.length > 0) {
-        if (newlyDetectedConflicts.length > 0) {
-          await this.logAudit(
-            'CONFLICT_DETECTED',
-            `تم رصد ${newlyDetectedConflicts.length} تعارضات مالية جديدة تحتاج للمراجعة والحل`,
-            false
-          );
-        }
-        this.notifyConflicts(activeConflicts);
-      }
 
-      return {
-        success: true,
-        conflicts: activeConflicts,
-        message: `تمت المزامنة بنجاح (تم سحب ${pulledCount} وتحديث ${pushedCount} سجل)`,
-        pulledCount,
-        pushedCount,
-      };
+      return { success: true, conflicts: activeConflicts, message: 'تمت المزامنة بنجاح', pulledCount, pushedCount };
+
     } catch (err: any) {
-      // Revert processing items safely with exponential retry tracking
+      // Revert processing/prepared/uploaded to pending with retry increment
       const activeDb = getDb();
       await activeDb.transaction('rw', activeDb.syncQueue, async () => {
         for (const item of inFlightPendingItems) {
           const nextRetry = (item.retryCount || 0) + 1;
           const nextStatus = nextRetry >= MAX_RETRIES ? 'failed' : 'pending';
-          await activeDb.syncQueue.update(item.id, {
-            retryCount: nextRetry,
-            status: nextStatus,
-            lastError: err?.message || 'فشلت المزامنة',
-          });
+          await activeDb.syncQueue.update(item.id, { retryCount: nextRetry, status: nextStatus, lastError: err?.message || 'فشلت المزامنة' });
         }
       });
-
       await this.logAudit('SYNC_FAILED', `فشلت المزامنة: ${err?.message || 'خطأ غير معروف'}`, false);
       await this.notifyStatusAtomic('error');
       throw err;
     } finally {
       this.isSyncing = false;
     }
+  }
+
+  private sanitizeRemoteData(data: any): void {
+    if (!data || typeof data !== 'object') throw new Error('بيانات سحابية غير صالحة');
+    if (!Array.isArray(data.accounts)) data.accounts = [];
+    if (!Array.isArray(data.transactions)) data.transactions = [];
+    if (!Array.isArray(data.settings)) data.settings = [];
+    if (!Array.isArray(data.tombstones)) data.tombstones = [];
+
+    data.accounts = data.accounts.filter((a: any) => {
+      const isValid = a && a.id && a.name;
+      if (!isValid) this.logAudit('MALFORMED_DATA_REJECTED', `حساب غير صالح. ID: ${a?.id || 'مجهول'}`, false);
+      return isValid;
+    });
+
+    data.transactions = data.transactions.filter((t: any) => {
+      const isValid = t && t.id && t.accountId && typeof t.amount === 'number' && !isNaN(t.amount);
+      if (!isValid) this.logAudit('MALFORMED_DATA_REJECTED', `حركة مالية غير صالحة. ID: ${t?.id || 'مجهول'}`, false);
+      return isValid;
+    });
+
+    data.settings = data.settings.filter((s: any) => {
+      const isAllowed = s && s.key && SETTINGS_WHITELIST.includes(s.key);
+      if (!isAllowed) {
+        if (s?.key) this.logAudit('MALFORMED_DATA_REJECTED', `إعداد غير مصرح به: ${s.key}`, false);
+        return false;
+      }
+      const isValidType = typeof s.value === 'string' || typeof s.value === 'number' || typeof s.value === 'boolean';
+      if (!isValidType) this.logAudit('MALFORMED_DATA_REJECTED', `قيمة إعداد غير صالحة: ${s.key}`, false);
+      return isValidType;
+    });
   }
 
   /**
@@ -947,6 +765,13 @@ private async _performFullSyncInternal(): Promise<{
       return;
     }
 
+    if (tenantDbManager.getIsSwitching()) {
+      // Defer if switching
+      if (this.autoSyncTimer) clearTimeout(this.autoSyncTimer);
+      this.autoSyncTimer = setTimeout(() => this.processQueueBestEffort(), 500);
+      return;
+    }
+
     const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
     if (!isOnline) {
       this.notifyStatus('offline');
@@ -960,21 +785,27 @@ private async _performFullSyncInternal(): Promise<{
     // Debounce to batch mutations
     this.autoSyncTimer = setTimeout(() => {
       this.performFullSync().catch(async () => {
-        // Compute exponential backoff for next retry attempt with jitter
-        const pendingWithRetries = await db.syncQueue
-          .where('status')
-          .equals('pending')
-          .toArray();
+        if (tenantDbManager.getIsSwitching()) return;
+        
+        try {
+          // Compute exponential backoff for next retry attempt with jitter
+          const pendingWithRetries = await db.syncQueue
+            .where('status')
+            .equals('pending')
+            .toArray();
 
-        const maxRetries = Math.max(0, ...pendingWithRetries.map((p) => p.retryCount || 0));
-        if (maxRetries < MAX_RETRIES && pendingWithRetries.length > 0) {
-          const jitter = Math.floor(Math.random() * 500);
-          const backoffDelay = Math.min(1000 * Math.pow(2, maxRetries) + jitter, 30000);
-          if (this.retryTimer) clearTimeout(this.retryTimer);
-          this.notifyStatus('retrying');
-          this.retryTimer = setTimeout(() => {
-            this.performFullSync().catch(() => {});
-          }, backoffDelay);
+          const maxRetries = Math.max(0, ...pendingWithRetries.map((p) => p.retryCount || 0));
+          if (maxRetries < MAX_RETRIES && pendingWithRetries.length > 0) {
+            const jitter = Math.floor(Math.random() * 500);
+            const backoffDelay = Math.min(1000 * Math.pow(2, maxRetries) + jitter, 30000);
+            if (this.retryTimer) clearTimeout(this.retryTimer);
+            this.notifyStatus('retrying');
+            this.retryTimer = setTimeout(() => {
+              this.performFullSync().catch(() => {});
+            }, backoffDelay);
+          }
+        } catch {
+          // Silent fail for background retry if DB locked
         }
       });
     }, 1500);

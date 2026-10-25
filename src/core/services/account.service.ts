@@ -65,7 +65,7 @@ export class AccountService {
     const id = dto.operationId || 'acc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
 
     // Fetch system default currency and resolve strictly
-    const systemCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER');
+    const systemCurrency = await settingsRepository.get<CurrencyCode>('currency');
     
     const resolvedCurrency = resolveRequiredCurrency({
       transactionCurrency: dto.currency,

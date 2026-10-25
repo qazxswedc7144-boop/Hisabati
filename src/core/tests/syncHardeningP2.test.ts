@@ -1,0 +1,142 @@
+import "fake-indexeddb/auto";
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { db } from '../database/db';
+import { syncEngine, SyncEngine } from '../services/syncEngine.service';
+import { tenantService } from '../services/TenantService';
+import { useTenantStore } from '@/shared/stores/tenantStore';
+
+vi.mock('../services/googleDrive.service', () => {
+  return {
+    googleDriveService: {
+      isConnected: vi.fn(),
+      getAccessToken: vi.fn(),
+      listFiles: vi.fn(),
+      downloadJsonFile: vi.fn(),
+      uploadJsonFile: vi.fn(),
+      updateJsonFile: vi.fn(),
+      deleteFile: vi.fn(),
+      getOrCreateAppFolder: vi.fn(),
+    },
+  };
+});
+
+describe('Sync Engine Hardening P2 - State Machine & Revisions', () => {
+  beforeEach(async () => {
+    await tenantService.initialize();
+    useTenantStore.getState().setContext({
+      activeOrganization: { id: 'local', name: 'Local Org' } as any
+    });
+
+    await db.accounts.clear();
+    await db.transactions.clear();
+    await db.syncQueue.clear();
+    await db.syncAuditLogs.clear();
+    await db.settings.clear();
+    
+    // Mock navigator.locks
+    let locked = false;
+    Object.defineProperty(global, "navigator", { value: {
+        ...global.navigator,
+        onLine: true,
+        locks: {
+          request: async (name: string, options: any, callback: any) => {
+            if (locked && options.ifAvailable) return null;
+            locked = true;
+            try { return await callback({ name }); } finally { locked = false; }
+          }
+        }
+    }, writable: true, configurable: true });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe('SYNC-06: Hardened State Machine & Recovery', () => {
+    it('should recover prepared/uploaded items back to pending on next sync start', async () => {
+      // 1. Setup items in various intermediate states
+      await db.syncQueue.bulkAdd([
+        { id: 'item_1', status: 'prepared', entityType: 'account', entityId: 'a1', operation: 'CREATE', createdAt: '2023-01-01', operationId: 'op1', retryCount: 0 },
+        { id: 'item_2', status: 'uploaded', entityType: 'account', entityId: 'a2', operation: 'CREATE', createdAt: '2023-01-02', operationId: 'op2', retryCount: 0 },
+      ] as any);
+
+      const { googleDriveService } = await import('../services/googleDrive.service');
+      vi.spyOn(googleDriveService, 'isConnected').mockReturnValue(true);
+      vi.spyOn(googleDriveService, 'listFiles').mockResolvedValue([]);
+      vi.spyOn(googleDriveService, 'uploadJsonFile').mockResolvedValue({ id: 'f1' } as any);
+
+      // 2. Perform sync. Recovery logic should move them to pending then process them normally.
+      await syncEngine.performFullSync();
+
+      const items = await db.syncQueue.toArray();
+      expect(items.every(i => i.status === 'completed')).toBe(true);
+    });
+  });
+
+  describe('SYNC-07: Revision Race Protection', () => {
+    it('should throw error if remote revision changes during local processing', async () => {
+      const { googleDriveService } = await import('../services/googleDrive.service');
+      vi.spyOn(googleDriveService, 'isConnected').mockReturnValue(true);
+      
+      // Mock listFiles to return revision 1 initially
+      vi.spyOn(googleDriveService, 'listFiles').mockResolvedValueOnce([
+        { name: 'hisabati_sync_state.json', id: 'f1', metadata: { revision: 1 } } as any
+      ]);
+      vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValue({ revision: 1, accounts: [], transactions: [] });
+
+      // Add a pending item so it triggers a push
+      await db.syncQueue.add({ id: 'q1', status: 'pending', entityType: 'account', entityId: 'a1', operation: 'CREATE', createdAt: '2023-01-01', operationId: 'op1', retryCount: 0 });
+
+      // Mock listFiles again to return revision 2 (race condition)
+      vi.spyOn(googleDriveService, 'listFiles').mockResolvedValue([
+        { name: 'hisabati_sync_state.json', id: 'f1', metadata: { revision: 2 } } as any
+      ]);
+
+      await expect(syncEngine.performFullSync()).rejects.toThrow(/تم تحديث البيانات السحابية بواسطة جهاز آخر/);
+      
+      const item = await db.syncQueue.get('q1');
+      expect(item?.status).toBe('pending');
+      expect(item?.retryCount).toBe(1);
+    });
+  });
+
+  describe('SYNC-08: Financial Boundary Verification', () => {
+    it('should reject remote transactions with invalid amountMinor', async () => {
+      const { googleDriveService } = await import('../services/googleDrive.service');
+      vi.spyOn(googleDriveService, 'isConnected').mockReturnValue(true);
+      vi.spyOn(googleDriveService, 'listFiles').mockResolvedValue([{ name: 'hisabati_sync_state.json', id: 'f1', metadata: { revision: 1 } } as any]);
+      
+      vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValue({
+        revision: 1,
+        accounts: [{ id: 'acc1', name: 'Acc 1', currency: 'USD', updatedAt: new Date().toISOString() }],
+        transactions: [
+          { id: 'trx_invalid', accountId: 'acc1', amount: 100, amountMinor: 100.5, currency: 'USD', date: '2023-01-01', type: 'debit', updatedAt: new Date().toISOString() }, // amountMinor must be integer
+          { id: 'trx_missing_minor', accountId: 'acc1', amount: 50, currency: 'USD', date: '2023-01-01', type: 'debit', updatedAt: new Date().toISOString() } // should be accepted as we can derive it
+        ]
+      });
+
+      vi.spyOn(googleDriveService, 'updateJsonFile').mockResolvedValue({ id: 'f1' } as any);
+
+      await syncEngine.performFullSync();
+
+      const acc = await db.accounts.get('acc1');
+      expect(acc).toBeDefined();
+
+      const trxInvalid = await db.transactions.where('operationId').equals('remote_trx_invalid').first();
+      const trxValid = await db.transactions.where('operationId').equals('remote_trx_missing_minor').first();
+
+      const logs = await db.syncAuditLogs.toArray();
+      const malformedLogs = logs.filter(l => l.action === 'MALFORMED_DATA_REJECTED');
+      
+      if (!trxValid) {
+        console.log('SYNC QUEUE:', JSON.stringify(await db.syncQueue.toArray(), null, 2));
+        console.log('TRANSACTIONS:', JSON.stringify(await db.transactions.toArray(), null, 2));
+      }
+
+      expect(trxInvalid).toBeUndefined();
+      expect(trxValid).toBeDefined();
+      expect(trxValid?.amountMinor).toBe(5000);
+      expect(malformedLogs.length).toBeGreaterThan(0);
+    });
+  });
+});

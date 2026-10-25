@@ -32,7 +32,7 @@ export interface SyncQueueItem {
   createdAt: string;
   retryCount: number;
   lastError?: string;
-  status: 'pending' | 'processing' | 'failed' | 'completed';
+  status: 'pending' | 'processing' | 'prepared' | 'uploaded' | 'acknowledged' | 'failed' | 'completed';
 }
 
 export interface BackupMetadata {

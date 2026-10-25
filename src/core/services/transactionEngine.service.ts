@@ -238,7 +238,9 @@ export class FinancialTransactionEngine {
       let nextInvoiceNumberToCommit: number | undefined = undefined;
 
       const now = new Date().toISOString();
-      const id = 'trx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+      const id = (options?.isRemote && (dto as any).id) 
+        ? (dto as any).id 
+        : ('trx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8));
 
       // Atomic write transaction across all financial tables
       const activeDb = getDb();

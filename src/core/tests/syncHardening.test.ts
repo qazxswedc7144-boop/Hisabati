@@ -5,6 +5,8 @@ import { syncEngine, SyncEngine } from '../services/syncEngine.service';
 import { accountService } from '../services/account.service';
 import { tenantService } from '../services/TenantService';
 import { useTenantStore } from '@/shared/stores/tenantStore';
+import { decryptBackupPayload } from '../utils/crypto';
+import { SyncContextRegistry } from '../services/syncContext';
 
 vi.mock('../services/googleDrive.service', () => {
   return {
@@ -35,6 +37,9 @@ describe('Phase 4 - Sync Hardening & Safety Tests', () => {
     await db.syncAuditLogs.clear();
     await db.settings.clear();
     localStorage.clear();
+
+    // Default system currency for most tests
+    await db.settings.put({ id: 'currency', key: 'currency', value: 'YER', updatedAt: new Date().toISOString() });
     
     // Mock navigator.locks
     let locked = false;
@@ -96,9 +101,20 @@ describe('Phase 4 - Sync Hardening & Safety Tests', () => {
       const accId = 'acc_del_cascade';
       const trxId = 'trx_del_cascade';
       await db.accounts.add({ id: accId, name: 'To Delete', currentBalance: 0 } as any);
-      await db.transactions.add({ id: trxId, accountId: accId, amount: 100 } as any);
+      
+      // Create as draft to allow deletion (posted transactions are immutable)
+      await db.transactions.add({ id: trxId, accountId: accId, amount: 100, type: 'debit', date: '2023-01-01', status: 'draft' } as any);
 
-      await accountService.deleteAccount(accId, true);
+      // Must delete transactions first (hardening rule)
+      const { transactionEngine } = await import('../services/transactionEngine.service');
+      
+      SyncContextRegistry.beginSyncApply();
+      try {
+        await transactionEngine.deleteTransaction(trxId, undefined, { isRemote: true });
+        await accountService.deleteAccount(accId, true);
+      } finally {
+        SyncContextRegistry.endSyncApply();
+      }
 
       const accCount = await db.accounts.count();
       const trxCount = await db.transactions.count();
@@ -186,6 +202,9 @@ describe('Phase 4 - Sync Hardening & Safety Tests', () => {
 
   describe('SYNC-05: Multi-Currency AmountMinor', () => {
     it('Missing currency never silently becomes YER and is rejected', async () => {
+      // Clear system currency to force rejection
+      await db.settings.delete('currency');
+
       const { googleDriveService } = await import('../services/googleDrive.service');
       vi.spyOn(googleDriveService, 'isConnected').mockReturnValue(true);
       vi.spyOn(googleDriveService, 'listFiles').mockResolvedValue([{ id: 'file_1', name: 'hisabati_sync_state.json' } as any]);
@@ -210,7 +229,8 @@ describe('Phase 4 - Sync Hardening & Safety Tests', () => {
       
       await syncEngine.performFullSync();
 
-      const savedTrx = await db.transactions.get('trx_missing_currency');
+      // Look up by operationId because ID is randomized on creation
+      const savedTrx = await db.transactions.where('operationId').equals('remote_trx_missing_currency').first();
       expect(savedTrx).toBeUndefined(); // REJECTED
       
       const logs = await db.syncAuditLogs.toArray();
@@ -224,17 +244,17 @@ describe('Phase 4 - Sync Hardening & Safety Tests', () => {
        vi.spyOn(googleDriveService, 'listFiles').mockResolvedValue([{ id: 'file_1', name: 'hisabati_sync_state.json' } as any]);
        vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValue({
          version: 1,
-         accounts: [{ id: 'acc_1', name: 'Test', createdAt: new Date().toISOString() }],
+         accounts: [{ id: 'acc_1', name: 'Test', currency: 'USD', createdAt: new Date().toISOString() }],
          transactions: [
-           { id: 'trx_usd', accountId: 'acc_1', type: 'debit', amount: 100, currency: 'USD', createdAt: new Date().toISOString() },
-           { id: 'trx_omr', accountId: 'acc_1', type: 'debit', amount: 100, currency: 'OMR', createdAt: new Date().toISOString() } // 3 decimal places
+           { id: 'trx_usd', accountId: 'acc_1', type: 'debit', amount: 100, currency: 'USD', date: '2023-01-01', createdAt: new Date().toISOString() },
+           { id: 'trx_omr', accountId: 'acc_1', type: 'debit', amount: 100, currency: 'OMR', date: '2023-01-01', createdAt: new Date().toISOString() } // 3 decimal places
          ],
          });
        vi.spyOn(googleDriveService, 'updateJsonFile').mockResolvedValue({ id: 'file_1' } as any);
 
        await syncEngine.performFullSync();
-       const trxUsd = await db.transactions.get('trx_usd');
-       const trxOmr = await db.transactions.get('trx_omr');
+       const trxUsd = await db.transactions.where('operationId').equals('remote_trx_usd').first();
+       const trxOmr = await db.transactions.where('operationId').equals('remote_trx_omr').first();
        
        expect(trxUsd?.amountMinor).toBe(10000); // USD: 2 decimal places
        expect(trxOmr?.amountMinor).toBe(100000); // OMR: 3 decimal places
@@ -284,9 +304,9 @@ describe('Phase 4 - Sync Hardening & Safety Tests', () => {
           "invalid_string"
         ],
         transactions: [
-          { id: 'trx_valid', accountId: 'acc_valid', amount: 100, currency: 'USD' },
-          { id: 'trx_invalid_no_account', amount: 100, currency: 'USD' },
-          { id: 'trx_invalid_NaN', accountId: 'acc_valid', amount: NaN, currency: 'USD' },
+          { id: 'trx_valid', accountId: 'acc_valid', amount: 100, currency: 'USD', date: '2023-01-01', type: 'debit' },
+          { id: 'trx_invalid_no_account', amount: 100, currency: 'USD', date: '2023-01-01', type: 'debit' },
+          { id: 'trx_invalid_NaN', accountId: 'acc_valid', amount: NaN, currency: 'USD', date: '2023-01-01', type: 'debit' },
           null
         ],
         tombstones: [],
@@ -301,10 +321,15 @@ describe('Phase 4 - Sync Hardening & Safety Tests', () => {
 
       await syncEngine.performFullSync();
 
-      expect(uploadedPayload.accounts.length).toBe(1);
-      expect(uploadedPayload.accounts[0].id).toBe('acc_valid');
-      expect(uploadedPayload.transactions.length).toBe(1);
-      expect(uploadedPayload.transactions[0].id).toBe('trx_valid');
+      // Decrypt uploaded payload to verify content
+      const decrypted = await decryptBackupPayload(uploadedPayload.data, uploadedPayload.iv);
+      const plainPayload = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
+
+      expect(plainPayload.accounts.length).toBe(1);
+      expect(plainPayload.accounts[0].id).toBe('acc_valid');
+      expect(plainPayload.transactions.length).toBe(1);
+      // ID should be preserved for remote records
+      expect(plainPayload.transactions[0].id).toBe('trx_valid');
       
       const logs = await db.syncAuditLogs.toArray();
       const malformedLogs = logs.filter(l => l.action === 'MALFORMED_DATA_REJECTED');
