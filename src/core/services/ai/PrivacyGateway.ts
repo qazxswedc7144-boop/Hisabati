@@ -7,24 +7,31 @@
  */
 
 export class PrivacyGateway {
-  private static readonly FORBIDDEN_KEYS = new Set([
-    'accountid',
-    'tenantid',
-    'organizationid',
-    'userid',
-    'id',
-    'email',
-    'phone',
-    'token',
-    'key',
-    'credentials',
-    'password',
-    'secret',
-    'auth',
-    'session',
-    'access_token',
-    'refreshtoken',
-  ]);
+ private static readonly FORBIDDEN_KEYS = new Set([
+  'accountid',
+  'tenantid',
+  'organizationid',
+  'userid',
+  'id',
+  'email',
+  'phone',
+  'token',
+  'key',
+  'apikey',
+  'credentials',
+  'credential',
+  'password',
+  'secret',
+  'auth',
+  'authorization',
+  'session',
+  'accesstoken',
+  'refreshtoken',
+  'idtoken',
+  'firebaseidtoken',
+  'clientsecret',
+  'privatekey',
+]);
 
   private static readonly ALLOWED_FINANCIAL_KEYS = new Set([
     'amount',
@@ -126,10 +133,21 @@ export class PrivacyGateway {
 
       for (const [rawKey, rawVal] of Object.entries(record)) {
         const lowerKey = rawKey.toLowerCase();
+const normalizedKey = lowerKey.replace(/[^a-z0-9]/g, '');
 
-        // Remove sensitive identifiers and credentials at every nesting level.
-        if (PrivacyGateway.FORBIDDEN_KEYS.has(lowerKey)) {
-          continue;
+const containsSensitiveTerm =
+  /(?:password|secret|credential|token|apikey|authorization)/i.test(
+    normalizedKey
+  );
+
+const isForbiddenKey =
+  PrivacyGateway.FORBIDDEN_KEYS.has(normalizedKey) ||
+  containsSensitiveTerm;
+
+// Remove sensitive identifiers and credentials at every nesting level.
+if (isForbiddenKey) {
+  continue;
+}
         }
 
         // Replace account names with stable, non-identifying placeholders.
