@@ -457,8 +457,18 @@ const requireFirebaseAuth = async (
       }
 
       // Context must be an object if provided
-      if (context !== undefined && (typeof context !== 'object' || context === null)) {
-        return res.status(400).json({ error: 'السياق المالي يجب أن يكون كائناً صحيحاً.' });
+      if (
+  context !== undefined &&
+  (
+    context === null ||
+    typeof context !== 'object' ||
+    Array.isArray(context)
+  )
+) {
+  return res.status(400).json({
+    error: 'السياق المالي يجب أن يكون كائناً صحيحاً.',
+    code: 'INVALID_AI_CONTEXT',
+  });
       }
 
       const apiKey = process.env.GEMINI_API_KEY;
