@@ -1,5 +1,5 @@
 import { CapabilityLease, LeaseValidationResult, OrganizationRole } from '@/shared/types/tenant.types';
-import { LeaseCryptoShared } from './LeaseCryptoShared';
+import { LeaseCryptoShared } from '@/shared/utils/LeaseCryptoShared';
 
 /**
  * CapabilityLeaseService:

@@ -97,3 +97,18 @@ export interface TenantContext {
 export interface LocalTenantContext extends TenantContext {
   isLocalMode: true;
 }
+
+export interface VerifyMembershipResponse {
+  success: boolean;
+  verifiedByBackend: boolean;
+  verifiedUid?: string;
+  organization?: Organization;
+  membership?: OrganizationMembership;
+  authMembershipStatus: AuthMembershipStatus;
+  verificationRevision?: number;
+  error?: {
+    code: string;
+    messageAr: string;
+    details?: string;
+  };
+}

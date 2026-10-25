@@ -1,7 +1,7 @@
-import { FirebaseTokenVerifier, FirebaseTokenVerificationError } from '../firebase/FirebaseTokenVerifier';
-import { Organization, OrganizationMembership, AuthMembershipStatus } from '@/shared/types/tenant.types';
-import { UserRole } from '@/shared/types/rbac.types';
-import { rbacGuard } from '../rbac/RBACGuard.service';
+import { FirebaseTokenVerifier, FirebaseTokenVerificationError } from './FirebaseTokenVerifier';
+import { Organization, OrganizationMembership, AuthMembershipStatus, VerifyMembershipResponse } from '../../src/shared/types/tenant.types';
+import { UserRole } from '../../src/shared/types/rbac.types';
+import { rbacGuard } from '../../src/core/services/rbac/RBACGuard.service';
 
 export interface VerifyMembershipRequest {
   idToken: string;
@@ -10,21 +10,6 @@ export interface VerifyMembershipRequest {
   clientClaimedUid?: string;
   clientClaimedRole?: string;
   clientClaimedPermissions?: string[];
-}
-
-export interface VerifyMembershipResponse {
-  success: boolean;
-  verifiedByBackend: boolean;
-  verifiedUid?: string;
-  organization?: Organization;
-  membership?: OrganizationMembership;
-  authMembershipStatus: AuthMembershipStatus;
-  verificationRevision?: number;
-  error?: {
-    code: string;
-    messageAr: string;
-    details?: string;
-  };
 }
 
 /**
@@ -125,7 +110,7 @@ export class ServerMembershipVerifier {
         verifiedEmail = claims.email;
         verifiedName = claims.name;
       } else {
-        const { getAdminAuth } = await import('../firebase/adminServer');
+        const { getAdminAuth } = await import('./adminServer');
         const adminAuth = getAdminAuth();
         const decodedToken = await adminAuth.verifyIdToken(idToken, true);
         verifiedUid = decodedToken.uid;
@@ -306,7 +291,7 @@ export class ServerMembershipVerifier {
 
     // 2. Authoritative query via Firebase Admin Firestore SDK
     try {
-      const { getAdminFirestore } = await import('../firebase/adminServer');
+      const { getAdminFirestore } = await import('./adminServer');
       const adminDb = getAdminFirestore();
       const orgDoc = await adminDb.collection('organizations').doc(orgId).get();
       if (orgDoc.exists) {
@@ -349,7 +334,7 @@ export class ServerMembershipVerifier {
 
     // 2. Authoritative query via Firebase Admin Firestore SDK
     try {
-      const { getAdminFirestore } = await import('../firebase/adminServer');
+      const { getAdminFirestore } = await import('./adminServer');
       const adminDb = getAdminFirestore();
       const memberDoc = await adminDb.collection('organizations').doc(orgId).collection('members').doc(userId).get();
       if (memberDoc.exists) {

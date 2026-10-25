@@ -2,12 +2,12 @@ import express from 'express';
 import http from 'http';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
-import { ServerMembershipVerifier } from './src/core/services/tenant/ServerMembershipVerifier';
-import { ServerLeaseIssuer } from './src/core/services/tenant/ServerLeaseIssuer';
-import { FirebaseTokenVerifier, FirebaseTokenVerificationError } from './src/core/services/firebase/FirebaseTokenVerifier';
+import { ServerMembershipVerifier } from './server/infrastructure/ServerMembershipVerifier';
+import { ServerLeaseIssuer } from './server/infrastructure/ServerLeaseIssuer';
+import { FirebaseTokenVerifier, FirebaseTokenVerificationError } from './server/infrastructure/FirebaseTokenVerifier';
 import { AIResponseSchema, validateInvoiceAuditResponse } from './src/core/services/ai/aiValidation';
 import { GeminiOcrResponseSchema } from './src/core/services/ai/ocrValidation';
-import { initFirebaseAdmin } from './src/core/services/firebase/adminServer';
+import { initFirebaseAdmin } from './server/infrastructure/adminServer';
 import { privacyGateway } from './src/core/services/ai/PrivacyGateway';
 
 // Initialize Firebase Admin SDK on server start

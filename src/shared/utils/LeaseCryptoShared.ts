@@ -1,4 +1,4 @@
-import { CapabilityLease } from '@/shared/types/tenant.types';
+import { CapabilityLease } from '../types/tenant.types';
 
 /**
  * LeaseCryptoShared:

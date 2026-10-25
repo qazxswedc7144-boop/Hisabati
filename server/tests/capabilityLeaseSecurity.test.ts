@@ -1,9 +1,9 @@
 import 'fake-indexeddb/auto';
-import { capabilityLeaseService } from '../services/tenant/CapabilityLeaseService';
-import { ServerLeaseIssuer } from '../services/tenant/ServerLeaseIssuer';
-import { tenantService } from '../services/TenantService';
-import { CapabilityLease } from '@/shared/types/tenant.types';
-import { useTenantStore } from '@/shared/stores/tenantStore';
+import { capabilityLeaseService } from '../../src/core/services/tenant/CapabilityLeaseService';
+import { ServerLeaseIssuer } from '../infrastructure/ServerLeaseIssuer';
+import { tenantService } from '../../src/core/services/TenantService';
+import { CapabilityLease } from '../../src/shared/types/tenant.types';
+import { useTenantStore } from '../../src/shared/stores/tenantStore';
 
 export interface CapabilityLeaseSecurityTestResult {
   id: string;

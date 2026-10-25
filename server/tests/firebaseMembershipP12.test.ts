@@ -1,9 +1,9 @@
-import { authService } from '../services/rbac/AuthService.service';
-import { tenantService } from '../services/TenantService';
-import { tenantDbManager } from '../database/TenantDatabaseManager';
-import { useTenantStore } from '@/shared/stores/tenantStore';
-import { rbacGuard } from '../services/rbac/RBACGuard.service';
-import { ServerLeaseIssuer } from '../services/tenant/ServerLeaseIssuer';
+import { authService } from '../../src/core/services/rbac/AuthService.service';
+import { tenantService } from '../../src/core/services/TenantService';
+import { tenantDbManager } from '../../src/core/database/TenantDatabaseManager';
+import { useTenantStore } from '../../src/shared/stores/tenantStore';
+import { rbacGuard } from '../../src/core/services/rbac/RBACGuard.service';
+import { ServerLeaseIssuer } from '../infrastructure/ServerLeaseIssuer';
 import { AuditActor } from '@/shared/types';
 
 export interface SecurityTestResultItem {
@@ -24,10 +24,72 @@ export interface SecurityTestSuiteSummary {
 }
 
 export class FirebaseMembershipP12TestSuite {
+  private static setupMocks(): void {
+    if (typeof globalThis.fetch !== 'undefined' && (globalThis.fetch as any)._isMock) return;
+
+    (globalThis as any).fetch = async (url: string, options: any) => {
+      const { ServerMembershipVerifier } = await import('../infrastructure/ServerMembershipVerifier');
+      const { ServerLeaseIssuer } = await import('../infrastructure/ServerLeaseIssuer');
+
+      if (url === '/api/tenant/verify-membership') {
+        const body = JSON.parse(options.body);
+        const authHeader = options.headers?.['Authorization'] || options.headers?.['authorization'];
+        const idToken = body.idToken || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null);
+        
+        const result = await ServerMembershipVerifier.verifyMembership({
+          idToken: idToken!,
+          organizationId: body.organizationId,
+          clientClaimedUid: body.clientClaimedUid,
+          clientClaimedRole: body.clientClaimedRole,
+        });
+
+        return {
+          ok: result.success,
+          json: async () => result,
+        };
+      }
+
+      if (url === '/api/tenant/issue-lease') {
+        const body = JSON.parse(options.body);
+        const authHeader = options.headers?.['Authorization'] || options.headers?.['authorization'];
+        const idToken = body.idToken || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null);
+
+        const verification = await ServerMembershipVerifier.verifyMembership({
+          idToken: idToken!,
+          organizationId: body.organizationId,
+        });
+
+        if (!verification.success || !verification.membership || !verification.verifiedUid) {
+          return {
+            ok: false,
+            json: async () => ({ success: false, error: verification.error?.messageAr }),
+          };
+        }
+
+        const lease = await ServerLeaseIssuer.issueLease({
+          organizationId: body.organizationId,
+          verifiedUid: verification.verifiedUid,
+          verifiedRole: verification.membership.role,
+          verifiedPermissions: verification.membership.permissions || [],
+          verificationRevision: verification.verificationRevision,
+        });
+
+        return {
+          ok: true,
+          json: async () => ({ success: true, lease }),
+        };
+      }
+
+      return { ok: false, status: 404, json: async () => ({ error: 'Not Found' }) };
+    };
+    (globalThis.fetch as any)._isMock = true;
+  }
+
   public static async runAll(): Promise<SecurityTestSuiteSummary> {
     const startTime = performance.now();
     const results: SecurityTestResultItem[] = [];
     await ServerLeaseIssuer.initialize();
+    FirebaseMembershipP12TestSuite.setupMocks();
 
     const testCases: Array<{
       id: string;
@@ -217,7 +279,7 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Expired Token Rejection',
         description: 'رفض رمز الدخول منتهي الصلاحية فوراً ومنع فتح أو إنشاء قاعدة بيانات الـ Tenant',
         fn: async () => {
-          const { FirebaseTokenVerifier } = await import('../services/firebase/FirebaseTokenVerifier');
+          const { FirebaseTokenVerifier } = await import('../infrastructure/FirebaseTokenVerifier');
           const expiredToken = FirebaseTokenVerifier.createTestToken(
             { uid: 'usr_expired_1' },
             { expired: true }
@@ -261,7 +323,7 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Tampered Token Rejection',
         description: 'رفض الرموز التالفة أو ذات التوقيع المزور فوراً ومنع الوصول للنظام',
         fn: async () => {
-          const { FirebaseTokenVerifier } = await import('../services/firebase/FirebaseTokenVerifier');
+          const { FirebaseTokenVerifier } = await import('../infrastructure/FirebaseTokenVerifier');
           const tamperedToken = FirebaseTokenVerifier.createTestToken(
             { uid: 'usr_attacker_sig' },
             { invalidSignature: true }
@@ -296,7 +358,7 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Project ID Mismatch Rejection',
         description: 'رفض الرموز الصادرة لمشروع Firebase خارجي أو مختلف عن مشروع التطبيق',
         fn: async () => {
-          const { FirebaseTokenVerifier } = await import('../services/firebase/FirebaseTokenVerifier');
+          const { FirebaseTokenVerifier } = await import('../infrastructure/FirebaseTokenVerifier');
           const foreignToken = FirebaseTokenVerifier.createTestToken(
             { uid: 'usr_foreign_project' },
             { wrongProject: true }
@@ -324,8 +386,8 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Client Spoofing Prevention (Enforce Firestore Role)',
         description: 'إحباط محاولة انتحال دور المالك أو انتحال UID وتثبيت ما يقرره السجل الخادمي الموثق',
         fn: async () => {
-          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
-          const { FirebaseTokenVerifier } = await import('../services/firebase/FirebaseTokenVerifier');
+          const { ServerMembershipVerifier } = await import('../infrastructure/ServerMembershipVerifier');
+          const { FirebaseTokenVerifier } = await import('../infrastructure/FirebaseTokenVerifier');
 
           const realUid = 'usr_real_accountant_44';
           const orgId = 'org_spoof_test_100';
@@ -384,8 +446,8 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Suspended Organization Rejection',
         description: 'رفض الدخول لمؤسسة معلقة أو مؤرشفة ومنع فتح قاعدة بياناتها',
         fn: async () => {
-          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
-          const { FirebaseTokenVerifier } = await import('../services/firebase/FirebaseTokenVerifier');
+          const { ServerMembershipVerifier } = await import('../infrastructure/ServerMembershipVerifier');
+          const { FirebaseTokenVerifier } = await import('../infrastructure/FirebaseTokenVerifier');
 
           const uid = 'usr_suspended_org_user';
           const orgId = 'org_suspended_77';
@@ -443,8 +505,8 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Suspended Membership Handling',
         description: 'ضبط حالة العضوية إلى membership_suspended للمستخدم المعلق ومنع فتح DB',
         fn: async () => {
-          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
-          const { FirebaseTokenVerifier } = await import('../services/firebase/FirebaseTokenVerifier');
+          const { ServerMembershipVerifier } = await import('../infrastructure/ServerMembershipVerifier');
+          const { FirebaseTokenVerifier } = await import('../infrastructure/FirebaseTokenVerifier');
 
           const uid = 'usr_suspended_member_55';
           const orgId = 'org_active_for_suspended_mem';
@@ -499,8 +561,8 @@ export class FirebaseMembershipP12TestSuite {
         title: 'No Membership in Target Org',
         description: 'مستخدم مسجل في Firebase لكنه لا يملك عضوية في المؤسسة المستهدفة',
         fn: async () => {
-          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
-          const { FirebaseTokenVerifier } = await import('../services/firebase/FirebaseTokenVerifier');
+          const { ServerMembershipVerifier } = await import('../infrastructure/ServerMembershipVerifier');
+          const { FirebaseTokenVerifier } = await import('../infrastructure/FirebaseTokenVerifier');
 
           const uid = 'usr_stranger_without_membership';
           const orgId = 'org_private_vault';
@@ -542,8 +604,8 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Authoritative Server-Verified Switch Success',
         description: 'توثيق العضوية والمنظمة بنجاح واعتماد حالة online_verified وفتح Tenant DB',
         fn: async () => {
-          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
-          const { FirebaseTokenVerifier } = await import('../services/firebase/FirebaseTokenVerifier');
+          const { ServerMembershipVerifier } = await import('../infrastructure/ServerMembershipVerifier');
+          const { FirebaseTokenVerifier } = await import('../infrastructure/FirebaseTokenVerifier');
 
           const uid = 'usr_verified_pro_88';
           const orgId = 'org_verified_enterprise_88';
@@ -608,7 +670,7 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Token String Leakage Prevention',
         description: 'التحقق الصارم من عدم تسريب نص Token السري في رسائل الخطأ أو الحالة أو الكونسول',
         fn: async () => {
-          const { FirebaseTokenVerifier } = await import('../services/firebase/FirebaseTokenVerifier');
+          const { FirebaseTokenVerifier } = await import('../infrastructure/FirebaseTokenVerifier');
           const secretTestToken = FirebaseTokenVerifier.createTestToken(
             { uid: 'usr_secret_leak_test' },
             { expired: true }
@@ -636,8 +698,8 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Client Permission Spoofing Prevention',
         description: 'تجاهل أي صلاحيات يدعيها العميل خادمياً والاعتماد الحصري على الصلاحيات الموثقة',
         fn: async () => {
-          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
-          const { FirebaseTokenVerifier } = await import('../services/firebase/FirebaseTokenVerifier');
+          const { ServerMembershipVerifier } = await import('../infrastructure/ServerMembershipVerifier');
+          const { FirebaseTokenVerifier } = await import('../infrastructure/FirebaseTokenVerifier');
 
           const uid = 'usr_perm_spoofer';
           const orgId = 'org_perm_check';
@@ -686,7 +748,7 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Valid Offline Lease -> Allowed within lease scope',
         description: 'السماح بالوصول دون اتصال فقط في حدود مدة ونطاق الـ Capability Lease الصالحة',
         fn: async () => {
-          const { capabilityLeaseService } = await import('../services/tenant/CapabilityLeaseService');
+          const { capabilityLeaseService } = await import('../../src/core/services/tenant/CapabilityLeaseService');
           const uid = 'usr_lease_valid';
           const orgId = 'org_lease_scope';
 
@@ -733,7 +795,7 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Expired Capability Lease -> Reject',
         description: 'رفض التصريح منتهي الصلاحية ومنع فتح قاعدة بيانات المؤسسة دون اتصال',
         fn: async () => {
-          const { capabilityLeaseService } = await import('../services/tenant/CapabilityLeaseService');
+          const { capabilityLeaseService } = await import('../../src/core/services/tenant/CapabilityLeaseService');
           const uid = 'usr_lease_expired';
           const orgId = 'org_expired_scope';
 
@@ -778,7 +840,7 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Tampered Capability Lease -> Reject',
         description: 'اكتشاف أي تلاعب في hash أو محتوى الـ Lease ورفضه فورياً',
         fn: async () => {
-          const { capabilityLeaseService } = await import('../services/tenant/CapabilityLeaseService');
+          const { capabilityLeaseService } = await import('../../src/core/services/tenant/CapabilityLeaseService');
           const uid = 'usr_lease_tamper';
           const orgId = 'org_tamper_scope';
 
@@ -817,7 +879,7 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Lease for Another UID -> Reject',
         description: 'رفض استخدام تصريح صادر لمستخدم آخر لمنع انتحال الهوية دون اتصال',
         fn: async () => {
-          const { capabilityLeaseService } = await import('../services/tenant/CapabilityLeaseService');
+          const { capabilityLeaseService } = await import('../../src/core/services/tenant/CapabilityLeaseService');
           const victimUid = 'usr_alice';
           const attackerUid = 'usr_bob';
           const orgId = 'org_corp';
@@ -851,7 +913,7 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Lease for Another Organization -> Reject',
         description: 'منع استخدام تصريح لمؤسسة A لفتح بيانات مؤسسة B',
         fn: async () => {
-          const { capabilityLeaseService } = await import('../services/tenant/CapabilityLeaseService');
+          const { capabilityLeaseService } = await import('../../src/core/services/tenant/CapabilityLeaseService');
           const uid = 'usr_charlie';
           const orgA = 'org_retail_a';
           const orgB = 'org_vault_b';
@@ -885,7 +947,7 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Locally Modified Permissions in Lease -> Reject',
         description: 'منع ترقية الصلاحيات محلياً باكتشاف عدم تطابق التوقيع الرقمي للـ Lease',
         fn: async () => {
-          const { capabilityLeaseService } = await import('../services/tenant/CapabilityLeaseService');
+          const { capabilityLeaseService } = await import('../../src/core/services/tenant/CapabilityLeaseService');
           const uid = 'usr_escalator_perms';
           const orgId = 'org_secure_bank';
 
@@ -923,7 +985,7 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Locally Modified Role in Lease -> Reject',
         description: 'منع ترقية الدور من viewer إلى owner محلياً داخل الـ Lease',
         fn: async () => {
-          const { capabilityLeaseService } = await import('../services/tenant/CapabilityLeaseService');
+          const { capabilityLeaseService } = await import('../../src/core/services/tenant/CapabilityLeaseService');
           const uid = 'usr_role_escalator';
           const orgId = 'org_gov_dept';
 
@@ -961,7 +1023,7 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Locally Extended Expiration in Lease -> Reject',
         description: 'منع تمديد تاريخ انتهاء التصريح محلياً دون الرجوع للخادم',
         fn: async () => {
-          const { capabilityLeaseService } = await import('../services/tenant/CapabilityLeaseService');
+          const { capabilityLeaseService } = await import('../../src/core/services/tenant/CapabilityLeaseService');
           const uid = 'usr_exp_extender';
           const orgId = 'org_finite_term';
 
@@ -1000,9 +1062,9 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Reconnection after Membership Suspension -> Access Revoked',
         description: 'إلغاء التصريح وإغلاق قاعدة بيانات المؤسسة فور إعادة الاتصال إذا تم تعليق العضوية خادمياً',
         fn: async () => {
-          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
-          const { FirebaseTokenVerifier } = await import('../services/firebase/FirebaseTokenVerifier');
-          const { capabilityLeaseService } = await import('../services/tenant/CapabilityLeaseService');
+          const { ServerMembershipVerifier } = await import('../infrastructure/ServerMembershipVerifier');
+          const { FirebaseTokenVerifier } = await import('../infrastructure/FirebaseTokenVerifier');
+          const { capabilityLeaseService } = await import('../../src/core/services/tenant/CapabilityLeaseService');
 
           const uid = 'usr_reconnect_fired';
           const orgId = 'org_revocation_test';
@@ -1080,7 +1142,7 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Failed Verification -> Tenant DB Remains Closed',
         description: 'التأكد من بقاء قاعدة بيانات المؤسسة مغلقة تماماً عند فشل التحقق الخادمي',
         fn: async () => {
-          const { FirebaseTokenVerifier } = await import('../services/firebase/FirebaseTokenVerifier');
+          const { FirebaseTokenVerifier } = await import('../infrastructure/FirebaseTokenVerifier');
 
           const badToken = FirebaseTokenVerifier.createTestToken(
             { uid: 'usr_fail_closed' },
@@ -1135,7 +1197,7 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Production Simulation: Test Fixtures Rejected',
         description: 'التأكد من رفض استخدام Test Fixtures ومنع فتح قاعدة البيانات عند محاكاة بيئة الإنتاج',
         fn: async () => {
-          const { TenantDatabaseManager } = await import('../database/TenantDatabaseManager');
+          const { TenantDatabaseManager } = await import('../../src/core/database/TenantDatabaseManager');
           
           // Temporarily stub process.env.NODE_ENV = 'production' to test production guard
           const origNodeEnv = process.env.NODE_ENV;
@@ -1218,7 +1280,7 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Production Admin SDK Verification Path & Fail-Closed',
         description: 'اختبار مسار إنتاج Admin SDK مع التحقق من استدعاء verifyIdToken ومنع online_verified وفشل فتح قاعدة البيانات عند غياب العضوية أو خطأ الرمز',
         fn: async () => {
-          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
+          const { ServerMembershipVerifier } = await import('../infrastructure/ServerMembershipVerifier');
 
           const res = await ServerMembershipVerifier.verifyMembership({
             idToken: 'invalid_prod_token_sig',
@@ -1237,8 +1299,8 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Cross-Tenant Authorization & Isolation (Org A vs Org B)',
         description: 'مستخدم عضوي في المؤسسة A فقط يحاول الوصول إلى المؤسسة B -> التأكد من رفض الطلب ومنع فتح قاعدة بيانات B حتى مع إرسال معرف أو أدوار مزورة',
         fn: async () => {
-          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
-          const { FirebaseTokenVerifier } = await import('../services/firebase/FirebaseTokenVerifier');
+          const { ServerMembershipVerifier } = await import('../infrastructure/ServerMembershipVerifier');
+          const { FirebaseTokenVerifier } = await import('../infrastructure/FirebaseTokenVerifier');
 
           const uid = 'usr_org_a_only';
           const orgA = 'org_alpha_123';
@@ -1312,8 +1374,8 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Production Admin SDK Mock/Integration Verification Path',
         description: 'اختبار تكاملي محاكي للإنتاج باستخدام حقن التبعيات (Dependency Injection) لإثبات استدعاء verifyIdToken(..., true) واستخدام الـ UID الموثق لجلب المنظمة والعضوية من Admin Firestore',
         fn: async () => {
-          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
-          const { setAdminAuthMock, setAdminFirestoreMock, clearAdminMocks } = await import('../services/firebase/adminServer');
+          const { ServerMembershipVerifier } = await import('../infrastructure/ServerMembershipVerifier');
+          const { setAdminAuthMock, setAdminFirestoreMock, clearAdminMocks } = await import('../infrastructure/adminServer');
 
           ServerMembershipVerifier.setForceAdminSdkForTest(true);
 
@@ -1439,8 +1501,8 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Production Environment: Mock Injection Forbidden & Fail-Closed',
         description: 'إثبات رفض حقن Mocks في بيئة الإنتاج Fail-Closed ومنع تجاوز تهيئة Firebase Admin SDK',
         fn: async () => {
-          const { setAdminAuthMock, setAdminFirestoreMock, clearAdminMocks, initFirebaseAdmin } = await import('../services/firebase/adminServer');
-          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
+          const { setAdminAuthMock, setAdminFirestoreMock, clearAdminMocks, initFirebaseAdmin } = await import('../infrastructure/adminServer');
+          const { ServerMembershipVerifier } = await import('../infrastructure/ServerMembershipVerifier');
 
           const origNodeEnv = process.env.NODE_ENV;
           const origAllowUninit = process.env.HISABATI_ALLOW_UNINITIALIZED_ADMIN;
@@ -1513,8 +1575,8 @@ export class FirebaseMembershipP12TestSuite {
         title: 'Fail-Closed for Missing, Empty, or Unknown Organization and Membership Status',
         description: 'التحقق من رفض الوصول افتراضياً في حال كانت حالة المؤسسة أو العضوية مفقودة أو فارغة أو غير معروفة',
         fn: async () => {
-          const { ServerMembershipVerifier } = await import('../services/tenant/ServerMembershipVerifier');
-          const { FirebaseTokenVerifier } = await import('../services/firebase/FirebaseTokenVerifier');
+          const { ServerMembershipVerifier } = await import('../infrastructure/ServerMembershipVerifier');
+          const { FirebaseTokenVerifier } = await import('../infrastructure/FirebaseTokenVerifier');
 
           const uid = 'usr_status_test';
           const token = FirebaseTokenVerifier.createTestToken({ uid });

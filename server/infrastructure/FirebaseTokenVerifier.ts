@@ -1,4 +1,4 @@
-import firebaseConfigJson from '../../../../firebase-applet-config.json';
+import firebaseConfigJson from '../../firebase-applet-config.json';
 
 export interface VerifiedTokenClaims {
   uid: string;

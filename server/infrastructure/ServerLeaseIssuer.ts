@@ -1,5 +1,5 @@
-import { OrganizationRole, CapabilityLease } from '@/shared/types/tenant.types';
-import { LeaseCryptoShared } from './LeaseCryptoShared';
+import { OrganizationRole, CapabilityLease } from '../../src/shared/types/tenant.types';
+import { LeaseCryptoShared } from '../../src/shared/utils/LeaseCryptoShared';
 
 /**
  * ServerLeaseIssuer: Server-side authoritative asymmetric signing for Capability Leases.

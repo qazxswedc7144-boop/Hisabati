@@ -10,12 +10,12 @@
  * - SEC-07: Backup file size and structure gate
  */
 
-import { createApp } from '../../../server';
+import { createApp } from '../../server';
 import http from 'http';
-import { googleDriveService } from '../services/googleDrive.service';
-import { getApiHeaders, getClientSessionToken } from '../utils/apiAuth';
-import { BackupService, MAX_BACKUP_ACCOUNTS, MAX_BACKUP_TRANSACTIONS } from '../services/backup.service';
-import { FirebaseTokenVerifier } from '../services/firebase/FirebaseTokenVerifier';
+import { googleDriveService } from '../../src/core/services/googleDrive.service';
+import { getApiHeaders, getClientSessionToken } from '../../src/core/utils/apiAuth';
+import { BackupService, MAX_BACKUP_ACCOUNTS, MAX_BACKUP_TRANSACTIONS } from '../../src/core/services/backup.service';
+import { FirebaseTokenVerifier } from '../infrastructure/FirebaseTokenVerifier';
 
 export interface Phase3TestResult {
   id: string;

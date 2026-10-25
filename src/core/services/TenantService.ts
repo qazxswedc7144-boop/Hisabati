@@ -4,7 +4,7 @@ import { Organization, OrganizationMembership, CapabilityLease } from '@/shared/
 import { authService } from './rbac/AuthService.service';
 import type {
   VerifyMembershipResponse,
-} from './tenant/ServerMembershipVerifier';
+} from '@/shared/types/tenant.types';
 import { capabilityLeaseService } from './tenant/CapabilityLeaseService';
 
 
@@ -138,7 +138,9 @@ export class TenantService {
 
       // In browser environment, enforce backend API verification without local fallback
       const isVitest = typeof process !== 'undefined' && process.env.VITEST === 'true';
-      if (typeof window !== 'undefined' && typeof fetch === 'function' && !isVitest) {
+      const useFetch = typeof fetch === 'function';
+
+      if (useFetch && (typeof window !== 'undefined' || isVitest)) {
         try {
           const apiRes = await fetch('/api/tenant/verify-membership', {
             method: 'POST',
@@ -164,8 +166,8 @@ export class TenantService {
               verifiedByBackend: false,
               authMembershipStatus: data.authMembershipStatus || 'authenticated_no_membership',
               error: {
-                code: data.code || 'VERIFICATION_FAILED',
-                messageAr: data.error || 'فشل التحقق الخادمي من عضوية المؤسسة.',
+                code: data.code || data.error?.code || 'VERIFICATION_FAILED',
+                messageAr: data.error?.messageAr || data.error || 'فشل التحقق الخادمي من عضوية المؤسسة.',
               },
             };
           }
@@ -173,14 +175,7 @@ export class TenantService {
           throw new Error('فشل الاتصال بالخادم للتحقق من العضوية (Fail-Closed): ' + (fetchErr?.message || 'خطأ في الشبكة'));
         }
       } else {
-        // Direct execution in Node.js / unit tests
-        const { ServerMembershipVerifier } = await import('./tenant/ServerMembershipVerifier');
-        result = await ServerMembershipVerifier.verifyMembership({
-          idToken,
-          organizationId,
-          clientClaimedUid: options?.clientClaimedUid,
-          clientClaimedRole: options?.clientClaimedRole,
-        });
+        throw new Error('التحقق الخادمي المباشر غير مدعوم في هذه البيئة. يجب استخدام API.');
       }
 
       // 3. Handle verification failure safely
@@ -211,7 +206,7 @@ export class TenantService {
       // 4. Issue a tamper-resistant Capability Lease via server endpoint POST /api/tenant/issue-lease
       let lease: CapabilityLease;
 
-      if (typeof window !== 'undefined' && typeof fetch === 'function' && !isVitest) {
+      if (typeof fetch === 'function' && (typeof window !== 'undefined' || isVitest)) {
         try {
           const apiRes = await fetch('/api/tenant/issue-lease', {
             method: 'POST',
@@ -236,15 +231,7 @@ export class TenantService {
           throw new Error('فشل إصدار تصريح القدرات من الخادم (Fail-Closed): ' + (leaseErr?.message || 'خطأ في الشبكة'));
         }
       } else {
-        const { ServerLeaseIssuer } = await import('./tenant/ServerLeaseIssuer');
-        await ServerLeaseIssuer.initialize();
-        lease = await ServerLeaseIssuer.issueLease({
-          organizationId: result.organization.id,
-          verifiedUid: result.verifiedUid!,
-          verifiedRole: result.membership.role,
-          verifiedPermissions: result.membership.permissions || [],
-          verificationRevision: result.verificationRevision ?? 1,
-        });
+        throw new Error('فشل إصدار تصريح القدرات: البيئة الحالية غير مدعومة (Client-Only).');
       }
       await capabilityLeaseService.cacheServerIssuedLease(lease);
 
@@ -385,13 +372,23 @@ export class TenantService {
     }
 
     try {
-      const { ServerMembershipVerifier } = await import('./tenant/ServerMembershipVerifier');
-      const result = await ServerMembershipVerifier.verifyMembership({
-        idToken,
-        organizationId: activeOrg.id,
+      // Re-verify with server via authoritative API endpoint
+      const apiRes = await fetch('/api/tenant/verify-membership', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-hisabati-client': 'hisabati-web',
+          'x-hisabati-session': 'session-verify-active',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          organizationId: activeOrg.id,
+        }),
       });
 
-      if (!result.success || !result.membership || result.membership.status !== 'active') {
+      const result: VerifyMembershipResponse = await apiRes.json();
+
+      if (!apiRes.ok || !result.success || !result.membership || result.membership.status !== 'active') {
         // Membership or Organization suspended, revoked, or not found!
         const uid = result.verifiedUid || store.currentMembership?.userId || 'unknown';
         await capabilityLeaseService.revokeLease(activeOrg.id, uid);
@@ -413,14 +410,27 @@ export class TenantService {
         return { success: false, revoked: true };
       }
 
-      // Re-verification succeeded -> refresh lease and update actor/store
-      await capabilityLeaseService.createLease({
-        organizationId: result.organization.id,
-        verifiedUid: result.verifiedUid!,
-        verifiedRole: result.membership.role,
-        verifiedPermissions: result.membership.permissions || [],
-        verificationRevision: result.verificationRevision ?? 1,
+      // Re-verification succeeded -> get a fresh lease via server
+      const leaseRes = await fetch('/api/tenant/issue-lease', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-hisabati-client': 'hisabati-web',
+          'x-hisabati-session': 'session-verify-active',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          idToken,
+          organizationId: result.organization!.id,
+        }),
       });
+
+      const leaseData = await leaseRes.json();
+      if (leaseRes.ok && leaseData.success && leaseData.lease) {
+        await capabilityLeaseService.cacheServerIssuedLease(leaseData.lease);
+      } else {
+        throw new Error('فشل تجديد تصريح القدرات من الخادم.');
+      }
 
       await authService.setActiveActor({
         id: result.verifiedUid!,
@@ -430,7 +440,7 @@ export class TenantService {
       });
 
       store.setContext({
-        activeOrganization: result.organization,
+        activeOrganization: result.organization!,
         currentMembership: result.membership,
         isLocalMode: false,
         authMembershipStatus: 'online_verified',
