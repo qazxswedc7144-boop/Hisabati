@@ -64,6 +64,9 @@ const parseNonNegativeNumber = (
 
   return parsed;
 };
+
+export function createApp() {
+  const app = express();
   // SEC-05: Disable fingerprinting headers
   app.disable('x-powered-by');
 
