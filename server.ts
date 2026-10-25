@@ -14,24 +14,56 @@ import { privacyGateway } from './src/core/services/ai/PrivacyGateway';
 initFirebaseAdmin();
 const PORT = 3000;
 
-// Export app and server factory for integration testing and server startup
-export function createApp() {
-  const app = express();
+// Sanitize untrusted text before including it in an AI prompt.
+const sanitizeAIText = (
+  value: unknown,
+  maxLength: number
+): string => {
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return '';
+  }
 
-  // Sanitize untrusted text before including it in an AI prompt.
-  const sanitizeAIText = (value: unknown, maxLength: number): string => {
-    if (typeof value !== 'string' && typeof value !== 'number') {
-      return '';
-    }
+  return privacyGateway
+    .sanitizePrompt(String(value).slice(0, maxLength))
+    .replace(
+      /[\w.%+-]+@[\w.-]+\.[A-Za-z]{2,}/g,
+      '[FILTERED_EMAIL]'
+    )
+    .replace(
+      /(?<!\d)(?:\+?967[-.\s]?)?7\d{8}(?!\d)/g,
+      '[FILTERED_PHONE]'
+    )
+    .replace(
+      /(?<!\d)(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}(?!\d)/g,
+      '[FILTERED_PHONE]'
+    );
+};
 
-    return privacyGateway
-      .sanitizePrompt(String(value).slice(0, maxLength))
-      .replace(/[\w.-]+@[\w.-]+\.\w+/g, '[FILTERED_EMAIL]')
-      .replace(
-        /(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g,
-        '[FILTERED_PHONE]'
-      );
-  };
+// Strict numeric validation for invoice audit input.
+// Returns null for invalid values instead of silently changing them to zero.
+const parseNonNegativeNumber = (
+  value: unknown
+): number | null => {
+  if (
+    typeof value !== 'number' &&
+    typeof value !== 'string'
+  ) {
+    return null;
+  }
+
+  if (typeof value === 'string' && value.trim() === '') {
+    return null;
+  }
+
+  const parsed =
+    typeof value === 'number' ? value : Number(value);
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null;
+  }
+
+  return parsed;
+};
   // SEC-05: Disable fingerprinting headers
   app.disable('x-powered-by');
 
@@ -652,38 +684,97 @@ if (
 
       const ai = new GoogleGenAI({ apiKey });
 
-      const safePartyName = sanitizeAIText(draft.partyName || 'غير محدد', 100);
-const safePartyType = sanitizeAIText(draft.partyType || 'vendor', 50);
-const safeInvoiceNumber = sanitizeAIText(draft.invoiceNumber || 'غير مسجل', 100);
-const safeInvoiceDate = sanitizeAIText(draft.date || 'غير محدد', 50);
-const safeCurrency = sanitizeAIText(draft.currency || 'YER', 10);
+      const safePartyName = sanitizeAIText(
+  draft.partyName ?? 'غير محدد',
+  100
+);
 
-const safeNumber = (value: unknown): number => {
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number : 0;
-};
+const safePartyType = sanitizeAIText(
+  draft.partyType ?? 'vendor',
+  50
+);
 
-const safeLineItems = Array.isArray(draft.lineItems)
-  ? draft.lineItems.slice(0, 50).map((item: unknown) => {
-      if (!item || typeof item !== 'object' || Array.isArray(item)) {
-        return {
-          name: '[INVALID_ITEM]',
-          quantity: 0,
-          unitPrice: 0,
-          totalPrice: 0,
-        };
-      }
+const safeInvoiceNumber = sanitizeAIText(
+  draft.invoiceNumber ?? 'غير مسجل',
+  100
+);
 
-      const row = item as Record<string, unknown>;
+const safeInvoiceDate = sanitizeAIText(
+  draft.date ?? 'غير محدد',
+  50
+);
 
-      return {
-        name: sanitizeAIText(row.name, 100),
-        quantity: safeNumber(row.quantity),
-        unitPrice: safeNumber(row.unitPrice),
-        totalPrice: safeNumber(row.totalPrice),
-      };
-    })
-  : [];
+const safeCurrency = sanitizeAIText(
+  draft.currency ?? 'YER',
+  10
+);
+
+const subtotal = parseNonNegativeNumber(draft.subtotal);
+const tax = parseNonNegativeNumber(draft.tax);
+const totalAmount = parseNonNegativeNumber(draft.totalAmount);
+
+if (subtotal === null || tax === null || totalAmount === null) {
+  return res.status(400).json({
+    error: 'المجموع الفرعي والضريبة والإجمالي يجب أن تكون أرقاماً غير سالبة وصالحة.',
+    code: 'INVALID_INVOICE_AMOUNTS',
+  });
+}
+
+if (draft.lineItems !== undefined && !Array.isArray(draft.lineItems)) {
+  return res.status(400).json({
+    error: 'تفاصيل أصناف الفاتورة يجب أن تكون مصفوفة صحيحة.',
+    code: 'INVALID_INVOICE_LINE_ITEMS',
+  });
+}
+
+const inputLineItems: unknown[] = Array.isArray(draft.lineItems) ? draft.lineItems : [];
+
+if (inputLineItems.length > 50) {
+  return res.status(400).json({
+    error: 'عدد أصناف الفاتورة يتجاوز الحد الأقصى المسموح به (50).',
+    code: 'TOO_MANY_INVOICE_LINE_ITEMS',
+  });
+}
+
+const safeLineItems: Array<{
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+}> = [];
+
+for (const item of inputLineItems) {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    return res.status(400).json({
+      error: 'أحد أصناف الفاتورة غير صالح.',
+      code: 'INVALID_INVOICE_LINE_ITEM',
+    });
+  }
+
+  const row = item as Record<string, unknown>;
+
+  const quantity = parseNonNegativeNumber(row.quantity);
+  const unitPrice = parseNonNegativeNumber(row.unitPrice);
+  const totalPrice = parseNonNegativeNumber(row.totalPrice);
+
+  if (quantity === null || unitPrice === null || totalPrice === null) {
+    return res.status(400).json({
+      error: 'الكمية وسعر الوحدة وإجمالي الصنف يجب أن تكون أرقاماً غير سالبة وصالحة.',
+      code: 'INVALID_INVOICE_LINE_ITEM_AMOUNTS',
+    });
+  }
+
+  safeLineItems.push({
+    name: sanitizeAIText(row.name ?? 'صنف غير محدد', 100),
+    quantity,
+    unitPrice,
+    totalPrice,
+  });
+}
+
+const safeAccountContext = privacyGateway.sanitizeContext(
+  accountContext as Record<string, unknown> | undefined
+);
 
 const safeAccountContext = privacyGateway.sanitizeContext(
   accountContext as Record<string, unknown> | undefined
@@ -710,9 +801,9 @@ const safeAccountContext = privacyGateway.sanitizeContext(
 - رقم الفاتورة: ${safeInvoiceNumber}
 - التاريخ: ${safeInvoiceDate}
 - العملة: ${safeCurrency}
-- المجموع الفرعي: ${safeNumber(draft.subtotal)}
-- الضريبة: ${safeNumber(draft.tax)}
-- الإجمالي الكلي: ${safeNumber(draft.totalAmount)}
+- المجموع الفرعي: ${subtotal}
+- الضريبة: ${tax}
+- الإجمالي الكلي: ${totalAmount}
 - عدد الأصناف: ${safeLineItems.length}
 - تفاصيل الأصناف: ${JSON.stringify(safeLineItems)}
 </INVOICE_DATA>
