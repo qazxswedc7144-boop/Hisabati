@@ -18,6 +18,20 @@ const PORT = 3000;
 export function createApp() {
   const app = express();
 
+  // Sanitize untrusted text before including it in an AI prompt.
+  const sanitizeAIText = (value: unknown, maxLength: number): string => {
+    if (typeof value !== 'string' && typeof value !== 'number') {
+      return '';
+    }
+
+    return privacyGateway
+      .sanitizePrompt(String(value).slice(0, maxLength))
+      .replace(/[\w.-]+@[\w.-]+\.\w+/g, '[FILTERED_EMAIL]')
+      .replace(
+        /(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g,
+        '[FILTERED_PHONE]'
+      );
+  };
   // SEC-05: Disable fingerprinting headers
   app.disable('x-powered-by');
 
@@ -596,10 +610,27 @@ ${sanitizedPrompt}
     try {
       const { draft, accountContext } = req.body || {};
 
-      // SEC-04 Validation: draft must be an object
-      if (!draft || typeof draft !== 'object' || Array.isArray(draft)) {
-        return res.status(400).json({ error: 'بيانات مسودة الفاتورة مطلوبة ككائن JSON صحيح.' });
-      }
+// Validate invoice draft and optional account context.
+if (!draft || typeof draft !== 'object' || Array.isArray(draft)) {
+  return res.status(400).json({
+    error: 'بيانات مسودة الفاتورة مطلوبة ككائن JSON صحيح.',
+    code: 'INVALID_INVOICE_DRAFT',
+  });
+}
+
+if (
+  accountContext !== undefined &&
+  (
+    accountContext === null ||
+    typeof accountContext !== 'object' ||
+    Array.isArray(accountContext)
+  )
+) {
+  return res.status(400).json({
+    error: 'سياق الحساب غير صالح.',
+    code: 'INVALID_ACCOUNT_CONTEXT',
+  });
+}
 
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
@@ -611,7 +642,42 @@ ${sanitizedPrompt}
 
       const ai = new GoogleGenAI({ apiKey });
 
-      const auditPrompt = `
+      const safePartyName = sanitizeAIText(draft.partyName || 'غير محدد', 100);
+const safePartyType = sanitizeAIText(draft.partyType || 'vendor', 50);
+const safeInvoiceNumber = sanitizeAIText(draft.invoiceNumber || 'غير مسجل', 100);
+const safeInvoiceDate = sanitizeAIText(draft.date || 'غير محدد', 50);
+const safeCurrency = sanitizeAIText(draft.currency || 'YER', 10);
+
+const safeNumber = (value: unknown): number => {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+};
+
+const safeLineItems = Array.isArray(draft.lineItems)
+  ? draft.lineItems.slice(0, 50).map((item: unknown) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        return {
+          name: '[INVALID_ITEM]',
+          quantity: 0,
+          unitPrice: 0,
+          totalPrice: 0,
+        };
+      }
+
+      const row = item as Record<string, unknown>;
+
+      return {
+        name: sanitizeAIText(row.name, 100),
+        quantity: safeNumber(row.quantity),
+        unitPrice: safeNumber(row.unitPrice),
+        totalPrice: safeNumber(row.totalPrice),
+      };
+    })
+  : [];
+
+const safeAccountContext = privacyGateway.sanitizeContext(
+  accountContext as Record<string, unknown> | undefined
+);
 <SYSTEM_INSTRUCTION>
 أنت مدقق حسابات محترف وخبير فحص فواتير لتطبيق "حساباتي | Hisabati".
 مهمتك فحص هذه المسودة المستخرجة من المستند بدقة لاكتشاف التناقضات المالية المحتملة.
@@ -629,19 +695,19 @@ ${sanitizedPrompt}
 </SYSTEM_INSTRUCTION>
 
 <INVOICE_DATA>
-- المورد/الجهة: ${String(draft.partyName || 'غير محدد').slice(0, 100)} (${String(draft.partyType || 'vendor').slice(0, 50)})
-- رقم الفاتورة: ${String(draft.invoiceNumber || 'غير مسجل').slice(0, 100)}
-- التاريخ: ${String(draft.date || 'غير محدد').slice(0, 50)}
-- العملة: ${String(draft.currency || 'YER').slice(0, 10)}
-- المجموع الفرعي: ${Number(draft.subtotal) || 0}
-- الضريبة: ${Number(draft.tax) || 0}
-- الإجمالي الكلي: ${Number(draft.totalAmount) || 0}
-- عدد الأصناف: ${Array.isArray(draft.lineItems) ? draft.lineItems.length : 0}
-- تفاصيل الأصناف: ${JSON.stringify(Array.isArray(draft.lineItems) ? draft.lineItems.slice(0, 50) : [])}
+- المورد/الجهة: ${safePartyName} (${safePartyType})
+- رقم الفاتورة: ${safeInvoiceNumber}
+- التاريخ: ${safeInvoiceDate}
+- العملة: ${safeCurrency}
+- المجموع الفرعي: ${safeNumber(draft.subtotal)}
+- الضريبة: ${safeNumber(draft.tax)}
+- الإجمالي الكلي: ${safeNumber(draft.totalAmount)}
+- عدد الأصناف: ${safeLineItems.length}
+- تفاصيل الأصناف: ${JSON.stringify(safeLineItems)}
 </INVOICE_DATA>
 
 <ACCOUNT_CONTEXT>
-${JSON.stringify(accountContext || {}).slice(0, 5000)}
+${JSON.stringify(safeAccountContext).slice(0, 5000)}
 </ACCOUNT_CONTEXT>
       `.trim();
 
