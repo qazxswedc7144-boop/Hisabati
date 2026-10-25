@@ -1,241 +1,244 @@
-/**
 
-* P1-1 & P1-B Privacy Gateway
-* Recursive sanitization for context and prompt.
-* Removes sensitive identifiers and credentials, tokenizes account names,
-* and neutralizes common Arabic and English prompt-injection attempts.
-  */
-  export class PrivacyGateway {
+/**
+ * P1-1 & P1-B Privacy Gateway
+ * Recursive sanitization for context and prompt.
+ * Removes sensitive identifiers and credentials, tokenizes account names,
+ * and neutralizes common Arabic and English prompt-injection attempts.
+ */
+
+export class PrivacyGateway {
   private static readonly FORBIDDEN_KEYS = new Set([
-  'accountid',
-  'tenantid',
-  'organizationid',
-  'userid',
-  'id',
-  'email',
-  'phone',
-  'token',
-  'key',
-  'credentials',
-  'password',
-  'secret',
-  'auth',
-  'session',
-  'access_token',
-  'refreshtoken',
+    'accountid',
+    'tenantid',
+    'organizationid',
+    'userid',
+    'id',
+    'email',
+    'phone',
+    'token',
+    'key',
+    'credentials',
+    'password',
+    'secret',
+    'auth',
+    'session',
+    'access_token',
+    'refreshtoken',
   ]);
 
-private static readonly ALLOWED_FINANCIAL_KEYS = new Set([
-'amount',
-'amountminor',
-'currency',
-'type',
-'date',
-'totaldebit',
-'totalcredit',
-'currentbalance',
-'transactioncount',
-'balance',
-'total',
-'subtotal',
-'tax',
-'net',
-'summary',
-'metrics',
-'totals',
-'count',
-'category',
-'mode',
-'intent',
-'timestamp',
-]);
+  private static readonly ALLOWED_FINANCIAL_KEYS = new Set([
+    'amount',
+    'amountminor',
+    'currency',
+    'type',
+    'date',
+    'totaldebit',
+    'totalcredit',
+    'currentbalance',
+    'transactioncount',
+    'balance',
+    'total',
+    'subtotal',
+    'tax',
+    'net',
+    'summary',
+    'metrics',
+    'totals',
+    'count',
+    'category',
+    'mode',
+    'intent',
+    'timestamp',
+  ]);
 
-/**
-
-* Sanitizes a user prompt and neutralizes common injection attempts.
-  */
+  /**
+   * Sanitizes a user prompt and neutralizes common injection attempts.
+   */
   public sanitizePrompt(prompt: string): string {
-  if (typeof prompt !== 'string' || !prompt) {
-  return '';
-  }
-
-let sanitized = prompt.trim();
-
-// 1. Neutralize XML-like delimiters that may imitate trusted instructions.
-sanitized = sanitized
-  .replace(
-    /<\/?(SYSTEM_INSTRUCTION|MINIMAL_CONTEXT|USER_INPUT)\b[^>]*>/gi,
-    (match) =>
-      `[ESCAPED_${match.replace(/[<>/]/g, '')}]`
-  )
-  .replace(/<\/?script\b[^>]*>/gi, '[BLOCKED_TAG]');
-
-// 2. Neutralize common prompt-injection phrases in Arabic and English.
-// Arabic allows optional words such as "كافة" and "جميع" between
-// "تجاهل" and the target instruction phrase.
-const injectionPatterns: RegExp[] = [
-  /تجاهل\s+(?:(?:كافة|كل|جميع)\s+)?(?:قواعد|التعليمات|الأوامر|الخصوصية)/giu,
-  /تجاهل\s+(?:(?:كافة|كل|جميع)\s+)?(?:التعليمات|الأوامر)\s+(?:السابقة|كلها)/giu,
-  /أرسل\s+(?:لِي\s+)?جميع\s+(?:أسماء|الحسابات|الأرصدة)/giu,
-  /(?:أعطني|اكشف|اعرض)\s+(?:جميع\s+)?(?:بيانات\s+الاعتماد|كلمات\s+المرور|الأسرار)/giu,
-  /\bignore\s+(?:(?:all|every)\s+)?(?:previous|prior|system)\s+instructions\b/gi,
-  /\b(?:system\s+override|ignore\s+all\s+rules)\b/gi,
-  /\breveal\s+(?:all|database|credentials|secrets)\b/gi,
-  /\b(?:show|dump|export)\s+(?:all\s+)?(?:user|account|tenant)\s+(?:data|records|credentials)\b/gi,
-];
-
-for (const pattern of injectionPatterns) {
-  sanitized = sanitized.replace(
-    pattern,
-    '[BLOCKED_INJECTION_ATTEMPT]'
-  );
-}
-
-// 3. Limit prompt size after sanitization.
-if (sanitized.length > 2000) {
-  sanitized = sanitized.slice(0, 2000);
-}
-
-return sanitized;
-
-}
-
-/**
-
-* Recursively sanitizes objects and arrays.
-* Removes forbidden keys and retains approved financial fields
-* or recursively inspected nested structures.
-  */
-  private sanitizeValue(
-  val: unknown,
-  accountIndexRef: { counter: number }
-  ): unknown {
-  if (val === null || val === undefined) {
-  return val;
-  }
-
-if (Array.isArray(val)) {
-  return val.map((item) =>
-    this.sanitizeValue(item, accountIndexRef)
-  );
-}
-
-if (typeof val === 'object') {
-  const sanitizedObj: Record<string, unknown> = {};
-  const record = val as Record<string, unknown>;
-
-  for (const [rawKey, rawVal] of Object.entries(record)) {
-    const lowerKey = rawKey.toLowerCase();
-
-    // Remove sensitive identifiers and credentials at every nesting level.
-    if (PrivacyGateway.FORBIDDEN_KEYS.has(lowerKey)) {
-      continue;
+    if (typeof prompt !== 'string' || !prompt) {
+      return '';
     }
 
-    // Replace account names with stable, non-identifying placeholders.
-    if (lowerKey === 'accountname' || lowerKey === 'name') {
-      sanitizedObj[rawKey] =
-        `[ACCOUNT_${accountIndexRef.counter++}]`;
-      continue;
-    }
+    let sanitized = prompt.trim();
 
-    // Retain approved financial fields and recursively inspect nested data.
-    if (
-      PrivacyGateway.ALLOWED_FINANCIAL_KEYS.has(lowerKey) ||
-      (rawVal !== null && typeof rawVal === 'object')
-    ) {
-      sanitizedObj[rawKey] = this.sanitizeValue(
-        rawVal,
-        accountIndexRef
+    // 1. Neutralize XML-like delimiters that may imitate trusted instructions.
+    sanitized = sanitized
+      .replace(
+        /<\/?(SYSTEM_INSTRUCTION|MINIMAL_CONTEXT|USER_INPUT)\b[^>]*>/gi,
+        (match) => `[ESCAPED_${match.replace(/[<>/]/g, '')}]`
+      )
+      .replace(/<\/?script\b[^>]*>/gi, '[BLOCKED_TAG]');
+
+    // 2. Neutralize common prompt-injection phrases in Arabic and English.
+    const injectionPatterns: RegExp[] = [
+      // Arabic injection attempts
+      /تجاهل\s+(?:(?:كافة|كل|جميع)\s+)?(?:قواعد|التعليمات|الأوامر|الخصوصية)/giu,
+      /تجاهل\s+(?:(?:كافة|كل|جميع)\s+)?(?:التعليمات|الأوامر)\s+(?:السابقة|كلها)/giu,
+      /أرسل\s+(?:لِي\s+)?جميع\s+(?:أسماء|الحسابات|الأرصدة)/giu,
+      /(?:أعطني|اكشف|اعرض)\s+(?:جميع\s+)?(?:بيانات\s+الاعتماد|كلمات\s+المرور|الأسرار)/giu,
+
+      // English injection attempts
+      // Fix: also match "ignore all instructions" and "ignore instructions".
+      /\bignore\s+(?:(?:all|every)\s+)?instructions\b/gi,
+      /\bignore\s+(?:(?:all|every)\s+)?(?:previous|prior|system)\s+instructions\b/gi,
+      /\b(?:system\s+override|ignore\s+all\s+rules)\b/gi,
+      /\breveal\s+(?:all|database|credentials|secrets)\b/gi,
+      /\b(?:show|dump|export)\s+(?:all\s+)?(?:user|account|tenant)\s+(?:data|records|credentials)\b/gi,
+    ];
+
+    for (const pattern of injectionPatterns) {
+      sanitized = sanitized.replace(
+        pattern,
+        '[BLOCKED_INJECTION_ATTEMPT]'
       );
     }
+
+    // 3. Limit prompt size after sanitization.
+    if (sanitized.length > 2000) {
+      sanitized = sanitized.slice(0, 2000);
+    }
+
+    return sanitized;
   }
 
-  return sanitizedObj;
-}
+  /**
+   * Recursively sanitizes objects and arrays.
+   * Removes forbidden keys and retains approved financial fields
+   * or recursively inspected nested structures.
+   */
+  private sanitizeValue(
+    val: unknown,
+    accountIndexRef: { counter: number }
+  ): unknown {
+    if (val === null || val === undefined) {
+      return val;
+    }
 
-if (typeof val === 'string') {
-  return val
-    .replace(
-      /[\w.-]+@[\w.-]+\.\w+/g,
-      '[FILTERED_EMAIL]'
-    )
-    .replace(
-      /(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g,
-      '[FILTERED_PHONE]'
-    );
-}
+    if (Array.isArray(val)) {
+      return val.map((item) =>
+        this.sanitizeValue(item, accountIndexRef)
+      );
+    }
 
-return val;
+    if (typeof val === 'object') {
+      const sanitizedObj: Record<string, unknown> = {};
+      const record = val as Record<string, unknown>;
 
-}
+      for (const [rawKey, rawVal] of Object.entries(record)) {
+        const lowerKey = rawKey.toLowerCase();
 
-/**
+        // Remove sensitive identifiers and credentials at every nesting level.
+        if (PrivacyGateway.FORBIDDEN_KEYS.has(lowerKey)) {
+          continue;
+        }
 
-* Sanitizes both the prompt and its context before AI processing.
-  */
+        // Replace account names with stable, non-identifying placeholders.
+        if (lowerKey === 'accountname' || lowerKey === 'name') {
+          sanitizedObj[rawKey] =
+            `[ACCOUNT_${accountIndexRef.counter++}]`;
+          continue;
+        }
+
+        // Retain approved financial fields and recursively inspect nested data.
+        if (
+          PrivacyGateway.ALLOWED_FINANCIAL_KEYS.has(lowerKey) ||
+          (rawVal !== null && typeof rawVal === 'object')
+        ) {
+          sanitizedObj[rawKey] = this.sanitizeValue(
+            rawVal,
+            accountIndexRef
+          );
+        }
+      }
+
+      return sanitizedObj;
+    }
+
+    if (typeof val === 'string') {
+      return val
+        .replace(
+          /[\w.-]+@[\w.-]+\.\w+/g,
+          '[FILTERED_EMAIL]'
+        )
+        .replace(
+          /(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g,
+          '[FILTERED_PHONE]'
+        );
+    }
+
+    return val;
+  }
+
+  /**
+   * Sanitizes both the prompt and its context before AI processing.
+   */
   public tokenizePromptAndContext(
-  prompt: string,
-  context?: Record<string, unknown>
+    prompt: string,
+    context?: Record<string, unknown>
   ): {
-  sanitizedPrompt: string;
-  sanitizedContext: Record<string, unknown>;
+    sanitizedPrompt: string;
+    sanitizedContext: Record<string, unknown>;
   } {
-  const sanitizedPrompt = this.sanitizePrompt(prompt);
-  const accountIndexRef = { counter: 1 };
+    const sanitizedPrompt = this.sanitizePrompt(prompt);
+    const accountIndexRef = { counter: 1 };
 
-let sanitizedContext: Record<string, unknown> = {};
+    let sanitizedContext: Record<string, unknown> = {};
 
-if (context && typeof context === 'object' && !Array.isArray(context)) {
-  const sanitized = this.sanitizeValue(
-    context,
-    accountIndexRef
-  );
+    if (
+      context &&
+      typeof context === 'object' &&
+      !Array.isArray(context)
+    ) {
+      const sanitized = this.sanitizeValue(
+        context,
+        accountIndexRef
+      );
 
-  if (
-    sanitized &&
-    typeof sanitized === 'object' &&
-    !Array.isArray(sanitized)
-  ) {
-    sanitizedContext = sanitized as Record<string, unknown>;
+      if (
+        sanitized &&
+        typeof sanitized === 'object' &&
+        !Array.isArray(sanitized)
+      ) {
+        sanitizedContext = sanitized as Record<string, unknown>;
+      }
+    }
+
+    return {
+      sanitizedPrompt,
+      sanitizedContext,
+    };
   }
-}
 
-return {
-  sanitizedPrompt,
-  sanitizedContext,
-};
-
-}
-
-/**
-
-* Returns a sanitized context summary without sensitive identifiers.
-  */
+  /**
+   * Returns a sanitized context summary without sensitive identifiers.
+   */
   public sanitizeContext(
-  context?: Record<string, unknown>
+    context?: Record<string, unknown>
   ): Record<string, unknown> {
-  if (!context || typeof context !== 'object' || Array.isArray(context)) {
-  return {};
+    if (
+      !context ||
+      typeof context !== 'object' ||
+      Array.isArray(context)
+    ) {
+      return {};
+    }
+
+    const accountIndexRef = { counter: 1 };
+    const sanitized = this.sanitizeValue(
+      context,
+      accountIndexRef
+    );
+
+    if (
+      sanitized &&
+      typeof sanitized === 'object' &&
+      !Array.isArray(sanitized)
+    ) {
+      return sanitized as Record<string, unknown>;
+    }
+
+    return {};
   }
-
-const accountIndexRef = { counter: 1 };
-const sanitized = this.sanitizeValue(
-  context,
-  accountIndexRef
-);
-
-if (
-  sanitized &&
-  typeof sanitized === 'object' &&
-  !Array.isArray(sanitized)
-) {
-  return sanitized as Record<string, unknown>;
-}
-
-return {};
-
-}
 }
 
 export const privacyGateway = new PrivacyGateway();
