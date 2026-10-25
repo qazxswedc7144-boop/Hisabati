@@ -503,6 +503,46 @@ export class RestoreHardeningTestSuite {
       }
     );
 
+    // ----------------------------------------------------
+    // TEST 12: Modern backup without amountMinor rejected
+    // ----------------------------------------------------
+    await this.runTest(
+      results,
+      'RST-12',
+      'رفض النسخ الحديثة التي لا تحتوي على amountMinor',
+      async () => {
+        const payload = createPayload(3, [
+          { id: 'acc_1', name: 'A', currentBalance: 100, archived: 0 }
+        ], [
+          { id: 'trx_1', accountId: 'acc_1', amount: 100, type: 'debit', date: '2026-01-01' }
+        ]);
+        const res = await backupService.validateBackupPayload(payload);
+        if (res.isValid) {
+          throw new Error('Expected validation to fail for modern backup missing amountMinor');
+        }
+      }
+    );
+
+    // ----------------------------------------------------
+    // TEST 13: Conflict between amount and amountMinor rejected
+    // ----------------------------------------------------
+    await this.runTest(
+      results,
+      'RST-13',
+      'رفض تعارض المبالغ بين amount و amountMinor',
+      async () => {
+        const payload = createPayload(3, [
+          { id: 'acc_1', name: 'A', currentBalance: 100, archived: 0 }
+        ], [
+          { id: 'trx_1', accountId: 'acc_1', amount: 100, amountMinor: 99999, type: 'debit', date: '2026-01-01' }
+        ]);
+        const res = await backupService.validateBackupPayload(payload);
+        if (res.isValid) {
+          throw new Error('Expected validation to fail for amount / amountMinor mismatch');
+        }
+      }
+    );
+
     const passedCount = results.filter((r) => r.passed).length;
     const failedCount = results.filter((r) => !r.passed).length;
 

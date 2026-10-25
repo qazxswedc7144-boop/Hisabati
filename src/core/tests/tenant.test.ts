@@ -121,6 +121,7 @@ export async function runTenantTests(): Promise<{ passed: number; total: number 
         }
       } finally {
         (tenantDbManager as any).isSwitching = originalIsSwitching;
+        await tenantService.switchToLocalMode();
       }
     });
 

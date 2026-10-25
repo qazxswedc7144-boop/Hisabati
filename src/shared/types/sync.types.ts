@@ -73,6 +73,8 @@ export interface BackupMetadata {
 
   totalDebitSum: number;
   totalCreditSum: number;
+  totalDebitMinor?: number;
+  totalCreditMinor?: number;
 
   integrityHash: string;
   keyFingerprint?: string; // 2.1: SHA-256 fingerprint of the encryption key

@@ -301,6 +301,25 @@ export class BackupService {
       if (typeof trx.amount !== 'number' || isNaN(trx.amount) || !isFinite(trx.amount) || trx.amount <= 0) {
         return { isValid: false, error: `مبلغ غير صالح في المعاملة (ID: ${trx.id}): ${trx.amount}` };
       }
+
+      // BK-MIG-04: amountMinor financial source of truth validation
+      if (schemaVer >= 3) {
+        if (trx.amountMinor === undefined || typeof trx.amountMinor !== 'number' || !isValidMinorUnit(trx.amountMinor) || trx.amountMinor <= 0) {
+          return { isValid: false, error: `النسخة الحديثة تتطلب amountMinor صالح وموجب لكل معاملة (ID: ${trx.id})` };
+        }
+      } else {
+        if (trx.amountMinor === undefined || !isValidMinorUnit(trx.amountMinor)) {
+          trx.amountMinor = decimalToMinor(trx.amount, trx.currency || 'YER');
+        }
+      }
+
+      if (trx.amountMinor !== undefined && trx.amount !== undefined) {
+        const expectedMinor = decimalToMinor(trx.amount, trx.currency || 'YER');
+        if (Math.abs(expectedMinor - trx.amountMinor) > 1) {
+          return { isValid: false, error: `تعارض حسابي بين المبلغ (amount) والوحدات الصغرى (amountMinor) في المعاملة (ID: ${trx.id})` };
+        }
+      }
+
       if (trx.type !== 'debit' && trx.type !== 'credit') {
         return { isValid: false, error: `نوع المعاملة غير صالح (ID: ${trx.id}): ${trx.type}` };
       }

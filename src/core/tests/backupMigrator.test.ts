@@ -48,8 +48,8 @@ export class BackupMigratorTestSuite {
         ...metadataOverrides,
       },
       accounts: [
-        { id: 'acc_1', name: 'عميل أ', balance: 1000, type: 'customer', currency: 'SAR', createdAt: '2026-01-01' },
-        { id: 'acc_2', name: 'مورد ب', balance: -500, type: 'supplier', currency: 'SAR', createdAt: '2026-01-01' },
+        { id: 'acc_1', name: 'عميل أ', currentBalance: 1000, type: 'customer', currency: 'SAR', createdAt: '2026-01-01' },
+        { id: 'acc_2', name: 'مورد ب', currentBalance: -500, type: 'supplier', currency: 'SAR', createdAt: '2026-01-01' },
       ],
       transactions: [
         { id: 'trx_1', accountId: 'acc_1', amount: 1000, type: 'debit', date: '2026-01-01', createdAt: '2026-01-01' },
@@ -230,7 +230,7 @@ export class BackupMigratorTestSuite {
         if (migrated.transactions[0].amount !== 1000 || migrated.transactions[1].amount !== 500) {
           throw new Error('Financial amounts in transactions were modified!');
         }
-        if (migrated.accounts[0].balance !== 1000 || migrated.accounts[1].balance !== -500) {
+        if (migrated.accounts[0].currentBalance !== 1000 || migrated.accounts[1].currentBalance !== -500) {
           throw new Error('Account balances were modified!');
         }
       }

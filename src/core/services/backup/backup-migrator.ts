@@ -1,7 +1,7 @@
 /**
  * CHANGELOG
  * - 1.7: Added migrateBackupV3ToV4 for Schema V4 support.
- * - 1.7: Updated migrateBackupPayload to include V3 -> V4 step.
+ * - 2.0: BK-MIG-03: Removed all 'any' types, introduced strict typing (BackupPayload, BackupMetadata) and runtime validation for unknown inputs.
  */
 
 import {
@@ -9,56 +9,50 @@ import {
   BACKUP_SCHEMA_VERSION,
   FINANCIAL_FORMAT_VERSION,
 } from '../../database/schemaVersion';
+import { BackupPayload, BackupMetadata } from '@/shared/types';
+import { Account, Transaction, SettingsEntry } from '@/shared/types';
 
 /**
  * Extracts and resolves the backup schema version from metadata.
- *
- * Rules:
- * 1. If metadata.backupSchemaVersion is an integer, use it.
- * 2. Else if metadata.schemaVersion is an integer, use it as a legacy version.
- * 3. Otherwise, treat as version 1.
  */
-export function getBackupSchemaVersion(metadata: any): number {
+export function getBackupSchemaVersion(metadata: unknown): number {
   if (!metadata || typeof metadata !== 'object') {
     return 1;
   }
+  const meta = metadata as Record<string, unknown>;
 
   if (
-    typeof metadata.backupSchemaVersion === 'number' &&
-    Number.isInteger(metadata.backupSchemaVersion)
+    typeof meta.backupSchemaVersion === 'number' &&
+    Number.isInteger(meta.backupSchemaVersion)
   ) {
-    return metadata.backupSchemaVersion;
+    return meta.backupSchemaVersion;
   }
 
   if (
-    typeof metadata.schemaVersion === 'number' &&
-    Number.isInteger(metadata.schemaVersion)
+    typeof meta.schemaVersion === 'number' &&
+    Number.isInteger(meta.schemaVersion)
   ) {
-    return metadata.schemaVersion;
+    return meta.schemaVersion;
   }
 
   return 1;
 }
 
-/**
- * Migrates a V1 backup payload to V2 format in memory.
- * Pure metadata-only migration. Does not touch financial data or database.
- */
-export function migrateBackupV1ToV2(payload: any): any {
+export function migrateBackupV1ToV2(payload: unknown): BackupPayload {
   if (!payload || typeof payload !== 'object') {
     throw new Error('هيكل ملف النسخة الاحتياطية غير صالح (Invalid Payload)');
   }
-
-  if (!payload.metadata || typeof payload.metadata !== 'object') {
+  const p = payload as Record<string, unknown>;
+  if (!p.metadata || typeof p.metadata !== 'object') {
     throw new Error('بيانات النسخة الاحتياطية الوصفية غير موجودة (Metadata Missing)');
   }
 
-  const migrated = structuredClone(payload);
+  const migrated = structuredClone(payload) as BackupPayload;
   
   if (Array.isArray(migrated.accounts)) {
-    migrated.accounts = migrated.accounts.map((a: any) => ({
+    migrated.accounts = migrated.accounts.map((a) => ({
       ...a,
-      archived: a.archived === true ? 1 : a.archived === false ? 0 : a.archived,
+      archived: a.archived ? 1 : 0,
     }));
   }
 
@@ -68,25 +62,21 @@ export function migrateBackupV1ToV2(payload: any): any {
   return migrated;
 }
 
-/**
- * Migrates a V2 backup payload to V3 format in memory.
- * Pure metadata-only migration. Sets databaseSchemaVersion to 6 and financialFormatVersion to 1 if not present.
- */
-export function migrateBackupV2ToV3(payload: any): any {
+export function migrateBackupV2ToV3(payload: unknown): BackupPayload {
   if (!payload || typeof payload !== 'object') {
     throw new Error('هيكل ملف النسخة الاحتياطية غير صالح (Invalid Payload)');
   }
-
-  if (!payload.metadata || typeof payload.metadata !== 'object') {
+  const p = payload as Record<string, unknown>;
+  if (!p.metadata || typeof p.metadata !== 'object') {
     throw new Error('بيانات النسخة الاحتياطية الوصفية غير موجودة (Metadata Missing)');
   }
 
-  const migrated = structuredClone(payload);
+  const migrated = structuredClone(payload) as BackupPayload;
 
   if (Array.isArray(migrated.accounts)) {
-    migrated.accounts = migrated.accounts.map((a: any) => ({
+    migrated.accounts = migrated.accounts.map((a) => ({
       ...a,
-      archived: a.archived === true ? 1 : a.archived === false ? 0 : a.archived,
+      archived: a.archived ? 1 : 0,
     }));
   }
 
@@ -96,7 +86,7 @@ export function migrateBackupV2ToV3(payload: any): any {
     typeof migrated.metadata.databaseSchemaVersion === 'number' &&
     Number.isInteger(migrated.metadata.databaseSchemaVersion)
       ? migrated.metadata.databaseSchemaVersion
-      : 6; // V3 used DB V6
+      : 6;
 
   migrated.metadata.financialFormatVersion =
     typeof migrated.metadata.financialFormatVersion === 'number' &&
@@ -109,25 +99,21 @@ export function migrateBackupV2ToV3(payload: any): any {
   return migrated;
 }
 
-/**
- * Migrates a V3 backup payload to V4 format in memory.
- * Pure metadata-only migration. Sets current schema versions.
- */
-export function migrateBackupV3ToV4(payload: any): any {
+export function migrateBackupV3ToV4(payload: unknown): BackupPayload {
   if (!payload || typeof payload !== 'object') {
     throw new Error('هيكل ملف النسخة الاحتياطية غير صالح (Invalid Payload)');
   }
-
-  if (!payload.metadata || typeof payload.metadata !== 'object') {
+  const p = payload as Record<string, unknown>;
+  if (!p.metadata || typeof p.metadata !== 'object') {
     throw new Error('بيانات النسخة الاحتياطية الوصفية غير موجودة (Metadata Missing)');
   }
 
-  const migrated = structuredClone(payload);
+  const migrated = structuredClone(payload) as BackupPayload;
 
   if (Array.isArray(migrated.accounts)) {
-    migrated.accounts = migrated.accounts.map((a: any) => ({
+    migrated.accounts = migrated.accounts.map((a) => ({
       ...a,
-      archived: a.archived === true ? 1 : a.archived === false ? 0 : a.archived,
+      archived: a.archived ? 1 : 0,
     }));
   }
 
@@ -141,37 +127,33 @@ export function migrateBackupV3ToV4(payload: any): any {
   return migrated;
 }
 
-/**
- * Migrates a V4 backup payload to V5 format in memory.
- * Transfers legacy dueDate from accounts to the new debts array.
- */
-export function migrateBackupV4ToV5(payload: any): any {
+export function migrateBackupV4ToV5(payload: unknown): BackupPayload {
   if (!payload || typeof payload !== 'object') {
     throw new Error('هيكل ملف النسخة الاحتياطية غير صالح (Invalid Payload)');
   }
-
-  if (!payload.metadata || typeof payload.metadata !== 'object') {
+  const p = payload as Record<string, unknown>;
+  if (!p.metadata || typeof p.metadata !== 'object') {
     throw new Error('بيانات النسخة الاحتياطية الوصفية غير موجودة (Metadata Missing)');
   }
 
-  const migrated = structuredClone(payload);
+  const migrated = structuredClone(payload) as BackupPayload;
   
   if (Array.isArray(migrated.accounts)) {
-    migrated.accounts = migrated.accounts.map((a: any) => ({
+    migrated.accounts = migrated.accounts.map((a) => ({
       ...a,
-      archived: a.archived === true ? 1 : a.archived === false ? 0 : a.archived,
+      archived: a.archived ? 1 : 0,
     }));
   }
 
   const now = new Date().toISOString();
-  const debts: any[] = migrated.debts ?? [];
-  const accounts: any[] = migrated.accounts ?? [];
+  const debts: Array<Record<string, unknown>> = migrated.debts ?? [];
+  const accounts = migrated.accounts ?? [];
 
   for (const acc of accounts) {
-    const dueDate = acc.dueDate;
+    const dueDate = (acc as unknown as Record<string, unknown>).dueDate as string | undefined;
     const amountMinor = acc.currentBalanceMinor;
     if (dueDate && typeof amountMinor === 'number' && amountMinor > 0) {
-      const exists = debts.some(d => d.accountId === acc.id);
+      const exists = debts.some((d) => d.accountId === acc.id);
       if (!exists) {
         debts.push({
           id: 'debt_mig_' + acc.id,
@@ -196,28 +178,24 @@ export function migrateBackupV4ToV5(payload: any): any {
   return migrated;
 }
 
-/**
- * Migrates a V5 backup payload to V6 format in memory.
- * Ensures metadata fields are updated for V6.
- */
-export function migrateBackupV5ToV6(payload: any): any {
+export function migrateBackupV5ToV6(payload: unknown): BackupPayload {
   if (!payload || typeof payload !== 'object') {
     throw new Error('هيكل ملف النسخة الاحتياطية غير صالح (Invalid Payload)');
   }
-  if (!payload.metadata || typeof payload.metadata !== 'object') {
+  const p = payload as Record<string, unknown>;
+  if (!p.metadata || typeof p.metadata !== 'object') {
     throw new Error('بيانات النسخة الاحتياطية الوصفية غير موجودة (Metadata Missing)');
   }
 
-  const migrated = structuredClone(payload);
+  const migrated = structuredClone(payload) as BackupPayload;
 
   if (Array.isArray(migrated.accounts)) {
-    migrated.accounts = migrated.accounts.map((a: any) => ({
+    migrated.accounts = migrated.accounts.map((a) => ({
       ...a,
-      archived: a.archived === true ? 1 : a.archived === false ? 0 : a.archived,
+      archived: a.archived ? 1 : 0,
     }));
   }
 
-  // V6: Compute Minor sums from POSTED transactions
   let totalDebitMinor = 0;
   let totalCreditMinor = 0;
   const txs = Array.isArray(migrated.transactions) ? migrated.transactions : [];
@@ -240,40 +218,29 @@ export function migrateBackupV5ToV6(payload: any): any {
   return migrated;
 }
 
-/**
- * Validates, gate-checks, and sequentially migrates a raw backup payload to the current BACKUP_SCHEMA_VERSION.
- * Operates strictly in memory with zero database interactions.
- */
-export async function migrateBackupPayload(payload: any): Promise<any> {
-  // 1. Verify payload is a valid object
+export async function migrateBackupPayload(payload: unknown): Promise<BackupPayload> {
   if (!payload || typeof payload !== 'object') {
     throw new Error('هيكل ملف النسخة الاحتياطية غير صالح (Invalid Payload Object)');
   }
 
-  // 2. Verify metadata existence
-  if (!payload.metadata || typeof payload.metadata !== 'object') {
+  const p = payload as Record<string, unknown>;
+  if (!p.metadata || typeof p.metadata !== 'object') {
     throw new Error('بيانات النسخة الاحتياطية الوصفية غير موجودة (Metadata Missing)');
   }
 
-  // 3. Create independent clone to prevent mutating original object
-  let migrated = structuredClone(payload);
-
-  // 4. Discover version
+  let migrated = structuredClone(payload) as BackupPayload;
   const version = getBackupSchemaVersion(migrated.metadata);
 
-  // 5. Future Version Rejection
   if (version > BACKUP_SCHEMA_VERSION) {
     throw new Error(
       `Backup schema version ${version} is newer than the supported version ${BACKUP_SCHEMA_VERSION}. Please update Hisabati before restoring this backup.`
     );
   }
 
-  // Preserve original schema version for cryptographic integrity validation if migrating from legacy
   if (version < BACKUP_SCHEMA_VERSION && migrated.metadata.originalSchemaVersion === undefined) {
     migrated.metadata.originalSchemaVersion = version;
   }
 
-  // 6. Sequential Migration Path
   if (version === 1) {
     migrated = migrateBackupV1ToV2(migrated);
   }
@@ -294,7 +261,6 @@ export async function migrateBackupPayload(payload: any): Promise<any> {
     migrated = migrateBackupV5ToV6(migrated);
   }
 
-  // Ensure default fields exist if already at current version
   if (getBackupSchemaVersion(migrated.metadata) === BACKUP_SCHEMA_VERSION) {
     migrated.metadata.backupSchemaVersion = BACKUP_SCHEMA_VERSION;
     migrated.metadata.databaseSchemaVersion =
@@ -310,12 +276,9 @@ export async function migrateBackupPayload(payload: any): Promise<any> {
     migrated.metadata.schemaVersion = BACKUP_SCHEMA_VERSION;
   }
 
-  // 8. Ensure final result: backupSchemaVersion === BACKUP_SCHEMA_VERSION
   if (migrated.metadata.backupSchemaVersion !== BACKUP_SCHEMA_VERSION) {
     throw new Error('فشل ترحيل النسخة الاحتياطية إلى الإصدار المطلوب (Backup Migration Incomplete)');
   }
 
-  // 9. Return migrated payload
   return migrated;
 }
-
