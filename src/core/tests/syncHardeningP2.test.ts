@@ -197,5 +197,108 @@ describe('Sync Engine Hardening P2 - State Machine & Revisions', () => {
       expect(acc).toBeUndefined(); // Tombstone protected against resurrection
     });
   });
+
+  describe('SYNC-10: Deterministic Revision Race & Readback Integrity Closure', () => {
+    it('should execute deterministic call count revision race test and abort write without updating remote file', async () => {
+      const { googleDriveService } = await import('../services/googleDrive.service');
+      vi.spyOn(googleDriveService, 'isConnected').mockReturnValue(true);
+
+      let listCallCount = 0;
+      vi.spyOn(googleDriveService, 'listFiles').mockImplementation(async () => {
+        listCallCount++;
+        if (listCallCount === 1) {
+          return [{ name: 'hisabati_sync_state.json', id: 'f1', metadata: { revision: 1 } } as any];
+        } else {
+          return [{ name: 'hisabati_sync_state.json', id: 'f1', metadata: { revision: 2 } } as any];
+        }
+      });
+
+      vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValue({ revision: 1, accounts: [], transactions: [] });
+      const updateSpy = vi.spyOn(googleDriveService, 'updateJsonFile').mockResolvedValue({ id: 'f1' } as any);
+
+      await db.syncQueue.add({
+        id: 'q_det_race',
+        status: 'pending',
+        entityType: 'account',
+        entityId: 'acc_det',
+        operation: 'CREATE',
+        createdAt: '2023-01-01',
+        operationId: 'op_det_race',
+        retryCount: 0
+      });
+
+      await expect(syncEngine.performFullSync()).rejects.toThrow(/تم تحديث البيانات السحابية بواسطة جهاز آخر/);
+      expect(updateSpy).not.toHaveBeenCalled();
+
+      const item = await db.syncQueue.get('q_det_race');
+      expect(item?.status).toBe('pending');
+      expect(item?.retryCount).toBe(1);
+    });
+
+    it('should fail readback integrity if revision matches but content account/transaction counts do not match', async () => {
+      const { googleDriveService } = await import('../services/googleDrive.service');
+      vi.spyOn(googleDriveService, 'isConnected').mockReturnValue(true);
+
+      vi.spyOn(googleDriveService, 'listFiles').mockResolvedValue([
+        { name: 'hisabati_sync_state.json', id: 'f1', metadata: { revision: 1 } } as any
+      ]);
+
+      vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValueOnce({ revision: 1, accounts: [], transactions: [] });
+
+      await db.syncQueue.add({
+        id: 'q_content_mismatch',
+        status: 'pending',
+        entityType: 'account',
+        entityId: 'acc_m1',
+        operation: 'CREATE',
+        createdAt: '2023-01-01',
+        operationId: 'op_content_mismatch',
+        retryCount: 0
+      });
+
+      vi.spyOn(googleDriveService, 'updateJsonFile').mockResolvedValue({ id: 'f1' } as any);
+
+      // Readback returns revision 2 (correct revision) but empty accounts array when local had 1 account created
+      vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValueOnce({
+        revision: 2,
+        accounts: [], // mismatch
+        transactions: []
+      });
+
+      await expect(syncEngine.performFullSync()).rejects.toThrow(/فشل تأكيد الرفع والتحقق من النزاهة/);
+
+      const item = await db.syncQueue.get('q_content_mismatch');
+      expect(item?.status).not.toBe('completed');
+    });
+
+    it('should prevent completion on readback network error', async () => {
+      const { googleDriveService } = await import('../services/googleDrive.service');
+      vi.spyOn(googleDriveService, 'isConnected').mockReturnValue(true);
+
+      vi.spyOn(googleDriveService, 'listFiles').mockResolvedValue([
+        { name: 'hisabati_sync_state.json', id: 'f1', metadata: { revision: 1 } } as any
+      ]);
+      vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValueOnce({ revision: 1, accounts: [], transactions: [] });
+      vi.spyOn(googleDriveService, 'updateJsonFile').mockResolvedValue({ id: 'f1' } as any);
+
+      vi.spyOn(googleDriveService, 'downloadJsonFile').mockRejectedValueOnce(new Error('Network failure during readback'));
+
+      await db.syncQueue.add({
+        id: 'q_readback_err',
+        status: 'pending',
+        entityType: 'account',
+        entityId: 'acc_err',
+        operation: 'CREATE',
+        createdAt: '2023-01-01',
+        operationId: 'op_readback_err',
+        retryCount: 0
+      });
+
+      await expect(syncEngine.performFullSync()).rejects.toThrow();
+
+      const item = await db.syncQueue.get('q_readback_err');
+      expect(item?.status).not.toBe('completed');
+    });
+  });
 });
 

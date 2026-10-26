@@ -159,3 +159,24 @@ export interface PendingSideEffect {
   retries: number;
   lastError?: string;
 }
+
+export interface CloudSyncStatePayload {
+  revision: number;
+  version: number;
+  deviceId: string;
+  deviceName?: string;
+  lastModified: string;
+  accounts: Account[];
+  transactions: Transaction[];
+  tombstones: Array<{ id: string; entityType: string; deletedAt: string }>;
+  settings: any[];
+  [key: string]: unknown;
+}
+
+export interface EncryptedSyncContainer {
+  isEncrypted: boolean;
+  data: string;
+  iv: string;
+  containerHash?: string;
+  [key: string]: unknown;
+}

@@ -17,6 +17,8 @@ import {
   SyncTombstone,
   Account,
   Transaction,
+  CloudSyncStatePayload,
+  EncryptedSyncContainer,
 } from '@/shared/types';
 import { getDeviceId, getDeviceName } from '../utils/deviceId';
 import { googleDriveService } from './googleDrive.service';
@@ -407,9 +409,9 @@ private async _performFullSyncInternal(): Promise<{
       let remoteRevisionAtStart = 0;
 
       if (syncFile) {
-        const downloaded: any = await googleDriveService.downloadJsonFile(syncFile.id);
+        const downloaded = await googleDriveService.downloadJsonFile<EncryptedSyncContainer | CloudSyncStatePayload>(syncFile.id);
 
-        if (downloaded?.isEncrypted === true && downloaded.data && downloaded.iv) {
+        if (downloaded?.isEncrypted === true && typeof downloaded.data === 'string' && typeof downloaded.iv === 'string') {
           try {
             const decrypted = await decryptBackupPayload(downloaded.data, downloaded.iv);
             remoteData = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
@@ -649,16 +651,36 @@ private async _performFullSyncInternal(): Promise<{
         throw new Error('فشل تأكيد الرفع: لم يتم العثور على ملف المزامنة على Google Drive بعد الرفع.');
       }
 
-      const downloadedReadback = await googleDriveService.downloadJsonFile<any>(targetFileId);
-      let readbackData = downloadedReadback;
-      if (downloadedReadback?.isEncrypted === true && downloadedReadback.data && downloadedReadback.iv) {
-        const decrypted = await decryptBackupPayload(downloadedReadback.data, downloadedReadback.iv);
-        readbackData = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
+      const downloadedReadback = await googleDriveService.downloadJsonFile<EncryptedSyncContainer | CloudSyncStatePayload>(targetFileId);
+      let readbackData: CloudSyncStatePayload | null = null;
+
+      if (downloadedReadback && typeof downloadedReadback === 'object' && 'isEncrypted' in downloadedReadback && downloadedReadback.isEncrypted === true && typeof downloadedReadback.data === 'string' && typeof downloadedReadback.iv === 'string') {
+        try {
+          const decrypted = await decryptBackupPayload(downloadedReadback.data, downloadedReadback.iv);
+          readbackData = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
+        } catch (decryptErr: any) {
+          throw new Error('فشل فك تشفير النسخة المقروءة أثناء التحقق: ' + decryptErr?.message);
+        }
+      } else if (downloadedReadback && typeof downloadedReadback === 'object' && 'revision' in downloadedReadback) {
+        readbackData = downloadedReadback as CloudSyncStatePayload;
       }
 
-      const readbackRevision = readbackData?.revision ?? 0;
-      if (readbackRevision !== nextRevision) {
-        throw new Error(`فشل تأكيد الرفع: مراجعة النسخة المقروءة (${readbackRevision}) لا تطابق المراجعة المتوقعة (${nextRevision}).`);
+      if (!readbackData) {
+        throw new Error('فشل تأكيد الرفع: ملف المزامنة المقروء غير صالح أو تالف.');
+      }
+
+      const readbackRevision = readbackData.revision ?? 0;
+      const readbackAccountCount = Array.isArray(readbackData.accounts) ? readbackData.accounts.length : -1;
+      const readbackTransactionCount = Array.isArray(readbackData.transactions) ? readbackData.transactions.length : -1;
+
+      if (
+        readbackRevision !== nextRevision ||
+        readbackAccountCount !== updatedAccounts.length ||
+        readbackTransactionCount !== updatedTransactions.length
+      ) {
+        throw new Error(
+          `فشل تأكيد الرفع والتحقق من النزاهة (Readback Integrity): عدم تطابق المراجعة أو محتوى الحالة المقروءة (المراجعة: ${readbackRevision}/${nextRevision}، الحسابات: ${readbackAccountCount}/${updatedAccounts.length}، الحركات: ${readbackTransactionCount}/${updatedTransactions.length}).`
+        );
       }
 
       for (const item of inFlightPendingItems) {
