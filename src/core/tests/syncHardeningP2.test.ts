@@ -139,4 +139,63 @@ describe('Sync Engine Hardening P2 - State Machine & Revisions', () => {
       expect(malformedLogs.length).toBeGreaterThan(0);
     });
   });
+
+  describe('SYNC-09: Upload Acknowledgment & Readback Hardening', () => {
+    it('should reject completion if remote acknowledgment revision is lagging', async () => {
+      const { googleDriveService } = await import('../services/googleDrive.service');
+      vi.spyOn(googleDriveService, 'isConnected').mockReturnValue(true);
+      
+      // Initial listFiles returns revision 1
+      vi.spyOn(googleDriveService, 'listFiles').mockResolvedValueOnce([
+        { name: 'hisabati_sync_state.json', id: 'f1', metadata: { revision: 1 } } as any
+      ]);
+      vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValue({ revision: 1, accounts: [], transactions: [] });
+
+      await db.syncQueue.add({ id: 'q_ack', status: 'pending', entityType: 'account', entityId: 'a1', operation: 'CREATE', createdAt: '2023-01-01', operationId: 'op_ack', retryCount: 0 });
+
+      vi.spyOn(googleDriveService, 'updateJsonFile').mockResolvedValue({ id: 'f1' } as any);
+
+      // Subsequent listFiles (for race check and ack readback) returns lagging revision 1 instead of 2
+      vi.spyOn(googleDriveService, 'listFiles').mockResolvedValue([
+        { name: 'hisabati_sync_state.json', id: 'f1', metadata: { revision: 1 } } as any
+      ]);
+
+      await expect(syncEngine.performFullSync()).rejects.toThrow(/فشل تأكيد الرفع/);
+
+      const item = await db.syncQueue.get('q_ack');
+      expect(item?.status).not.toBe('completed');
+    });
+
+    it('should prevent tombstone resurrection during sync pull', async () => {
+      const { googleDriveService } = await import('../services/googleDrive.service');
+      vi.spyOn(googleDriveService, 'isConnected').mockReturnValue(true);
+      
+      // Add permanent tombstone for account 'acc_deleted'
+      await db.settings.put({
+        id: 'hisabati_permanent_tombstones',
+        key: 'hisabati_permanent_tombstones',
+        value: [{ id: 'acc_deleted', entityType: 'account', deletedAt: '2023-01-01' }],
+        updatedAt: new Date().toISOString()
+      });
+
+      vi.spyOn(googleDriveService, 'listFiles').mockResolvedValue([
+        { name: 'hisabati_sync_state.json', id: 'f1', metadata: { revision: 1 } } as any
+      ]);
+
+      // Remote data tries to recreate 'acc_deleted'
+      vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValue({
+        revision: 1,
+        accounts: [{ id: 'acc_deleted', name: 'Resurrected Account', currency: 'USD', updatedAt: new Date().toISOString() }],
+        transactions: []
+      });
+
+      vi.spyOn(googleDriveService, 'updateJsonFile').mockResolvedValue({ id: 'f1' } as any);
+
+      await syncEngine.performFullSync();
+
+      const acc = await db.accounts.get('acc_deleted');
+      expect(acc).toBeUndefined(); // Tombstone protected against resurrection
+    });
+  });
 });
+

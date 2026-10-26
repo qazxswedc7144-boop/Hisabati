@@ -54,6 +54,11 @@ export interface BackupMetadata {
   financialFormatVersion: number;
 
   /**
+   * Cloud sync revision number.
+   */
+  revision?: number;
+
+  /**
    * Legacy field kept temporarily for old backup compatibility.
    */
   schemaVersion?: number;

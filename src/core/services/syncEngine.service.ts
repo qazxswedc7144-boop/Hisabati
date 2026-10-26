@@ -599,13 +599,13 @@ private async _performFullSyncInternal(): Promise<{
         await db.syncQueue.update(item.id, { status: 'prepared' });
       }
 
-      // 6. SYNC-07: Final Revision Race Check (Step C)
+      // 6. SYNC-07: Final Revision Race Check (Step C - Fresh Remote Fetch)
       if (syncFile) {
-        const latestFiles = await googleDriveService.listFiles();
-        const latestSyncFile = latestFiles.find(f => f.name === SYNC_STATE_FILE);
-        const latestRevision = (latestSyncFile?.metadata as any)?.revision || remoteData?.revision || 0;
+        const freshFiles = await googleDriveService.listFiles();
+        const freshSyncFile = freshFiles.find(f => f.name === SYNC_STATE_FILE);
+        const freshRevision = freshSyncFile?.metadata?.revision ?? 0;
         
-        if (latestRevision > remoteRevisionAtStart) {
+        if (freshRevision > remoteRevisionAtStart) {
           throw new Error('تعذر الرفع: تم تحديث البيانات السحابية بواسطة جهاز آخر أثناء المعالجة المحلية. يرجى المحاولة مرة أخرى.');
         }
       }
@@ -643,7 +643,29 @@ private async _performFullSyncInternal(): Promise<{
         await googleDriveService.uploadJsonFile(SYNC_STATE_FILE, encryptedContainer, uploadMeta);
       }
 
-      // 8. Atomic Completion (Step E)
+      // 8. Remote Acknowledgment & Readback Verification (Upload Acknowledgment Hardening)
+      const targetFileId = syncFile ? syncFile.id : (await googleDriveService.listFiles()).find(f => f.name === SYNC_STATE_FILE)?.id;
+      if (!targetFileId) {
+        throw new Error('فشل تأكيد الرفع: لم يتم العثور على ملف المزامنة على Google Drive بعد الرفع.');
+      }
+
+      const downloadedReadback = await googleDriveService.downloadJsonFile<any>(targetFileId);
+      let readbackData = downloadedReadback;
+      if (downloadedReadback?.isEncrypted === true && downloadedReadback.data && downloadedReadback.iv) {
+        const decrypted = await decryptBackupPayload(downloadedReadback.data, downloadedReadback.iv);
+        readbackData = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
+      }
+
+      const readbackRevision = readbackData?.revision ?? 0;
+      if (readbackRevision !== nextRevision) {
+        throw new Error(`فشل تأكيد الرفع: مراجعة النسخة المقروءة (${readbackRevision}) لا تطابق المراجعة المتوقعة (${nextRevision}).`);
+      }
+
+      for (const item of inFlightPendingItems) {
+        await db.syncQueue.update(item.id, { status: 'acknowledged' });
+      }
+
+      // 9. Atomic Completion (Step E)
       const activeDb = getDb();
       await activeDb.transaction('rw', [activeDb.syncQueue, activeDb.settings], async () => {
         for (const item of inFlightPendingItems) {
