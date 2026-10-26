@@ -586,7 +586,10 @@ private async _performFullSyncInternal(): Promise<{
       }
 
       // 4. Recover Stale Processing/Prepared Items (SYNC-06)
-      await db.syncQueue.where('status').anyOf('processing', 'prepared', 'uploaded').modify({ status: 'pending', updatedAt: new Date().toISOString() });
+      const staleItems = await db.syncQueue.where('status').anyOf('processing', 'prepared', 'uploaded').toArray();
+      for (const item of staleItems) {
+        await db.syncQueue.update(item.id, { status: 'pending', updatedAt: new Date().toISOString() });
+      }
 
       // 5. Transition Local Pending to 'prepared' (Step B)
       inFlightPendingItems = await db.syncQueue.where('status').equals('pending').sortBy('createdAt');
@@ -600,7 +603,7 @@ private async _performFullSyncInternal(): Promise<{
       if (syncFile) {
         const latestFiles = await googleDriveService.listFiles();
         const latestSyncFile = latestFiles.find(f => f.name === SYNC_STATE_FILE);
-        const latestRevision = latestSyncFile?.metadata?.revision || 0;
+        const latestRevision = (latestSyncFile?.metadata as any)?.revision || remoteData?.revision || 0;
         
         if (latestRevision > remoteRevisionAtStart) {
           throw new Error('تعذر الرفع: تم تحديث البيانات السحابية بواسطة جهاز آخر أثناء المعالجة المحلية. يرجى المحاولة مرة أخرى.');

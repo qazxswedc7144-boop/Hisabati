@@ -30,6 +30,7 @@ export interface SyncQueueItem {
   operationId: string; // Idempotency key
   payload?: any;
   createdAt: string;
+  updatedAt?: string;
   retryCount: number;
   lastError?: string;
   status: 'pending' | 'processing' | 'prepared' | 'uploaded' | 'acknowledged' | 'failed' | 'completed';
