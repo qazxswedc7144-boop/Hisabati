@@ -658,8 +658,9 @@ private async _performFullSyncInternal(): Promise<{
         try {
           const decrypted = await decryptBackupPayload(downloadedReadback.data, downloadedReadback.iv);
           readbackData = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
-        } catch (decryptErr: any) {
-          throw new Error('فشل فك تشفير النسخة المقروءة أثناء التحقق: ' + decryptErr?.message);
+        } catch (decryptErr: unknown) {
+          const message = decryptErr instanceof Error ? decryptErr.message : 'خطأ غير معروف';
+          throw new Error('فشل فك تشفير النسخة المقروءة أثناء التحقق: ' + message);
         }
       } else if (downloadedReadback && typeof downloadedReadback === 'object' && 'revision' in downloadedReadback) {
         readbackData = downloadedReadback as CloudSyncStatePayload;
