@@ -27,8 +27,11 @@ import { integrityService } from './integrity.service';
 import { decimalToMinor } from '../money/converter';
 import { resolveRequiredCurrency, isSupportedCurrency } from '../money/currency';
 import { SyncContextRegistry } from './syncContext';
-import { encryptBackupPayload, decryptBackupPayload } from '../utils/crypto';
-
+import {
+  encryptBackupPayload,
+  decryptBackupPayload,
+  calculateSHA256,
+} from '../utils/crypto';
 const TAB_INSTANCE_ID = 'tab_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 const SYNC_STATE_FILE = 'hisabati_sync_state.json';
 const SETTINGS_SYNC_LOCK = 'hisabati_sync_lock';
@@ -632,6 +635,16 @@ private async _performFullSyncInternal(): Promise<{
       };
 
       const encryptedContainer = await this.buildEncryptedSyncContainer(newCloudState);
+
+const expectedContainerHash = await calculateSHA256(
+  JSON.stringify({
+    isEncrypted: encryptedContainer.isEncrypted,
+    algorithm: encryptedContainer.algorithm,
+    iv: encryptedContainer.iv,
+    data: encryptedContainer.data,
+    version: encryptedContainer.version,
+  })
+);
       const uploadMeta = { accountCount: updatedAccounts.length, transactionCount: updatedTransactions.length, revision: nextRevision, isEncrypted: true };
 
       // Transition to 'uploaded' state before network call
@@ -652,23 +665,49 @@ private async _performFullSyncInternal(): Promise<{
       }
 
       const downloadedReadback = await googleDriveService.downloadJsonFile<EncryptedSyncContainer | CloudSyncStatePayload>(targetFileId);
-      let readbackData: CloudSyncStatePayload | null = null;
 
-      if (downloadedReadback && typeof downloadedReadback === 'object' && 'isEncrypted' in downloadedReadback && downloadedReadback.isEncrypted === true && typeof downloadedReadback.data === 'string' && typeof downloadedReadback.iv === 'string') {
-        try {
-          const decrypted = await decryptBackupPayload(downloadedReadback.data, downloadedReadback.iv);
-          readbackData = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
-        } catch (decryptErr: unknown) {
-          const message = decryptErr instanceof Error ? decryptErr.message : 'خطأ غير معروف';
-          throw new Error('فشل فك تشفير النسخة المقروءة أثناء التحقق: ' + message);
-        }
-      } else if (downloadedReadback && typeof downloadedReadback === 'object' && 'revision' in downloadedReadback) {
-        readbackData = downloadedReadback as CloudSyncStatePayload;
-      }
+// التحقق من أن الملف المقروء هو حاوية مشفرة صالحة
+if (
+  !downloadedReadback ||
+  typeof downloadedReadback !== 'object' ||
+  !('isEncrypted' in downloadedReadback) ||
+  downloadedReadback.isEncrypted !== true ||
+  typeof downloadedReadback.data !== 'string' ||
+  typeof downloadedReadback.iv !== 'string' ||
+  typeof downloadedReadback.algorithm !== 'string' ||
+  !('version' in downloadedReadback)
+) {
+  throw new Error('فشل تأكيد الرفع: الحاوية المقروءة غير مشفرة أو غير صالحة.');
+}
 
-      if (!readbackData) {
-        throw new Error('فشل تأكيد الرفع: ملف المزامنة المقروء غير صالح أو تالف.');
-      }
+// حساب بصمة الحاوية المقروءة
+const readbackContainerHash = await calculateSHA256(
+  JSON.stringify({
+    isEncrypted: downloadedReadback.isEncrypted,
+    algorithm: downloadedReadback.algorithm,
+    iv: downloadedReadback.iv,
+    data: downloadedReadback.data,
+    version: downloadedReadback.version,
+  })
+);
+
+// مقارنة البصمة (هذه هي الخطوة الحاسمة لحماية المحتوى)
+if (readbackContainerHash !== expectedContainerHash) {
+  throw new Error('فشل تأكيد الرفع والتحقق من النزاهة: بصمة الحاوية المقروءة لا تطابق الحاوية المرفوعة.');
+}
+
+let readbackData: CloudSyncStatePayload;
+try {
+  const decrypted = await decryptBackupPayload(downloadedReadback.data, downloadedReadback.iv);
+  readbackData = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
+} catch (decryptErr: unknown) {
+  const message = decryptErr instanceof Error ? decryptErr.message : 'خطأ غير معروف';
+  throw new Error('فشل فك تشفير النسخة المقروءة أثناء التحقق: ' + message);
+}
+
+if (!readbackData || typeof readbackData !== 'object' || !Array.isArray(readbackData.accounts) || !Array.isArray(readbackData.transactions)) {
+  throw new Error('فشل تأكيد الرفع: بيانات الحاوية المقروءة غير صالحة.');
+}
 
       const readbackRevision = readbackData.revision ?? 0;
       const readbackAccountCount = Array.isArray(readbackData.accounts) ? readbackData.accounts.length : -1;
