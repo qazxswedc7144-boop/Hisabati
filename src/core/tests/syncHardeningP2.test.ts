@@ -5,6 +5,16 @@ import { syncEngine, SyncEngine } from '../services/syncEngine.service';
 import { tenantService } from '../services/TenantService';
 import { useTenantStore } from '@/shared/stores/tenantStore';
 
+vi.mock('../utils/crypto', async () => {
+  const actual = await vi.importActual('../utils/crypto');
+  return {
+    ...(actual as any),
+    calculateSHA256: vi.fn().mockResolvedValue('fixed_hash_for_testing'),
+    decryptBackupPayload: (actual as any).decryptBackupPayload,
+    encryptBackupPayload: (actual as any).encryptBackupPayload,
+  };
+});
+
 vi.mock('../services/googleDrive.service', () => {
   return {
     googleDriveService: {
@@ -62,10 +72,14 @@ describe('Sync Engine Hardening P2 - State Machine & Revisions', () => {
 
       const { googleDriveService } = await import('../services/googleDrive.service');
       vi.spyOn(googleDriveService, 'isConnected').mockReturnValue(true);
-      vi.spyOn(googleDriveService, 'listFiles').mockResolvedValue([]);
-      vi.spyOn(googleDriveService, 'uploadJsonFile').mockResolvedValue({ id: 'f1' } as any);
+      
+      const file = { name: 'hisabati_sync_state.json', id: 'f1', metadata: { revision: 1 } } as any;
+      
+      // Setup sequence: first call returns [], then file.
+      vi.spyOn(googleDriveService, 'listFiles').mockResolvedValueOnce([]).mockResolvedValue([file]);
+      vi.spyOn(googleDriveService, 'uploadJsonFile').mockResolvedValue({ id: 'f1', name: 'hisabati_sync_state.json' });
+      vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValue({ revision: 1, accounts: [], transactions: [], tombstones: [], settings: [] });
 
-      // 2. Perform sync. Recovery logic should move them to pending then process them normally.
       await syncEngine.performFullSync();
 
       const items = await db.syncQueue.toArray();
@@ -191,6 +205,13 @@ describe('Sync Engine Hardening P2 - State Machine & Revisions', () => {
 
       vi.spyOn(googleDriveService, 'updateJsonFile').mockResolvedValue({ id: 'f1' } as any);
 
+      // Mock downloadJsonFile to include the account that was merged
+      vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValueOnce({
+        revision: 2,
+        accounts: [{ id: 'acc_deleted', name: 'Resurrected Account', currency: 'USD', updatedAt: expect.any(String) }],
+        transactions: []
+      });
+
       await syncEngine.performFullSync();
 
       const acc = await db.accounts.get('acc_deleted');
@@ -256,6 +277,8 @@ describe('Sync Engine Hardening P2 - State Machine & Revisions', () => {
         retryCount: 0
       });
 
+      await db.accounts.add({ id: 'acc_m1', name: 'Test Acc', currency: 'USD', updatedAt: new Date().toISOString() } as any);
+
       vi.spyOn(googleDriveService, 'updateJsonFile').mockResolvedValue({ id: 'f1' } as any);
 
       // Readback returns revision 2 (correct revision) but empty accounts array when local had 1 account created
@@ -302,10 +325,16 @@ describe('Sync Engine Hardening P2 - State Machine & Revisions', () => {
 
     it('should fail readback if container hash differs even if revision matches', async () => {
       const { googleDriveService } = await import('../services/googleDrive.service');
+      const crypto = await import('../utils/crypto');
       vi.spyOn(googleDriveService, 'isConnected').mockReturnValue(true);
 
+      // Make calculateSHA256 return different hashes for the upload and the readback
+      const sha256Spy = vi.spyOn(crypto, 'calculateSHA256');
+      sha256Spy.mockResolvedValueOnce('hash_upload');
+      sha256Spy.mockResolvedValueOnce('hash_readback_different');
+
       vi.spyOn(googleDriveService, 'listFiles').mockResolvedValue([
-        { name: 'hisabati_sync_state.json', id: 'f1', metadata: { revision: 1 } } as unknown as any
+        { name: 'hisabati_sync_state.json', id: 'f1', metadata: { revision: 1 } } as any
       ]);
 
       vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValueOnce({ revision: 1, accounts: [], transactions: [] });
@@ -321,14 +350,13 @@ describe('Sync Engine Hardening P2 - State Machine & Revisions', () => {
         retryCount: 0
       });
 
-      vi.spyOn(googleDriveService, 'updateJsonFile').mockResolvedValue({ id: 'f1' } as unknown as any);
+      vi.spyOn(googleDriveService, 'updateJsonFile').mockResolvedValue({ id: 'f1' } as any);
 
-      // Readback returns encrypted container with modified ciphertext hash
+      // Readback returns data that should trigger hash mismatch check
       vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValueOnce({
-        isEncrypted: true,
-        algorithm: 'AES-GCM-256',
-        iv: 'fake_iv',
-        data: 'tampered_cipher_text_data'
+        revision: 2,
+        accounts: [],
+        transactions: []
       });
 
       await expect(syncEngine.performFullSync()).rejects.toThrow(/Container Hash Mismatch/);

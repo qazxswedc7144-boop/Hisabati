@@ -684,8 +684,17 @@ private async _performFullSyncInternal(): Promise<{
       }
 
       const readbackRevision = readbackData.revision ?? 0;
-      if (readbackRevision !== nextRevision) {
-        throw new Error(`فشل تأكيد الرفع: مراجعة النسخة المقروءة (${readbackRevision}) لا تطابق المراجعة المتوقعة (${nextRevision}).`);
+      const readbackAccountCount = Array.isArray(readbackData.accounts) ? readbackData.accounts.length : -1;
+      const readbackTransactionCount = Array.isArray(readbackData.transactions) ? readbackData.transactions.length : -1;
+
+      if (
+        readbackRevision !== nextRevision ||
+        readbackAccountCount !== updatedAccounts.length ||
+        readbackTransactionCount !== updatedTransactions.length
+      ) {
+        throw new Error(
+          `فشل تأكيد الرفع والتحقق من النزاهة (Readback Integrity): عدم تطابق المراجعة أو محتوى الحالة المقروءة (المراجعة: ${readbackRevision}/${nextRevision}، الحسابات: ${readbackAccountCount}/${updatedAccounts.length}، الحركات: ${readbackTransactionCount}/${updatedTransactions.length}).`
+        );
       }
 
       for (const item of inFlightPendingItems) {
