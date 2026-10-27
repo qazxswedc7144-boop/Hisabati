@@ -299,32 +299,43 @@ describe('Sync Engine Hardening P2 - State Machine & Revisions', () => {
       const item = await db.syncQueue.get('q_readback_err');
       expect(item?.status).not.toBe('completed');
     });
-    it('should reject readback if hash differs even if revision and counts match', async () => {
-  const { googleDriveService } = await import('../services/googleDrive.service');
-  vi.spyOn(googleDriveService, 'isConnected').mockReturnValue(true);
 
-  vi.spyOn(googleDriveService, 'listFiles').mockResolvedValue([
-    { name: 'hisabati_sync_state.json', id: 'f1', metadata: { revision: 1 } } as any
-  ]);
+    it('should fail readback if container hash differs even if revision matches', async () => {
+      const { googleDriveService } = await import('../services/googleDrive.service');
+      vi.spyOn(googleDriveService, 'isConnected').mockReturnValue(true);
 
-  vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValueOnce({ 
-    isEncrypted: true, algorithm: 'AES-GCM-256', iv: 'iv123', data: 'data123', version: 2 
-  });
+      vi.spyOn(googleDriveService, 'listFiles').mockResolvedValue([
+        { name: 'hisabati_sync_state.json', id: 'f1', metadata: { revision: 1 } } as unknown as any
+      ]);
 
-  await db.syncQueue.add({ id: 'q_hash_mismatch', status: 'pending', entityType: 'account', entityId: 'acc_hm', operation: 'CREATE', createdAt: '2023-01-01', operationId: 'op_hm', retryCount: 0 });
+      vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValueOnce({ revision: 1, accounts: [], transactions: [] });
 
-  vi.spyOn(googleDriveService, 'updateJsonFile').mockResolvedValue({ id: 'f1' } as any);
+      await db.syncQueue.add({
+        id: 'q_hash_diff',
+        status: 'pending',
+        entityType: 'account',
+        entityId: 'acc_hd',
+        operation: 'CREATE',
+        createdAt: '2023-01-01',
+        operationId: 'op_hash_diff',
+        retryCount: 0
+      });
 
-  // محاكاة إرجاع حاوية مشفرة ولكن محتواها (data) مختلف
-  vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValueOnce({
-    isEncrypted: true, algorithm: 'AES-GCM-256', iv: 'iv123', data: 'data_TAMPERED', version: 2, revision: 2
-  });
+      vi.spyOn(googleDriveService, 'updateJsonFile').mockResolvedValue({ id: 'f1' } as unknown as any);
 
-  await expect(syncEngine.performFullSync()).rejects.toThrow(/بصمة الحاوية المقروءة لا تطابق/);
+      // Readback returns encrypted container with modified ciphertext hash
+      vi.spyOn(googleDriveService, 'downloadJsonFile').mockResolvedValueOnce({
+        isEncrypted: true,
+        algorithm: 'AES-GCM-256',
+        iv: 'fake_iv',
+        data: 'tampered_cipher_text_data'
+      });
 
-  const item = await db.syncQueue.get('q_hash_mismatch');
-  expect(item?.status).not.toBe('completed');
-});
+      await expect(syncEngine.performFullSync()).rejects.toThrow(/Container Hash Mismatch/);
+
+      const item = await db.syncQueue.get('q_hash_diff');
+      expect(item?.status).not.toBe('completed');
+    });
   });
 });
 

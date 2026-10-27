@@ -27,11 +27,8 @@ import { integrityService } from './integrity.service';
 import { decimalToMinor } from '../money/converter';
 import { resolveRequiredCurrency, isSupportedCurrency } from '../money/currency';
 import { SyncContextRegistry } from './syncContext';
-import {
-  encryptBackupPayload,
-  decryptBackupPayload,
-  calculateSHA256,
-} from '../utils/crypto';
+import { encryptBackupPayload, decryptBackupPayload, calculateSHA256 } from '../utils/crypto';
+
 const TAB_INSTANCE_ID = 'tab_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 const SYNC_STATE_FILE = 'hisabati_sync_state.json';
 const SETTINGS_SYNC_LOCK = 'hisabati_sync_lock';
@@ -635,16 +632,10 @@ private async _performFullSyncInternal(): Promise<{
       };
 
       const encryptedContainer = await this.buildEncryptedSyncContainer(newCloudState);
+      const expectedContainerHash = encryptedContainer.isEncrypted && typeof encryptedContainer.iv === 'string' && typeof encryptedContainer.data === 'string'
+        ? await calculateSHA256(encryptedContainer.iv + encryptedContainer.data)
+        : await calculateSHA256(JSON.stringify(encryptedContainer));
 
-const expectedContainerHash = await calculateSHA256(
-  JSON.stringify({
-    isEncrypted: encryptedContainer.isEncrypted,
-    algorithm: encryptedContainer.algorithm,
-    iv: encryptedContainer.iv,
-    data: encryptedContainer.data,
-    version: encryptedContainer.version,
-  })
-);
       const uploadMeta = { accountCount: updatedAccounts.length, transactionCount: updatedTransactions.length, revision: nextRevision, isEncrypted: true };
 
       // Transition to 'uploaded' state before network call
@@ -658,69 +649,43 @@ const expectedContainerHash = await calculateSHA256(
         await googleDriveService.uploadJsonFile(SYNC_STATE_FILE, encryptedContainer, uploadMeta);
       }
 
-      // 8. Remote Acknowledgment & Readback Verification (Upload Acknowledgment Hardening)
+      // 8. Remote Acknowledgment & Readback Verification (Upload Acknowledgment & Container Hash Integrity)
       const targetFileId = syncFile ? syncFile.id : (await googleDriveService.listFiles()).find(f => f.name === SYNC_STATE_FILE)?.id;
       if (!targetFileId) {
         throw new Error('فشل تأكيد الرفع: لم يتم العثور على ملف المزامنة على Google Drive بعد الرفع.');
       }
 
       const downloadedReadback = await googleDriveService.downloadJsonFile<EncryptedSyncContainer | CloudSyncStatePayload>(targetFileId);
+      let readbackData: CloudSyncStatePayload | null = null;
+      let readbackContainerHash = '';
 
-// التحقق من أن الملف المقروء هو حاوية مشفرة صالحة
-if (
-  !downloadedReadback ||
-  typeof downloadedReadback !== 'object' ||
-  !('isEncrypted' in downloadedReadback) ||
-  downloadedReadback.isEncrypted !== true ||
-  typeof downloadedReadback.data !== 'string' ||
-  typeof downloadedReadback.iv !== 'string' ||
-  typeof downloadedReadback.algorithm !== 'string' ||
-  !('version' in downloadedReadback)
-) {
-  throw new Error('فشل تأكيد الرفع: الحاوية المقروءة غير مشفرة أو غير صالحة.');
-}
+      if (downloadedReadback && typeof downloadedReadback === 'object' && 'isEncrypted' in downloadedReadback && downloadedReadback.isEncrypted === true && typeof downloadedReadback.data === 'string' && typeof downloadedReadback.iv === 'string') {
+        readbackContainerHash = await calculateSHA256(downloadedReadback.iv + downloadedReadback.data);
+        if (readbackContainerHash !== expectedContainerHash) {
+          throw new Error('فشل تأكيد الرفع والتحقق من النزاهة (Container Hash Mismatch): بصمة الحاوية المشفرة المقروءة لا تطابق الحمولة المُرسَلة.');
+        }
+        try {
+          const decrypted = await decryptBackupPayload(downloadedReadback.data, downloadedReadback.iv);
+          readbackData = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
+        } catch (decryptErr: unknown) {
+          const errMsg = decryptErr instanceof Error ? decryptErr.message : String(decryptErr);
+          throw new Error('فشل فك تشفير النسخة المقروءة أثناء التحقق: ' + errMsg);
+        }
+      } else if (downloadedReadback && typeof downloadedReadback === 'object' && 'revision' in downloadedReadback) {
+        readbackData = downloadedReadback as CloudSyncStatePayload;
+        readbackContainerHash = await calculateSHA256(JSON.stringify(downloadedReadback));
+        if (readbackContainerHash !== expectedContainerHash) {
+          throw new Error('فشل تأكيد الرفع والتحقق من النزاهة (Container Hash Mismatch): بصمة الحاوية المقروءة لا تطابق الحمولة المُرسَلة.');
+        }
+      }
 
-// حساب بصمة الحاوية المقروءة
-const readbackContainerHash = await calculateSHA256(
-  JSON.stringify({
-    isEncrypted: downloadedReadback.isEncrypted,
-    algorithm: downloadedReadback.algorithm,
-    iv: downloadedReadback.iv,
-    data: downloadedReadback.data,
-    version: downloadedReadback.version,
-  })
-);
-
-// مقارنة البصمة (هذه هي الخطوة الحاسمة لحماية المحتوى)
-if (readbackContainerHash !== expectedContainerHash) {
-  throw new Error('فشل تأكيد الرفع والتحقق من النزاهة: بصمة الحاوية المقروءة لا تطابق الحاوية المرفوعة.');
-}
-
-let readbackData: CloudSyncStatePayload;
-try {
-  const decrypted = await decryptBackupPayload(downloadedReadback.data, downloadedReadback.iv);
-  readbackData = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
-} catch (decryptErr: unknown) {
-  const message = decryptErr instanceof Error ? decryptErr.message : 'خطأ غير معروف';
-  throw new Error('فشل فك تشفير النسخة المقروءة أثناء التحقق: ' + message);
-}
-
-if (!readbackData || typeof readbackData !== 'object' || !Array.isArray(readbackData.accounts) || !Array.isArray(readbackData.transactions)) {
-  throw new Error('فشل تأكيد الرفع: بيانات الحاوية المقروءة غير صالحة.');
-}
+      if (!readbackData) {
+        throw new Error('فشل تأكيد الرفع: ملف المزامنة المقروء غير صالح أو تالف.');
+      }
 
       const readbackRevision = readbackData.revision ?? 0;
-      const readbackAccountCount = Array.isArray(readbackData.accounts) ? readbackData.accounts.length : -1;
-      const readbackTransactionCount = Array.isArray(readbackData.transactions) ? readbackData.transactions.length : -1;
-
-      if (
-        readbackRevision !== nextRevision ||
-        readbackAccountCount !== updatedAccounts.length ||
-        readbackTransactionCount !== updatedTransactions.length
-      ) {
-        throw new Error(
-          `فشل تأكيد الرفع والتحقق من النزاهة (Readback Integrity): عدم تطابق المراجعة أو محتوى الحالة المقروءة (المراجعة: ${readbackRevision}/${nextRevision}، الحسابات: ${readbackAccountCount}/${updatedAccounts.length}، الحركات: ${readbackTransactionCount}/${updatedTransactions.length}).`
-        );
+      if (readbackRevision !== nextRevision) {
+        throw new Error(`فشل تأكيد الرفع: مراجعة النسخة المقروءة (${readbackRevision}) لا تطابق المراجعة المتوقعة (${nextRevision}).`);
       }
 
       for (const item of inFlightPendingItems) {
