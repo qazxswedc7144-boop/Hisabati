@@ -692,6 +692,11 @@ private async _performFullSyncInternal(): Promise<{
         readbackAccountCount !== updatedAccounts.length ||
         readbackTransactionCount !== updatedTransactions.length
       ) {
+        console.log('DEBUG READBACK CHECK:', {
+            readbackRevision, nextRevision,
+            readbackAccountCount, updatedAccountLength: updatedAccounts.length,
+            readbackTransactionCount, updatedTransactionLength: updatedTransactions.length
+        });
         throw new Error(
           `فشل تأكيد الرفع والتحقق من النزاهة (Readback Integrity): عدم تطابق المراجعة أو محتوى الحالة المقروءة (المراجعة: ${readbackRevision}/${nextRevision}، الحسابات: ${readbackAccountCount}/${updatedAccounts.length}، الحركات: ${readbackTransactionCount}/${updatedTransactions.length}).`
         );
