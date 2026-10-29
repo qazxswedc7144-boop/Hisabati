@@ -3,6 +3,8 @@ import { accountRepository } from '@/core/repositories/account.repository';
 import { Account, CurrencyCode } from '@/shared/types';
 import { toDualRepresentation } from '@/core/money/compat';
 import { settingsRepository } from '@/core/repositories/settings.repository';
+import { validateAndResolveFinancialAmount } from '@/core/money/financialSafety';
+import { assertDualMoneyRepresentation } from '@/core/money/validator';
 
 export interface ValidationResult {
   isValid: boolean;
@@ -66,11 +68,19 @@ export class AIValidationService {
     if (!finalCurrency || !supportedCurrencies.includes(finalCurrency)) {
       errors.push('العملة المحددة غير مدعومة أو تعذر حسمها من الحساب والنظام.');
     } else {
-      command.currency = finalCurrency as any;
-      // Re-align dual representation strictly with resolved currency
-      const dual = toDualRepresentation(command.amount, finalCurrency);
-      command.amount = dual.amount;
-      command.amountMinor = dual.amountMinor;
+      command.currency = finalCurrency;
+      try {
+        // AI-20 HARDENING: amountMinor is the source of truth if provided and valid.
+        // validateAndResolveFinancialAmount ensures deterministic conversion and consistency.
+        const financial = validateAndResolveFinancialAmount(command.amount, command.amountMinor, finalCurrency);
+        
+        // Preserve command state with validated values
+        command.amount = financial.amount;
+        command.amountMinor = financial.amountMinor;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`فشل التحقق المالي: ${msg}`);
+      }
     }
 
     // 5. Update command status

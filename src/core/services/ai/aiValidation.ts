@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { validateDualMoneyRepresentation } from '@/core/money/validator';
+
 export const AIIntentEnum = z.enum([
   'GET_TOTAL_RECEIVABLES',
   'GET_TOTAL_PAYABLES',
@@ -38,8 +40,12 @@ export function validateAIResponse(input: unknown): ValidatedAIResponse {
     return result.data;
   }
   // Safe fallback for invalid structure
+  const fallbackText = (input && typeof input === 'object' && 'text' in input && typeof (input as any).text === 'string')
+    ? (input as any).text
+    : 'حدث خطأ في معالجة استجابة المساعد.';
+
   return {
-    text: typeof (input as any)?.text === 'string' ? (input as any).text : 'حدث خطأ في معالجة استجابة المساعد.',
+    text: fallbackText,
     intent: 'UNKNOWN',
     confidence: 0.1,
     entities: {},
@@ -66,6 +72,13 @@ export const StructuredAICommandSchema = z.object({
   disambiguationOptions: z.array(z.unknown()).optional(),
   operationId: z.string().min(1, { message: 'operationId مفقود أو غير صالح' }),
   executedTransactionId: z.string().optional(),
+}).refine((data) => {
+  // If both are provided, they must be consistent
+  const result = validateDualMoneyRepresentation(data.amount, data.amountMinor, data.currency);
+  return result.isValid;
+}, {
+  message: 'تعارض في تمويل العملية: المبلغ العشري لا يتوافق مع الوحدات الصغرى للعملة المحددة',
+  path: ['amountMinor']
 });
 
 export type ValidatedStructuredAICommand = z.infer<typeof StructuredAICommandSchema>;

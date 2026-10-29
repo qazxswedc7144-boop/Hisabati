@@ -35,8 +35,8 @@ export interface StructuredAICommand {
   accountId?: string;
   accountName?: string;
   targetAccount?: Account;
-  amount: number;
-  amountMinor: number;
+  amount: number; // For display and compatibility
+  amountMinor: number; // CANONICAL SOURCE OF TRUTH (integer)
   currency: Currency;
   type: TransactionType; // 'debit' (عليه / مدين) | 'credit' (له / دائن)
   date: string;
