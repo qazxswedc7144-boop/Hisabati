@@ -94,9 +94,11 @@ export class AIService {
         response.isOfflineFallback = true;
       }
 
-      // If command generated, register into pending commands registry
+      // If command generated, register into pending commands registry and validate immediately
       if (response.command) {
         this.pendingCommands.set(response.command.id, response.command);
+        // Pre-validate to move from PENDING_VALIDATION to READY_FOR_CONFIRMATION or REJECTED
+        await aiValidationService.validate(response.command);
       }
 
       // Record in AI audit log
@@ -143,20 +145,25 @@ export class AIService {
       details: `تنفيذ أمر ذكي: ${command.intent}`,
     });
 
-    // Strict Zod Runtime Schema validation
-    const schemaResult = validateStructuredAICommand(command);
-    if (!schemaResult.success || command.status === 'REJECTED' || command.status === 'CANCELLED' || command.status === 'EXECUTED') {
-      throw new Error('لا يمكن تنفيذ أمر مالي غير صالح أو غير معتمد أو تم تنفيذه مسبقاً');
+    // Strict State Guard: Execution is only allowed for commands in READY_FOR_CONFIRMATION state
+    if (command.status !== 'READY_FOR_CONFIRMATION') {
+      throw new Error(`لا يمكن تنفيذ أمر مالي في حالته الحالية: ${command.status}. يجب أن يكون الأمر جاهزاً للتأكيد.`);
     }
 
-    // Strict re-validation before execution
+    // Strict Zod Runtime Schema validation
+    const schemaResult = validateStructuredAICommand(command);
+    if (!schemaResult.success) {
+      throw new Error('بيانات الأمر المالي غير صالحة وفق المعايير التقنية');
+    }
+
+    // Final integrity check before execution (RBAC and business rules)
     const valResult = await aiValidationService.validate(command);
     if (!valResult.isValid) {
-      throw new Error(valResult.errors[0] || 'تعذر التحقق من صحة العملية');
+      throw new Error(valResult.errors[0] || 'تعذر التحقق من صحة العملية قبل التنفيذ النهائي');
     }
 
     if (!command.accountId || !command.operationId || typeof command.amountMinor !== 'number' || command.amountMinor < 0) {
-      throw new Error('بيانات الأمر المالي ناقصة أو غير صالحة بعد التحقق');
+      throw new Error('بيانات الأمر المالي ناقصة أو غير صالحة بعد التحقق النهائي');
     }
 
     // Transition status to CONFIRMED

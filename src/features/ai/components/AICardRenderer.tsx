@@ -283,9 +283,11 @@ export const AICardRenderer: React.FC<AICardRendererProps> = ({
       );
 
     case 'command_confirmation_card':
-      const isPending = localCommandStatus === 'READY_FOR_CONFIRMATION' || localCommandStatus === 'PENDING_VALIDATION';
+      const isReady = localCommandStatus === 'READY_FOR_CONFIRMATION';
+      const isPendingValidation = localCommandStatus === 'PENDING_VALIDATION';
       const isExecuted = localCommandStatus === 'EXECUTED';
       const isCancelled = localCommandStatus === 'CANCELLED';
+      const isRejected = localCommandStatus === 'REJECTED';
 
       return (
         <div className="mt-3 rounded-2xl border border-amber-300 dark:border-amber-800/80 bg-amber-50/80 dark:bg-amber-950/40 p-4 space-y-3.5">
@@ -300,10 +302,12 @@ export const AICardRenderer: React.FC<AICardRendererProps> = ({
                   ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                   : isCancelled
                   ? 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                  : isRejected
+                  ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
                   : 'bg-amber-200 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
               }`}
             >
-              {isExecuted ? 'تم التنفيذ' : isCancelled ? 'ملغاة' : 'بانتظار موافقتك'}
+              {isExecuted ? 'تم التنفيذ' : isCancelled ? 'ملغاة' : isRejected ? 'مرفوض' : isPendingValidation ? 'جاري التدقيق...' : 'بانتظار موافقتك'}
             </span>
           </div>
 
@@ -338,7 +342,7 @@ export const AICardRenderer: React.FC<AICardRendererProps> = ({
             )}
           </div>
 
-          {isPending && (
+          {isReady && (
             <div className="pt-1 flex items-center gap-2">
               <button
                 onClick={handleConfirmCommand}
@@ -356,6 +360,29 @@ export const AICardRenderer: React.FC<AICardRendererProps> = ({
                 <XCircle className="w-4 h-4" />
                 <span>إلغاء</span>
               </button>
+            </div>
+          )}
+
+          {isPendingValidation && (
+            <div className="flex items-center gap-2 text-xs font-medium text-amber-700 bg-amber-50 p-2.5 rounded-xl animate-pulse">
+              <Clock className="w-4 h-4" />
+              <span>جاري التحقق من سلامة البيانات المالية...</span>
+            </div>
+          )}
+
+          {isRejected && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-xs font-bold text-rose-700 bg-rose-50 p-2.5 rounded-xl border border-rose-100">
+                <XCircle className="w-4 h-4 shrink-0" />
+                <span>تم رفض الطلب لوجود تعارض مالي أو نقص بيانات.</span>
+              </div>
+              {card.command?.validationErrors && card.command.validationErrors.length > 0 && (
+                <div className="px-3 py-2 text-[10px] text-rose-600 bg-rose-50/50 rounded-lg">
+                  <ul className="list-disc list-inside">
+                    {card.command.validationErrors.map((err, i) => <li key={i}>{err}</li>)}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
 

@@ -186,7 +186,7 @@ describe('AI Financial Hardening (Round 2-A)', () => {
     });
   });
 
-  describe('AI-to-Financial-Core End-to-End Integrity (Round 2-B)', () => {
+  describe('AI-to-Financial-Core End-to-End Integrity (Round 2-B-HOTFIX)', () => {
     const testAccId = 'acc_e2e';
     const mockAccount: Account = {
       id: testAccId,
@@ -220,11 +220,10 @@ describe('AI Financial Hardening (Round 2-A)', () => {
         type: 'debit',
         date: '2023-01-01',
         confidence: 0.9,
-        status: 'PENDING_VALIDATION',
+        status: 'READY_FOR_CONFIRMATION', // MUST be ready
         operationId: 'op_e2e_1',
       };
 
-      // Register in AIService memory
       (aiService as any).pendingCommands.set(command.id, command);
 
       await aiService.confirmAndExecuteCommand(command.id);
@@ -237,7 +236,50 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       }));
     });
 
-    it('should reject execution if AI values become inconsistent with engine interpretation (e.g. currency change)', async () => {
+    it('should reject execution if command is PENDING_VALIDATION', async () => {
+      const { aiService } = await import('@/core/services/ai/AIService');
+      const command: any = {
+        id: 'cmd_e2e_pending',
+        intent: 'CREATE_TRANSACTION_REQUEST',
+        accountId: testAccId,
+        amount: 10,
+        amountMinor: 1000,
+        currency: 'SAR',
+        type: 'debit',
+        date: '2023-01-01',
+        confidence: 0.9,
+        status: 'PENDING_VALIDATION', // NOT READY
+        operationId: 'op_e2e_pending',
+      };
+
+      (aiService as any).pendingCommands.set(command.id, command);
+
+      await expect(aiService.confirmAndExecuteCommand(command.id))
+        .rejects.toThrow(/يجب أن يكون الأمر جاهزاً للتأكيد/);
+    });
+
+    it('should reject execution if command is REJECTED or CANCELLED', async () => {
+      const { aiService } = await import('@/core/services/ai/AIService');
+      
+      const rejectedCmd: any = {
+        id: 'cmd_e2e_rejected',
+        intent: 'CREATE_TRANSACTION_REQUEST',
+        accountId: testAccId,
+        amount: 10,
+        amountMinor: 1000,
+        currency: 'SAR',
+        status: 'REJECTED',
+        operationId: 'op_rej',
+      };
+
+      (aiService as any).pendingCommands.set(rejectedCmd.id, rejectedCmd);
+      await expect(aiService.confirmAndExecuteCommand(rejectedCmd.id)).rejects.toThrow(/جاهزاً للتأكيد/);
+
+      rejectedCmd.status = 'CANCELLED';
+      await expect(aiService.confirmAndExecuteCommand(rejectedCmd.id)).rejects.toThrow(/جاهزاً للتأكيد/);
+    });
+
+    it('should reject execution if AI values become inconsistent with engine interpretation', async () => {
       const { aiService } = await import('@/core/services/ai/AIService');
       
       const command: any = {
@@ -245,29 +287,27 @@ describe('AI Financial Hardening (Round 2-A)', () => {
         intent: 'CREATE_TRANSACTION_REQUEST',
         accountId: testAccId,
         amount: 10,
-        amountMinor: 1000, // Correct for SAR
+        amountMinor: 1000,
         currency: 'SAR',
         type: 'debit',
         date: '2023-01-01',
         confidence: 0.9,
-        status: 'PENDING_VALIDATION',
+        status: 'READY_FOR_CONFIRMATION',
         operationId: 'op_e2e_2',
       };
 
       (aiService as any).pendingCommands.set(command.id, command);
 
-      // Simulate a malicious/buggy change in memory after validation but before confirm (if possible)
-      // Or just verify that if we change currency to YER (0 decimals), it fails because 10 != 1000
+      // Change currency to mismatch
       command.currency = 'YER';
-      command.status = 'READY_FOR_CONFIRMATION'; // Bypass internal state machine for test
 
       await expect(aiService.confirmAndExecuteCommand(command.id))
-        .rejects.toThrow(/لا يمكن تنفيذ أمر مالي غير صالح/);
+        .rejects.toThrow(/بيانات الأمر المالي غير صالحة وفق المعايير التقنية/);
     });
 
-    it('should prevent duplicate execution using operationId', async () => {
+    it('should prevent duplicate execution using operationId and status', async () => {
       const { aiService } = await import('@/core/services/ai/AIService');
-      const opId = 'op_unique_123';
+      const opId = 'op_unique_hotfix';
       
       const command: any = {
         id: 'cmd_e2e_3',
@@ -279,25 +319,25 @@ describe('AI Financial Hardening (Round 2-A)', () => {
         type: 'debit',
         date: '2023-01-01',
         confidence: 1.0,
-        status: 'PENDING_VALIDATION',
+        status: 'READY_FOR_CONFIRMATION',
         operationId: opId,
       };
 
       (aiService as any).pendingCommands.set(command.id, command);
 
-      // Execute first time
+      // 1. Execute first time
       const tx1 = await aiService.confirmAndExecuteCommand(command.id);
+      expect(command.status).toBe('EXECUTED');
       
-      // Attempt second time (should be blocked by EXECUTED status in AIService)
+      // 2. Attempt second time (blocked by status)
       await expect(aiService.confirmAndExecuteCommand(command.id))
-        .rejects.toThrow(/تم تنفيذه مسبقاً/);
+        .rejects.toThrow(/جاهزاً للتأكيد/);
 
-      // If we manually reset status to CONFIRMED and try again, transactionEngine should catch it
-      command.status = 'CONFIRMED';
+      // 3. If we force it to READY_FOR_CONFIRMATION again, the engine should catch the operationId
+      command.status = 'READY_FOR_CONFIRMATION';
       const tx2 = await aiService.confirmAndExecuteCommand(command.id);
       
-      expect(tx1.id).toBe(tx2.id); // Same transaction returned by engine
-      
+      expect(tx1.id).toBe(tx2.id); 
       const count = await db.transactions.where('operationId').equals(opId).count();
       expect(count).toBe(1);
     });
@@ -317,7 +357,7 @@ describe('AI Financial Hardening (Round 2-A)', () => {
         type: 'debit',
         date: '2023-01-01',
         confidence: 0.9,
-        status: 'PENDING_VALIDATION',
+        status: 'READY_FOR_CONFIRMATION',
         operationId: 'op_e2e_4',
       };
 
@@ -327,10 +367,10 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       
       const updatedCmd = aiService.getPendingCommand(command.id);
       expect(updatedCmd?.status).not.toBe('EXECUTED');
-      expect(updatedCmd?.executedTransactionId).toBeUndefined();
+      expect(updatedCmd?.status).toBe('CONFIRMED');
     });
 
-    it('should maintain compatibility with commands missing amountMinor (Gemini fallback)', async () => {
+    it('should successfully execute after validation moves it to READY_FOR_CONFIRMATION', async () => {
       const { aiService } = await import('@/core/services/ai/AIService');
       const { transactionEngine } = await import('@/core/services/transactionEngine.service');
       const createSpy = vi.spyOn(transactionEngine, 'createTransaction');
@@ -340,24 +380,29 @@ describe('AI Financial Hardening (Round 2-A)', () => {
         intent: 'CREATE_TRANSACTION_REQUEST',
         accountId: testAccId,
         amount: 15.5,
-        // amountMinor missing
         currency: 'SAR',
         type: 'debit',
         date: '2023-01-01',
         confidence: 0.9,
-        status: 'PENDING_VALIDATION',
+        status: 'PENDING_VALIDATION', // Start as pending
         operationId: 'op_e2e_5',
       };
 
       (aiService as any).pendingCommands.set(command.id, command);
 
+      // Validate it first (User sees the card)
+      await aiValidationService.validate(command);
+      expect(command.status).toBe('READY_FOR_CONFIRMATION');
+
+      // Now execute (User clicks confirm)
       await aiService.confirmAndExecuteCommand(command.id);
 
       expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({
         amount: 15.5,
-        amountMinor: 1550, // Correctly derived by validation service
+        amountMinor: 1550,
         currency: 'SAR'
       }));
+      expect(command.status).toBe('EXECUTED');
     });
   });
 });
