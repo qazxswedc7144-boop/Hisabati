@@ -145,18 +145,18 @@ export class AIService {
 
     // Strict Zod Runtime Schema validation
     const schemaResult = validateStructuredAICommand(command);
-    if (!schemaResult.success || command.status === 'REJECTED' || command.status === 'CANCELLED') {
-      throw new Error('لا يمكن تنفيذ أمر مالي غير صالح أو غير معتمد (Invalid or unvalidated command schema)');
-    }
-
-    if (!command.accountId || !command.operationId || typeof command.amountMinor !== 'number' || command.amountMinor < 0) {
-      throw new Error('بيانات الأمر المالي ناقصة أو غير صالحة');
+    if (!schemaResult.success || command.status === 'REJECTED' || command.status === 'CANCELLED' || command.status === 'EXECUTED') {
+      throw new Error('لا يمكن تنفيذ أمر مالي غير صالح أو غير معتمد أو تم تنفيذه مسبقاً');
     }
 
     // Strict re-validation before execution
     const valResult = await aiValidationService.validate(command);
     if (!valResult.isValid) {
       throw new Error(valResult.errors[0] || 'تعذر التحقق من صحة العملية');
+    }
+
+    if (!command.accountId || !command.operationId || typeof command.amountMinor !== 'number' || command.amountMinor < 0) {
+      throw new Error('بيانات الأمر المالي ناقصة أو غير صالحة بعد التحقق');
     }
 
     // Transition status to CONFIRMED

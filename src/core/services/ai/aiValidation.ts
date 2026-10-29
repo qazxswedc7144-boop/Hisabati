@@ -61,7 +61,7 @@ export const StructuredAICommandSchema = z.object({
   accountName: z.string().optional(),
   targetAccount: z.unknown().optional(),
   amount: z.number().min(0, { message: 'amount يجب ألا يكون سالباً' }),
-  amountMinor: z.number().int({ message: 'amountMinor يجب أن يكون عدداً صحيحاً' }).nonnegative({ message: 'amountMinor يجب ألا يكون سالباً' }),
+  amountMinor: z.number().int({ message: 'amountMinor يجب أن يكون عدداً صحيحاً' }).nonnegative({ message: 'amountMinor يجب ألا يكون سالباً' }).optional(),
   currency: z.enum(['YER', 'SAR', 'USD', 'AED'], { message: 'عملة غير مدعومة أو غير صالحة' }),
   type: z.enum(['debit', 'credit'], { message: 'نوع المعركة غير صالح' }),
   date: z.string().min(1, { message: 'التاريخ مفقود' }),
@@ -74,8 +74,11 @@ export const StructuredAICommandSchema = z.object({
   executedTransactionId: z.string().optional(),
 }).refine((data) => {
   // If both are provided, they must be consistent
-  const result = validateDualMoneyRepresentation(data.amount, data.amountMinor, data.currency);
-  return result.isValid;
+  if (data.amountMinor !== undefined) {
+    const result = validateDualMoneyRepresentation(data.amount, data.amountMinor, data.currency);
+    return result.isValid;
+  }
+  return true; // Compatibility: legacy commands missing amountMinor pass schema, but will be resolved in AIValidationService
 }, {
   message: 'تعارض في تمويل العملية: المبلغ العشري لا يتوافق مع الوحدات الصغرى للعملة المحددة',
   path: ['amountMinor']

@@ -11,6 +11,7 @@ import {
   TopAccountsReport,
   Transaction,
   DatePreset,
+  CurrencyCode,
 } from '@/shared/types';
 import { StructuredAICommand } from '@/shared/types/ai.types';
 
@@ -89,17 +90,14 @@ export class AITools {
       throw new Error('المبلغ المالي يجب أن يكون أكبر من الصفر');
     }
 
-    // AI-20 FIX: Do NOT pass amountMinor from AI — it was computed with a
-    // temporary currency assumption (YER by default), which may not match the
-    // real resolved currency of the account/system (e.g., SAR, USD).
-    // The FinancialTransactionEngine computes amountMinor canonically from
-    // `amount` + the actual resolved currency via validateAndResolveFinancialAmount.
+    // AI-20 HARDENING: Pass verified amountMinor to the engine.
+    // Round 2-B: amountMinor is the source of truth, already validated against the resolved currency.
     const transaction = await transactionEngine.createTransaction({
       accountId: command.accountId,
       type: command.type,
       amount: command.amount,
-      // amountMinor intentionally omitted
-      currency: command.currency as any, // pass through if present, so engine can validate
+      amountMinor: command.amountMinor,
+      currency: command.currency as CurrencyCode,
       date: command.date || new Date().toISOString().split('T')[0],
       note: command.note || 'عملية مسجلة عبر المساعد الذكي',
       operationId: command.operationId,
