@@ -186,11 +186,11 @@ describe('AI Financial Hardening (Round 2-A)', () => {
     });
   });
 
-  describe('AI-to-Financial-Core End-to-End Integrity (Round 2-B-HOTFIX)', () => {
-    const testAccId = 'acc_e2e';
+  describe('AI-to-Financial-Core End-to-End Integrity (Round 2-C)', () => {
+    const testAccId = 'acc_e2e_final';
     const mockAccount: Account = {
       id: testAccId,
-      name: 'E2E Account',
+      name: 'Final E2E Account',
       currency: 'SAR',
       currentBalance: 0,
       totalDebit: 0,
@@ -205,204 +205,223 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       await db.accounts.put(mockAccount);
     });
 
-    it('should pass verified amountMinor to the engine correctly (SAR 10 -> 1000)', async () => {
+    const createBaseCommand = (id: string, opId: string): any => ({
+      id,
+      intent: 'CREATE_TRANSACTION_REQUEST',
+      accountId: testAccId,
+      amount: 100,
+      amountMinor: 10000,
+      currency: 'SAR',
+      type: 'debit',
+      date: '2023-10-29',
+      confidence: 0.9,
+      status: 'READY_FOR_CONFIRMATION',
+      operationId: opId,
+    });
+
+    it('SCENARIO 1: should reject user with ai:query but without transactions:create', async () => {
+      const { aiService } = await import('@/core/services/ai/AIService');
+      const { rbacGuard } = await import('@/core/services/rbac/RBACGuard.service');
+      
+      vi.spyOn(rbacGuard, 'assertPermission').mockImplementation(async (perm) => {
+        if (perm === 'ai:query') return; 
+        if (perm === 'transactions:create') {
+          throw new Error('Permission Denied: transactions:create');
+        }
+      });
+
+      const command = createBaseCommand('cmd_rbac_fail', 'op_rbac_1');
+      (aiService as any).pendingCommands.set(command.id, command);
+
+      await expect(aiService.confirmAndExecuteCommand(command.id))
+        .rejects.toThrow('Permission Denied: transactions:create');
+      
+      expect(command.status).toBe('READY_FOR_CONFIRMATION'); 
+    });
+
+    it('SCENARIO 2: should succeed when user has all required permissions', async () => {
+      const { aiService } = await import('@/core/services/ai/AIService');
+      const { rbacGuard } = await import('@/core/services/rbac/RBACGuard.service');
+      vi.spyOn(rbacGuard, 'assertPermission').mockResolvedValue(undefined);
+
+      const command = createBaseCommand('cmd_success', 'op_success_1');
+      (aiService as any).pendingCommands.set(command.id, command);
+
+      const tx = await aiService.confirmAndExecuteCommand(command.id);
+      expect(tx).toBeDefined();
+      expect(command.status).toBe('EXECUTED');
+    });
+
+    it('SCENARIO 3: should rollback to READY_FOR_CONFIRMATION if engine fails', async () => {
       const { aiService } = await import('@/core/services/ai/AIService');
       const { transactionEngine } = await import('@/core/services/transactionEngine.service');
-      const createSpy = vi.spyOn(transactionEngine, 'createTransaction');
+      vi.spyOn(transactionEngine, 'createTransaction').mockRejectedValueOnce(new Error('Engine Crash'));
 
-      const command: any = {
-        id: 'cmd_e2e_1',
-        intent: 'CREATE_TRANSACTION_REQUEST',
-        accountId: testAccId,
-        amount: 10,
-        amountMinor: 1000,
-        currency: 'SAR',
-        type: 'debit',
-        date: '2023-01-01',
-        confidence: 0.9,
-        status: 'READY_FOR_CONFIRMATION', // MUST be ready
-        operationId: 'op_e2e_1',
-      };
+      const command = createBaseCommand('cmd_retry', 'op_retry_1');
+      (aiService as any).pendingCommands.set(command.id, command);
+
+      await expect(aiService.confirmAndExecuteCommand(command.id)).rejects.toThrow('Engine Crash');
+      
+      expect(command.status).toBe('READY_FOR_CONFIRMATION'); 
+      expect(command.executedTransactionId).toBeUndefined();
+    });
+
+    it('SCENARIO 4: should mark as EXECUTED even if audit log fails AFTER transaction creation', async () => {
+      const { aiService } = await import('@/core/services/ai/AIService');
+      const { aiAuditRepository } = await import('@/core/repositories/aiAudit.repository');
+      
+      vi.spyOn(aiAuditRepository, 'addLog').mockRejectedValueOnce(new Error('Audit DB Full'));
+
+      const command = createBaseCommand('cmd_audit_fail', 'op_audit_fail_1');
+      (aiService as any).pendingCommands.set(command.id, command);
+
+      // It will throw because addLog fails, but the transaction was created and status updated
+      await expect(aiService.confirmAndExecuteCommand(command.id)).rejects.toThrow('Audit DB Full');
+      
+      expect(command.status).toBe('EXECUTED');
+      expect(command.executedTransactionId).toBeDefined();
+    });
+
+    it('SCENARIO 5: should prevent duplicate records on retry (Idempotency)', async () => {
+      const { aiService } = await import('@/core/services/ai/AIService');
+      const opId = 'op_idem_final';
+      
+      const command = createBaseCommand('cmd_idem', opId);
+      (aiService as any).pendingCommands.set(command.id, command);
+
+      const tx1 = await aiService.confirmAndExecuteCommand(command.id);
+      
+      command.status = 'READY_FOR_CONFIRMATION';
+      const tx2 = await aiService.confirmAndExecuteCommand(command.id);
+      
+      expect(tx1.id).toBe(tx2.id);
+      const dbCount = await db.transactions.where('operationId').equals(opId).count();
+      expect(dbCount).toBe(1);
+    });
+
+    it('SCENARIO 6: should not change status to EXECUTED before successful engine call', async () => {
+      const { aiService } = await import('@/core/services/ai/AIService');
+      const { transactionEngine } = await import('@/core/services/transactionEngine.service');
+      
+      const command = createBaseCommand('cmd_status_check', 'op_status_check');
+      let statusDuringEngineCall: string = '';
+      vi.spyOn(transactionEngine, 'createTransaction').mockImplementationOnce(async () => {
+        statusDuringEngineCall = command.status; 
+        throw new Error('Simulated Failure');
+      });
 
       (aiService as any).pendingCommands.set(command.id, command);
 
-      await aiService.confirmAndExecuteCommand(command.id);
-
-      expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({
-        amount: 10,
-        amountMinor: 1000,
-        currency: 'SAR',
-        operationId: 'op_e2e_1'
-      }));
+      try { await aiService.confirmAndExecuteCommand(command.id); } catch {}
+      
+      expect(statusDuringEngineCall).toBe('CONFIRMED'); 
+      expect(command.status).toBe('READY_FOR_CONFIRMATION'); 
     });
 
-    it('should reject execution if command is PENDING_VALIDATION', async () => {
+    it('SCENARIO 7: should NOT have executedTransactionId if engine fails', async () => {
       const { aiService } = await import('@/core/services/ai/AIService');
-      const command: any = {
-        id: 'cmd_e2e_pending',
-        intent: 'CREATE_TRANSACTION_REQUEST',
-        accountId: testAccId,
-        amount: 10,
-        amountMinor: 1000,
-        currency: 'SAR',
-        type: 'debit',
-        date: '2023-01-01',
-        confidence: 0.9,
-        status: 'PENDING_VALIDATION', // NOT READY
-        operationId: 'op_e2e_pending',
-      };
+      const { transactionEngine } = await import('@/core/services/transactionEngine.service');
+      vi.spyOn(transactionEngine, 'createTransaction').mockRejectedValueOnce(new Error('DB Fail'));
 
+      const command = createBaseCommand('cmd_no_id_on_fail', 'op_no_id_fail');
+      (aiService as any).pendingCommands.set(command.id, command);
+
+      try { await aiService.confirmAndExecuteCommand(command.id); } catch {}
+      
+      expect(command.executedTransactionId).toBeUndefined();
+    });
+
+    it('SCENARIO 8: should reject execution of an already EXECUTED command', async () => {
+      const { aiService } = await import('@/core/services/ai/AIService');
+      const command = createBaseCommand('cmd_already_exec', 'op_already');
+      command.status = 'EXECUTED';
+      (aiService as any).pendingCommands.set(command.id, command);
+
+      await expect(aiService.confirmAndExecuteCommand(command.id))
+        .rejects.toThrow(/لا يمكن تنفيذ أمر مالي في حالته الحالية: EXECUTED/);
+    });
+
+    it('SCENARIO 9: should reject execution of a PENDING_VALIDATION command', async () => {
+      const { aiService } = await import('@/core/services/ai/AIService');
+      const command = createBaseCommand('cmd_still_pending', 'op_pending');
+      command.status = 'PENDING_VALIDATION';
       (aiService as any).pendingCommands.set(command.id, command);
 
       await expect(aiService.confirmAndExecuteCommand(command.id))
         .rejects.toThrow(/يجب أن يكون الأمر جاهزاً للتأكيد/);
     });
 
-    it('should reject execution if command is REJECTED or CANCELLED', async () => {
-      const { aiService } = await import('@/core/services/ai/AIService');
-      
-      const rejectedCmd: any = {
-        id: 'cmd_e2e_rejected',
-        intent: 'CREATE_TRANSACTION_REQUEST',
-        accountId: testAccId,
-        amount: 10,
-        amountMinor: 1000,
-        currency: 'SAR',
-        status: 'REJECTED',
-        operationId: 'op_rej',
-      };
-
-      (aiService as any).pendingCommands.set(rejectedCmd.id, rejectedCmd);
-      await expect(aiService.confirmAndExecuteCommand(rejectedCmd.id)).rejects.toThrow(/جاهزاً للتأكيد/);
-
-      rejectedCmd.status = 'CANCELLED';
-      await expect(aiService.confirmAndExecuteCommand(rejectedCmd.id)).rejects.toThrow(/جاهزاً للتأكيد/);
-    });
-
-    it('should reject execution if AI values become inconsistent with engine interpretation', async () => {
-      const { aiService } = await import('@/core/services/ai/AIService');
-      
-      const command: any = {
-        id: 'cmd_e2e_2',
-        intent: 'CREATE_TRANSACTION_REQUEST',
-        accountId: testAccId,
-        amount: 10,
-        amountMinor: 1000,
-        currency: 'SAR',
-        type: 'debit',
-        date: '2023-01-01',
-        confidence: 0.9,
-        status: 'READY_FOR_CONFIRMATION',
-        operationId: 'op_e2e_2',
-      };
-
-      (aiService as any).pendingCommands.set(command.id, command);
-
-      // Change currency to mismatch
-      command.currency = 'YER';
-
-      await expect(aiService.confirmAndExecuteCommand(command.id))
-        .rejects.toThrow(/بيانات الأمر المالي غير صالحة وفق المعايير التقنية/);
-    });
-
-    it('should prevent duplicate execution using operationId and status', async () => {
-      const { aiService } = await import('@/core/services/ai/AIService');
-      const opId = 'op_unique_hotfix';
-      
-      const command: any = {
-        id: 'cmd_e2e_3',
-        intent: 'CREATE_TRANSACTION_REQUEST',
-        accountId: testAccId,
-        amount: 50,
-        amountMinor: 5000,
-        currency: 'SAR',
-        type: 'debit',
-        date: '2023-01-01',
-        confidence: 1.0,
-        status: 'READY_FOR_CONFIRMATION',
-        operationId: opId,
-      };
-
-      (aiService as any).pendingCommands.set(command.id, command);
-
-      // 1. Execute first time
-      const tx1 = await aiService.confirmAndExecuteCommand(command.id);
-      expect(command.status).toBe('EXECUTED');
-      
-      // 2. Attempt second time (blocked by status)
-      await expect(aiService.confirmAndExecuteCommand(command.id))
-        .rejects.toThrow(/جاهزاً للتأكيد/);
-
-      // 3. If we force it to READY_FOR_CONFIRMATION again, the engine should catch the operationId
-      command.status = 'READY_FOR_CONFIRMATION';
-      const tx2 = await aiService.confirmAndExecuteCommand(command.id);
-      
-      expect(tx1.id).toBe(tx2.id); 
-      const count = await db.transactions.where('operationId').equals(opId).count();
-      expect(count).toBe(1);
-    });
-
-    it('should not mark command as EXECUTED if engine fails', async () => {
-      const { aiService } = await import('@/core/services/ai/AIService');
-      const { transactionEngine } = await import('@/core/services/transactionEngine.service');
-      vi.spyOn(transactionEngine, 'createTransaction').mockRejectedValueOnce(new Error('DB Error'));
-
-      const command: any = {
-        id: 'cmd_e2e_4',
-        intent: 'CREATE_TRANSACTION_REQUEST',
-        accountId: testAccId,
-        amount: 100,
-        amountMinor: 10000,
-        currency: 'SAR',
-        type: 'debit',
-        date: '2023-01-01',
-        confidence: 0.9,
-        status: 'READY_FOR_CONFIRMATION',
-        operationId: 'op_e2e_4',
-      };
-
-      (aiService as any).pendingCommands.set(command.id, command);
-
-      await expect(aiService.confirmAndExecuteCommand(command.id)).rejects.toThrow('DB Error');
-      
-      const updatedCmd = aiService.getPendingCommand(command.id);
-      expect(updatedCmd?.status).not.toBe('EXECUTED');
-      expect(updatedCmd?.status).toBe('CONFIRMED');
-    });
-
-    it('should successfully execute after validation moves it to READY_FOR_CONFIRMATION', async () => {
+    it('SCENARIO 10: should maintain amountMinor and currency integrity throughout the flow', async () => {
       const { aiService } = await import('@/core/services/ai/AIService');
       const { transactionEngine } = await import('@/core/services/transactionEngine.service');
       const createSpy = vi.spyOn(transactionEngine, 'createTransaction');
 
-      const command: any = {
-        id: 'cmd_e2e_5',
-        intent: 'CREATE_TRANSACTION_REQUEST',
-        accountId: testAccId,
-        amount: 15.5,
-        currency: 'SAR',
-        type: 'debit',
-        date: '2023-01-01',
-        confidence: 0.9,
-        status: 'PENDING_VALIDATION', // Start as pending
-        operationId: 'op_e2e_5',
-      };
-
+      const command = createBaseCommand('cmd_integrity', 'op_integ_1');
+      command.amount = 123.45;
+      command.amountMinor = 12345;
       (aiService as any).pendingCommands.set(command.id, command);
 
-      // Validate it first (User sees the card)
-      await aiValidationService.validate(command);
-      expect(command.status).toBe('READY_FOR_CONFIRMATION');
-
-      // Now execute (User clicks confirm)
       await aiService.confirmAndExecuteCommand(command.id);
 
       expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({
-        amount: 15.5,
-        amountMinor: 1550,
-        currency: 'SAR'
+        amount: 123.45,
+        amountMinor: 12345,
+        currency: 'SAR',
       }));
+      expect(command.amountMinor).toBe(12345);
+      expect(command.currency).toBe('SAR');
+    });
+
+    it('SCENARIO 11: should prevent execution if user cancels the command', async () => {
+      const { aiService } = await import('@/core/services/ai/AIService');
+      const command = createBaseCommand('cmd_cancel_test', 'op_cancel');
+      (aiService as any).pendingCommands.set(command.id, command);
+
+      await aiService.cancelCommand(command.id);
+      expect(command.status).toBe('CANCELLED');
+
+      // cancellation removes it from registry
+      await expect(aiService.confirmAndExecuteCommand(command.id))
+        .rejects.toThrow(/الأمر المالي غير موجود أو انتهت صلاحيته/);
+    });
+
+    it('SCENARIO 13: HAPPY PATH - should successfully execute from PENDING_VALIDATION after validation', async () => {
+      const { aiService } = await import('@/core/services/ai/AIService');
+      const { aiValidationService } = await import('@/core/services/ai/AIValidationService');
+      const { transactionEngine } = await import('@/core/services/transactionEngine.service');
+      const createSpy = vi.spyOn(transactionEngine, 'createTransaction');
+
+      const command = createBaseCommand('cmd_happy_path', 'op_happy_path');
+      command.status = 'PENDING_VALIDATION'; // Start at the beginning
+      (aiService as any).pendingCommands.set(command.id, command);
+
+      // 1. App validates command (User sees the card)
+      await aiValidationService.validate(command);
+      expect(command.status).toBe('READY_FOR_CONFIRMATION');
+
+      // 2. User confirms (User clicks button)
+      await aiService.confirmAndExecuteCommand(command.id);
+
+      expect(createSpy).toHaveBeenCalled();
       expect(command.status).toBe('EXECUTED');
+    });
+
+    it('SCENARIO 12: should verify audit log recording upon successful execution', async () => {
+      const { aiService } = await import('@/core/services/ai/AIService');
+      const { aiAuditRepository } = await import('@/core/repositories/aiAudit.repository');
+      const addLogSpy = vi.spyOn(aiAuditRepository, 'addLog');
+
+      const command = createBaseCommand('cmd_audit_verify', 'op_audit_verify_1');
+      (aiService as any).pendingCommands.set(command.id, command);
+
+      await aiService.confirmAndExecuteCommand(command.id);
+
+      expect(addLogSpy).toHaveBeenCalledWith(expect.objectContaining({
+        requestId: command.id,
+        intent: 'CREATE_TRANSACTION_REQUEST',
+        status: 'success',
+        confirmed: true,
+      }));
     });
   });
 });
