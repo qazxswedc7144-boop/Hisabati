@@ -275,11 +275,12 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       const command = createBaseCommand('cmd_audit_fail', 'op_audit_fail_1');
       (aiService as any).pendingCommands.set(command.id, command);
 
-      // It will throw because addLog fails, but the transaction was created and status updated
-      await expect(aiService.confirmAndExecuteCommand(command.id)).rejects.toThrow('Audit DB Full');
+      // It should SUCCEED now because we isolated the audit failure in Round 2-D
+      const tx = await aiService.confirmAndExecuteCommand(command.id);
       
+      expect(tx).toBeDefined();
       expect(command.status).toBe('EXECUTED');
-      expect(command.executedTransactionId).toBeDefined();
+      expect(command.executedTransactionId).toBe(tx.id);
     });
 
     it('SCENARIO 5: should prevent duplicate records on retry (Idempotency)', async () => {
@@ -422,6 +423,85 @@ describe('AI Financial Hardening (Round 2-A)', () => {
         status: 'success',
         confirmed: true,
       }));
+    });
+
+    describe('ROUND 2-D: Execution Semantics & Recovery', () => {
+      it('should reject EDIT and DELETE intents as unsupported via AI for now', async () => {
+        const { aiService } = await import('@/core/services/ai/AIService');
+        const editCmd = createBaseCommand('cmd_edit', 'op_edit');
+        editCmd.intent = 'EDIT_TRANSACTION_REQUEST';
+        (aiService as any).pendingCommands.set(editCmd.id, editCmd);
+
+        await expect(aiService.confirmAndExecuteCommand(editCmd.id))
+          .rejects.toThrow(/غير مدعومة حالياً عبر المساعد/);
+
+        const delCmd = createBaseCommand('cmd_del', 'op_del');
+        delCmd.intent = 'DELETE_TRANSACTION_REQUEST';
+        (aiService as any).pendingCommands.set(delCmd.id, delCmd);
+
+        await expect(aiService.confirmAndExecuteCommand(delCmd.id))
+          .rejects.toThrow(/غير مدعومة حالياً عبر المساعد/);
+      });
+
+      it('should recover pending commands from Dexie after simulated restart', async () => {
+        const { aiService } = await import('@/core/services/ai/AIService');
+        const { aiCommandRepository } = await import('@/core/repositories/aiCommand.repository');
+
+        const cmd = createBaseCommand('cmd_recover', 'op_recover');
+        await aiCommandRepository.add(cmd);
+
+        // Clear memory to simulate restart
+        (aiService as any).pendingCommands.clear();
+        expect(aiService.getPendingCommand(cmd.id)).toBeUndefined();
+
+        // Trigger manual reload
+        await (aiService as any).loadPendingFromStorage();
+
+        const recovered = aiService.getPendingCommand(cmd.id);
+        expect(recovered).toBeDefined();
+        expect(recovered?.operationId).toBe('op_recover');
+        expect(recovered?.status).toBe('READY_FOR_CONFIRMATION');
+      });
+
+      it('should succeed even if secondary AI Audit Log fails', async () => {
+        const { aiService } = await import('@/core/services/ai/AIService');
+        const { aiAuditRepository } = await import('@/core/repositories/aiAudit.repository');
+        
+        // Mock audit failure (this is the AI audit log, not the financial one)
+        vi.spyOn(aiAuditRepository, 'addLog').mockRejectedValueOnce(new Error('Audit Failure'));
+
+        const cmd = createBaseCommand('cmd_audit_fail_isolated', 'op_audit_fail_isolated');
+        (aiService as any).pendingCommands.set(cmd.id, cmd);
+
+        const tx = await aiService.confirmAndExecuteCommand(cmd.id);
+        expect(tx).toBeDefined();
+        expect(cmd.status).toBe('EXECUTED');
+        // Command should still be marked executed in storage
+        const stored = await aiService.getPendingCommand(cmd.id);
+        expect(stored?.status).toBe('EXECUTED');
+      });
+
+      it('should prevent duplicate transaction if command is retried after successful execution but failed status update', async () => {
+        const { aiService } = await import('@/core/services/ai/AIService');
+        const { transactionEngine } = await import('@/core/services/transactionEngine.service');
+        const opId = 'op_dup_recovery';
+        
+        const cmd = createBaseCommand('cmd_dup', opId);
+        (aiService as any).pendingCommands.set(cmd.id, cmd);
+
+        // 1. Execute first time
+        const tx1 = await aiService.confirmAndExecuteCommand(cmd.id);
+        
+        // 2. Simulate failure where status didn't update to EXECUTED in UI/memory but TX exists in DB
+        cmd.status = 'READY_FOR_CONFIRMATION';
+        
+        // 3. Retry execution
+        const tx2 = await aiService.confirmAndExecuteCommand(cmd.id);
+
+        expect(tx1.id).toBe(tx2.id);
+        const count = await db.transactions.where('operationId').equals(opId).count();
+        expect(count).toBe(1);
+      });
     });
   });
 });

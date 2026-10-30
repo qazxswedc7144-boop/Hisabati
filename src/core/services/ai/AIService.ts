@@ -14,18 +14,36 @@ import { aiValidationService } from './AIValidationService';
 import { validateStructuredAICommand } from './aiValidation';
 import { Transaction, Permission } from '@/shared/types';
 
+import { aiCommandRepository } from '@/core/repositories/aiCommand.repository';
+
 export class AIService {
   private activeProvider: AIProvider = localFallbackProvider;
   private inFlightRequests = new Map<string, Promise<AIResponse>>();
   private lastRequestTimestamp = 0;
   private minIntervalMs = 200;
 
-  // In-memory active structured commands registry
+  // In-memory active structured commands registry (mirrored in Dexie)
   private pendingCommands = new Map<string, StructuredAICommand>();
 
   constructor() {
     this.selectBestProvider();
+    this.loadPendingFromStorage();
   }
+
+  /**
+   * Loads pending commands from Dexie to memory for recovery after restart.
+   */
+  private async loadPendingFromStorage(): Promise<void> {
+    try {
+      const stored = await aiCommandRepository.getAllPending();
+      for (const cmd of stored) {
+        this.pendingCommands.set(cmd.id, cmd);
+      }
+    } catch (err) {
+      console.error('[AIService] Failed to load pending commands from storage:', err);
+    }
+  }
+
 
   /**
    * Evaluates environment and selects the best available provider
@@ -99,6 +117,8 @@ export class AIService {
         this.pendingCommands.set(response.command.id, response.command);
         // Pre-validate to move from PENDING_VALIDATION to READY_FOR_CONFIRMATION or REJECTED
         await aiValidationService.validate(response.command);
+        // Persist to Dexie for recovery
+        await aiCommandRepository.add(response.command);
       }
 
       // Record in AI audit log
@@ -187,12 +207,14 @@ export class AIService {
     try {
       // Transition status to CONFIRMED
       command.status = 'CONFIRMED';
+      await aiCommandRepository.update(command);
 
       // Execute strictly via AITools -> FinancialTransactionEngine
       const transaction = await aiTools.executeConfirmedCommand(command);
 
-      // Update in-memory registry
+      // Update in-memory registry and storage with final state
       this.pendingCommands.set(commandId, command);
+      await aiCommandRepository.update(command);
 
       return transaction;
     } catch (err) {
@@ -200,6 +222,7 @@ export class AIService {
       // We cast to any to bypass TS narrowing from line 167
       if ((command.status as any) !== 'EXECUTED') {
         command.status = 'READY_FOR_CONFIRMATION';
+        await aiCommandRepository.update(command);
       }
       throw err;
     }
@@ -212,6 +235,7 @@ export class AIService {
     const command = this.pendingCommands.get(commandId);
     if (command) {
       command.status = 'CANCELLED';
+      await aiCommandRepository.update(command);
       await aiAuditRepository.addLog({
         id: 'audit_cancel_' + Date.now(),
         requestId: command.id,
@@ -224,6 +248,7 @@ export class AIService {
         confirmed: false,
       });
       this.pendingCommands.delete(commandId);
+      await aiCommandRepository.delete(commandId);
     }
   }
 

@@ -619,6 +619,30 @@ private async _performFullSyncInternal(): Promise<{
       const updatedTransactions = (await db.transactions.toArray()).filter(t => !localTombstoneIds.has(t.id));
       const syncableSettings = (await db.settings.toArray()).filter(s => SETTINGS_WHITELIST.includes(s.key));
 
+      // Financial Hardening (PUSH): Ensure all pushed transactions have amountMinor
+      const systemCurrencySetting = await db.settings.get('currency');
+      const systemCurrency = (systemCurrencySetting?.value as string) || 'YER';
+      const accountsMap = new Map(updatedAccounts.map(a => [a.id, a]));
+      
+      const sanitizedTransactions = updatedTransactions.map(t => {
+        if (t.amountMinor !== undefined && Number.isInteger(t.amountMinor)) return t;
+        const acc = accountsMap.get(t.accountId);
+        const currency = t.currency || acc?.currency || systemCurrency;
+        
+        let minor = undefined;
+        try {
+          minor = decimalToMinor(t.amount || 0, currency);
+        } catch {
+          // If currency invalid, leave amountMinor as undefined (handled by later guards or pushed as is for manual repair)
+        }
+
+        return {
+          ...t,
+          currency,
+          amountMinor: minor
+        };
+      });
+
       const newCloudState = {
         revision: nextRevision,
         version: 1,
@@ -626,7 +650,7 @@ private async _performFullSyncInternal(): Promise<{
         deviceName: getDeviceName(),
         lastModified: new Date().toISOString(),
         accounts: updatedAccounts,
-        transactions: updatedTransactions,
+        transactions: sanitizedTransactions,
         tombstones: permanentTombstones.map(pt => ({ id: pt.id, entityType: pt.entityType, deletedAt: pt.deletedAt })),
         settings: syncableSettings,
       };

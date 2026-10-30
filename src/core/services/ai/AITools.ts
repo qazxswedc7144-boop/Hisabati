@@ -90,6 +90,12 @@ export class AITools {
       throw new Error('المبلغ المالي يجب أن يكون أكبر من الصفر');
     }
 
+    // SEMANTICS HARDENING: Only CREATE_TRANSACTION_REQUEST is supported via this path.
+    // EDIT and DELETE intents are blocked until their respective transactionEngine paths are ready for AI.
+    if (command.intent !== 'CREATE_TRANSACTION_REQUEST') {
+      throw new Error(`نية العملية "${command.intent}" غير مدعومة حالياً عبر المساعد. يرجى تنفيذها يدوياً.`);
+    }
+
     // AI-20 HARDENING: Pass verified amountMinor to the engine.
     // Round 2-B: amountMinor is the source of truth, already validated against the resolved currency.
     const transaction = await transactionEngine.createTransaction({
@@ -107,18 +113,24 @@ export class AITools {
     command.executedTransactionId = transaction.id;
 
     // Log the confirmed execution to the AI audit log
-    await aiAuditRepository.addLog({
-      id: 'audit_exec_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-      requestId: command.id,
-      intent: command.intent,
-      timestamp: new Date().toISOString(),
-      status: 'success',
-      provider: 'FinancialTransactionEngine',
-      confidence: command.confidence,
-      action: `Executed ${command.type} of ${command.amount} ${command.currency}`,
-      confirmed: true,
-      relatedEntityId: transaction.id,
-    });
+    // SECONDARY AUDIT ISOLATION: Failure here must NOT rollback the successful financial transaction.
+    try {
+      await aiAuditRepository.addLog({
+        id: 'audit_exec_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+        requestId: command.id,
+        intent: command.intent,
+        timestamp: new Date().toISOString(),
+        status: 'success',
+        provider: 'FinancialTransactionEngine',
+        confidence: command.confidence,
+        action: `Executed ${command.type} of ${command.amount} ${command.currency}`,
+        confirmed: true,
+        relatedEntityId: transaction.id,
+      });
+    } catch (auditErr) {
+      console.error('[AITools] Secondary AI Audit Log failed, but transaction was successful:', auditErr);
+      // We don't re-throw. The financial record is what matters most.
+    }
 
     return transaction;
   }
