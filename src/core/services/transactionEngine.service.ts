@@ -117,11 +117,21 @@ export class FinancialTransactionEngine {
       const freshTrx = await transaction.table('transactions').get(id);
       if (!freshTrx) throw new Error('العملية اختفت أثناء الترحيل');
       
-      const freshStatus = freshTrx.status || 'draft';
+      const freshStatus = freshTrx.status || 'posted'; // UNIFIED LEGACY POLICY: missing = posted
       if (freshStatus === 'posted') {
-        // ترحيل مزدوج — أعِد النسخة الحديثة دون تعديل
-        actualResult = freshTrx;
-        return; // ينهي transaction بنجاح
+        // Already posted (either explicitly or as legacy).
+        // If it was already explicitly posted, just return it.
+        // If it was legacy (no status), we might want to update it to explicitly have 'posted' status
+        // but we MUST NOT apply Delta because it was already included in the account balance.
+        if (freshTrx.status === 'posted') {
+          actualResult = freshTrx;
+          return;
+        }
+        
+        // Legacy transaction: Add explicit status but skip Delta
+        await transaction.table('transactions').put(updatedTrx);
+        actualResult = updatedTrx;
+        return;
       }
       if (freshStatus === 'reversed') {
         throw new Error('لا يمكن ترحيل قيد معكوس');
@@ -776,7 +786,8 @@ export class FinancialTransactionEngine {
         await this.recalculateAccountBalanceIncremental(accountId, {
           amountMinor: existing.amountMinor,
           type: existing.type,
-          action: 'subtract'
+          action: 'subtract',
+          date: existing.date
         }, activeCurrency, transaction);
       }
 
@@ -872,13 +883,19 @@ export class FinancialTransactionEngine {
 
     const updatedFields = applyTransactionDelta(account, delta, currency);
     
-    // Safety check: if count becomes negative or drift is suspected, fallback to full rebuild
+    // Safety check: if drift is detected or invariants are broken, fallback to O(N) authoritative rebuild
+    if (updatedFields.isInconsistent) {
+      console.warn(`[TransactionEngine] Delta inconsistency detected for account ${accountId}. Falling back to authoritative rebuild.`);
+      return await this.recalculateAccountBalance(accountId, currency, database);
+    }
+
+    // Secondary safety check for transactionCount
     if (updatedFields.transactionCount! < 0) {
       return await this.recalculateAccountBalance(accountId, currency, database);
     }
 
     await database.table('accounts').update(accountId, updatedFields);
-    return { ...account, ...updatedFields };
+    return { ...account, ...updatedFields } as Account;
   }
 
   /**

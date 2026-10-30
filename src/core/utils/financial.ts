@@ -204,7 +204,8 @@ export function computeStatementRunningBalances(
 /**
  * Computes incremental changes to an account's metrics based on a single transaction mutation.
  * This enables O(1) balance updates in the hot path.
- * Integrity Policy: If transactionCount becomes inconsistent, a full rebuild is triggered.
+ * Integrity Policy: If any metric becomes inconsistent (e.g., negative count/totals), 
+ * the returned object will have an 'isInconsistent' flag to trigger a full rebuild.
  */
 export function applyTransactionDelta(
   account: Account,
@@ -215,9 +216,14 @@ export function applyTransactionDelta(
     date?: string;
   },
   currency?: CurrencyCode
-): Partial<Account> {
+): Partial<Account> & { isInconsistent?: boolean } {
   const activeCurrency = (currency || account.currency || 'YER') as CurrencyCode;
   
+  // Integrity check: amountMinor must be a valid integer
+  if (typeof delta.amountMinor !== 'number' || !Number.isInteger(delta.amountMinor)) {
+    return { isInconsistent: true };
+  }
+
   let currentBalanceMinor = account.currentBalanceMinor || 0;
   let totalDebitMinor = account.totalDebitMinor || 0;
   let totalCreditMinor = account.totalCreditMinor || 0;
@@ -242,20 +248,38 @@ export function applyTransactionDelta(
     }
   } else {
     // Subtracting:
-    // Important: We don't decrement count if it's already 0 (safety)
-    transactionCount = Math.max(0, transactionCount - 1);
+    transactionCount -= 1;
     
     if (delta.type === 'debit') {
       currentBalanceMinor -= amount;
-      totalDebitMinor = Math.max(0, totalDebitMinor - amount);
+      totalDebitMinor -= amount;
     } else {
       currentBalanceMinor += amount;
-      totalCreditMinor = Math.max(0, totalCreditMinor - amount);
+      totalCreditMinor -= amount;
     }
     
-    // Note: We don't try to "downgrade" lastTransactionDate during subtraction delta 
-    // as that would require O(N) scan. We accept it might be slightly stale 
-    // until the next authoritative rebuild.
+    // Financial Invariant Check: Subtraction cannot result in negative totals or count
+    // If it does, the materialized state was already out of sync or we are subtracting 
+    // a transaction that wasn't counted.
+    if (transactionCount < 0 || totalDebitMinor < 0 || totalCreditMinor < 0) {
+      return { isInconsistent: true };
+    }
+
+    // Staleness Check for lastTransactionDate:
+    // If we subtract a transaction that HAS the latest date, we cannot know the 
+    // NEXT latest date without an O(N) scan.
+    if (delta.date && delta.date === lastTransactionDate) {
+      return { isInconsistent: true };
+    }
+  }
+
+  // Integer Overflow Protection
+  if (
+    !Number.isSafeInteger(currentBalanceMinor) || 
+    !Number.isSafeInteger(totalDebitMinor) || 
+    !Number.isSafeInteger(totalCreditMinor)
+  ) {
+    return { isInconsistent: true };
   }
 
   return {
@@ -268,6 +292,7 @@ export function applyTransactionDelta(
     totalCredit: minorToDecimal(totalCreditMinor, activeCurrency),
     lastTransactionDate,
     updatedAt: new Date().toISOString(),
+    isInconsistent: false
   };
 }
 
