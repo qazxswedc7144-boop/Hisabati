@@ -101,14 +101,6 @@ export class FinancialTransactionEngine {
     this.validateStatusTransition(existing.status, 'posted');
 
     const now = new Date().toISOString();
-    const updatedTrx: Transaction = {
-      ...existing,
-      status: 'posted',
-      postedAt: now,
-      postedBy: currentActor.id,
-      updatedAt: now,
-    };
-
     let actualResult: Transaction = existing;  // ← القيمة النهائية الفعلية
 
     const activeDb = getDb();
@@ -168,14 +160,14 @@ export class FinancialTransactionEngine {
         eventType: 'TRANSACTION_POST',
         targetType: 'transaction',
         targetId: id,
-        amountMinor: updatedTrx.amountMinor,
-        currency: updatedTrx.currency,
-        operationId: updatedTrx.operationId,
+        amountMinor: finalUpdatedTrx.amountMinor,
+        currency: finalUpdatedTrx.currency,
+        operationId: finalUpdatedTrx.operationId,
         beforeState: {
-          amountMinor: existing.amountMinor || 0,
-          accountId: existing.accountId,
-          type: existing.type,
-          revision: existing.id,
+          amountMinor: freshTrx.amountMinor || 0,
+          accountId: freshTrx.accountId,
+          type: freshTrx.type,
+          revision: freshTrx.id,
         },
         afterState: {
           amountMinor: finalUpdatedTrx.amountMinor,

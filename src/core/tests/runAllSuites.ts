@@ -34,6 +34,7 @@ import { CapabilityLeaseSecurityTestSuite } from '../../../server/tests/capabili
 import { runQuickAddModalTests } from './quickAddModal.test';
 import { tenantService } from '../services/TenantService';
 import { accountService } from '../services/account.service';
+import { FinancialAuditSnapshotP2B13TestSuite } from './financialAuditSnapshotP2B13.test';
 
 async function main() {
   console.log('====================================================');
@@ -668,6 +669,25 @@ async function main() {
     }
   } catch (err: any) {
     console.error('QuickAdd Modal suite crashed:', err);
+    totalFailed += 1;
+    totalCount += 1;
+  }
+
+  // --- P2-B.1.3 Final Audit Snapshot Consistency Tests ---
+  console.log('\n--- [P2-B.1.3] Final Audit Snapshot Consistency Tests ---');
+  try {
+    const p2b13Result = await FinancialAuditSnapshotP2B13TestSuite.runAll();
+    console.log(`P2-B.1.3 Audit Snapshot Result: Passed ${p2b13Result.passed}/${p2b13Result.total}`);
+    totalPassed += p2b13Result.passed;
+    totalFailed += p2b13Result.failed;
+    totalCount += p2b13Result.total;
+    if (p2b13Result.failed > 0) {
+      for (const r of p2b13Result.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ [${r.id}] ${r.title}: ${r.error}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('P2-B.1.3 Audit Snapshot suite crashed:', err);
     totalFailed += 1;
     totalCount += 1;
   }
