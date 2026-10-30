@@ -118,6 +118,14 @@ export class FinancialTransactionEngine {
       if (!freshTrx) throw new Error('العملية اختفت أثناء الترحيل');
       
       const freshStatus = freshTrx.status || 'posted'; // UNIFIED LEGACY POLICY: missing = posted
+      const finalUpdatedTrx: Transaction = {
+        ...freshTrx,
+        status: 'posted',
+        postedAt: now,
+        postedBy: currentActor.id,
+        updatedAt: now,
+      };
+
       if (freshStatus === 'posted') {
         // Already posted (either explicitly or as legacy).
         // If it was already explicitly posted, just return it.
@@ -129,31 +137,31 @@ export class FinancialTransactionEngine {
         }
         
         // Legacy transaction: Add explicit status but skip Delta
-        await transaction.table('transactions').put(updatedTrx);
-        actualResult = updatedTrx;
+        await transaction.table('transactions').put(finalUpdatedTrx);
+        actualResult = finalUpdatedTrx;
         return;
       }
       if (freshStatus === 'reversed') {
         throw new Error('لا يمكن ترحيل قيد معكوس');
       }
 
-      await transaction.table('transactions').put(updatedTrx);
+      await transaction.table('transactions').put(finalUpdatedTrx);
       
       const settingsTable = transaction.table('settings');
       const currencyEntry = await settingsTable.get('currency');
       const systemCurrency = currencyEntry?.value || 'YER';
       
       const activeCurrency = resolveRequiredCurrency({
-        transactionCurrency: updatedTrx.currency,
+        transactionCurrency: finalUpdatedTrx.currency,
         systemCurrency,
       });
       
       // OPTIMIZED: Incremental update instead of O(N) rebuild
-      await this.recalculateAccountBalanceIncremental(updatedTrx.accountId, {
-        amountMinor: updatedTrx.amountMinor,
-        type: updatedTrx.type,
+      await this.recalculateAccountBalanceIncremental(finalUpdatedTrx.accountId, {
+        amountMinor: finalUpdatedTrx.amountMinor,
+        type: finalUpdatedTrx.type,
         action: 'add',
-        date: updatedTrx.date
+        date: finalUpdatedTrx.date
       }, activeCurrency, transaction);
 
       await financialAuditService.logFinancialEvent({
@@ -170,15 +178,15 @@ export class FinancialTransactionEngine {
           revision: existing.id,
         },
         afterState: {
-          amountMinor: updatedTrx.amountMinor,
-          accountId: updatedTrx.accountId,
-          type: updatedTrx.type,
+          amountMinor: finalUpdatedTrx.amountMinor,
+          accountId: finalUpdatedTrx.accountId,
+          type: finalUpdatedTrx.type,
           revision: id,
         },
         tx: transaction
       });
 
-      actualResult = updatedTrx;
+      actualResult = finalUpdatedTrx;
     });
 
     // إن كان الترحيل قد حدث فعلًا، نفّذ post-process
@@ -894,8 +902,11 @@ export class FinancialTransactionEngine {
       return await this.recalculateAccountBalance(accountId, currency, database);
     }
 
-    await database.table('accounts').update(accountId, updatedFields);
-    return { ...account, ...updatedFields } as Account;
+    // Remove diagnostic fields before DB persistence to avoid record leakage
+    const { isInconsistent, ...accountUpdate } = updatedFields;
+
+    await database.table('accounts').update(accountId, accountUpdate);
+    return { ...account, ...accountUpdate } as Account;
   }
 
   /**
