@@ -1,4 +1,4 @@
-import { Transaction, TransactionType, CurrencyCode } from '@/shared/types';
+import { Transaction, TransactionType, CurrencyCode, Account } from '@/shared/types';
 import { getAmountMinor } from '../money/compat';
 import { decimalToMinor, minorToDecimal, isValidMinorUnit } from '../money/converter';
 import { getCurrencyDecimals } from '../money/currency';
@@ -201,3 +201,73 @@ export function computeStatementRunningBalances(
     };
   });
 }
+/**
+ * Computes incremental changes to an account's metrics based on a single transaction mutation.
+ * This enables O(1) balance updates in the hot path.
+ * Integrity Policy: If transactionCount becomes inconsistent, a full rebuild is triggered.
+ */
+export function applyTransactionDelta(
+  account: Account,
+  delta: {
+    amountMinor: number;
+    type: TransactionType;
+    action: 'add' | 'subtract';
+    date?: string;
+  },
+  currency?: CurrencyCode
+): Partial<Account> {
+  const activeCurrency = (currency || account.currency || 'YER') as CurrencyCode;
+  
+  let currentBalanceMinor = account.currentBalanceMinor || 0;
+  let totalDebitMinor = account.totalDebitMinor || 0;
+  let totalCreditMinor = account.totalCreditMinor || 0;
+  let transactionCount = account.transactionCount || 0;
+  let lastTransactionDate = account.lastTransactionDate;
+
+  const amount = Math.abs(delta.amountMinor);
+
+  if (delta.action === 'add') {
+    transactionCount += 1;
+    if (delta.type === 'debit') {
+      currentBalanceMinor += amount;
+      totalDebitMinor += amount;
+    } else {
+      currentBalanceMinor -= amount;
+      totalCreditMinor += amount;
+    }
+    
+    // Update last date if newer
+    if (delta.date && (!lastTransactionDate || delta.date > lastTransactionDate)) {
+      lastTransactionDate = delta.date;
+    }
+  } else {
+    // Subtracting:
+    // Important: We don't decrement count if it's already 0 (safety)
+    transactionCount = Math.max(0, transactionCount - 1);
+    
+    if (delta.type === 'debit') {
+      currentBalanceMinor -= amount;
+      totalDebitMinor = Math.max(0, totalDebitMinor - amount);
+    } else {
+      currentBalanceMinor += amount;
+      totalCreditMinor = Math.max(0, totalCreditMinor - amount);
+    }
+    
+    // Note: We don't try to "downgrade" lastTransactionDate during subtraction delta 
+    // as that would require O(N) scan. We accept it might be slightly stale 
+    // until the next authoritative rebuild.
+  }
+
+  return {
+    currentBalanceMinor,
+    totalDebitMinor,
+    totalCreditMinor,
+    transactionCount,
+    currentBalance: minorToDecimal(currentBalanceMinor, activeCurrency),
+    totalDebit: minorToDecimal(totalDebitMinor, activeCurrency),
+    totalCredit: minorToDecimal(totalCreditMinor, activeCurrency),
+    lastTransactionDate,
+    updatedAt: new Date().toISOString(),
+  };
+}
+

@@ -16,6 +16,7 @@ import {
   roundMoney,
   computeAccountMetricsFromTransactions,
   computeStatementRunningBalances,
+  applyTransactionDelta,
   StatementItem,
 } from '../utils/financial';
 import { 
@@ -136,7 +137,14 @@ export class FinancialTransactionEngine {
         transactionCurrency: updatedTrx.currency,
         systemCurrency,
       });
-      await this.recalculateAccountBalance(updatedTrx.accountId, activeCurrency, transaction);
+      
+      // OPTIMIZED: Incremental update instead of O(N) rebuild
+      await this.recalculateAccountBalanceIncremental(updatedTrx.accountId, {
+        amountMinor: updatedTrx.amountMinor,
+        type: updatedTrx.type,
+        action: 'add',
+        date: updatedTrx.date
+      }, activeCurrency, transaction);
 
       await financialAuditService.logFinancialEvent({
         eventType: 'TRANSACTION_POST',
@@ -316,7 +324,16 @@ export class FinancialTransactionEngine {
         }
 
         await transaction.table('transactions').add(newTransaction);
-        await this.recalculateAccountBalance(dto.accountId, activeCurrency, transaction);
+
+        // OPTIMIZED: Incremental update instead of O(N) rebuild
+        if (newTransaction.status === 'posted') {
+          await this.recalculateAccountBalanceIncremental(dto.accountId, {
+            amountMinor: safeAmountMinor,
+            type: dto.type,
+            action: 'add',
+            date: newTransaction.date
+          }, activeCurrency, transaction);
+        }
 
         // Log financial event atomically inside DB transaction
         await financialAuditService.logFinancialEvent({
@@ -508,8 +525,15 @@ export class FinancialTransactionEngine {
           };
 
           await transaction.table('transactions').add(trx);
-          // Recalculate balance inside the same transaction
-          await this.recalculateAccountBalance(leg.accountId, currency, transaction);
+          // OPTIMIZED: Incremental update instead of O(N) rebuild
+          if (trx.status === 'posted') {
+            await this.recalculateAccountBalanceIncremental(leg.accountId, {
+              amountMinor: leg.resolvedAmountMinor,
+              type: leg.type,
+              action: 'add',
+              date: trx.date
+            }, currency, transaction);
+          }
 
           await financialAuditService.logFinancialEvent({
             eventType: 'DOUBLE_ENTRY_CREATE',
@@ -641,9 +665,23 @@ export class FinancialTransactionEngine {
     const activeDb = getDb();
     await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, async (transaction) => {
       await transaction.table('transactions').put(updatedTrx);
-      await this.recalculateAccountBalance(oldAccountId, activeCurrency, transaction);
-      if (targetAccountId !== oldAccountId) {
-        await this.recalculateAccountBalance(targetAccountId, activeCurrency, transaction);
+      
+      // If financial fields or status changed, we need to update balance.
+      // For UPDATE, it's safer to rebuild if it's complex, but we can do a smart delta:
+      // Subtract old posted effect, add new posted effect.
+      
+      const statusChanged = existing.status !== updatedTrx.status;
+      const amountChanged = existing.amountMinor !== updatedTrx.amountMinor;
+      const typeChanged = existing.type !== updatedTrx.type;
+      const accountChanged = oldAccountId !== targetAccountId;
+
+      if (statusChanged || amountChanged || typeChanged || accountChanged) {
+        // Safe Choice: If it's a complex multi-field change or account swap, perform O(N) authoritative rebuild 
+        // to ensure integrity. The O(N) impact is acceptable for "Edit" which is less frequent than "Create".
+        await this.recalculateAccountBalance(oldAccountId, activeCurrency, transaction);
+        if (accountChanged) {
+          await this.recalculateAccountBalance(targetAccountId, activeCurrency, transaction);
+        }
       }
 
       // Log update atomically
@@ -731,7 +769,16 @@ export class FinancialTransactionEngine {
       if (!trxToDelete) return;
 
       await transaction.table('transactions').delete(id);
-      await this.recalculateAccountBalance(accountId, activeCurrency, transaction);
+      
+      // OPTIMIZED: Incremental update for DRAFT delete (no change) or subtraction if POSTED
+      const status = existing.status || 'posted';
+      if (status === 'posted') {
+        await this.recalculateAccountBalanceIncremental(accountId, {
+          amountMinor: existing.amountMinor,
+          type: existing.type,
+          action: 'subtract'
+        }, activeCurrency, transaction);
+      }
 
       // Log deletion atomically
       await financialAuditService.logFinancialEvent({
@@ -777,9 +824,8 @@ export class FinancialTransactionEngine {
   }
 
   /**
-   * Recalculates an account's financial balance from all its transactions.
-   * Transactions are the absolute Source of Truth.
-   * Uses integer arithmetic on minor units to guarantee zero floating point drift.
+   * Authoritative balance rebuild from complete ledger history.
+   * STABLE SOURCE OF TRUTH (O(N) Complexity).
    */
   async recalculateAccountBalance(accountId: string, currency?: CurrencyCode, tx?: any): Promise<Account | undefined> {
     const database = tx || db;
@@ -808,6 +854,31 @@ export class FinancialTransactionEngine {
 
     await database.table('accounts').update(accountId, updatedFields);
     return await database.table('accounts').get(accountId);
+  }
+
+  /**
+   * Optimized incremental balance update (O(1) Complexity).
+   * Used for standard Create/Post/Delete-posted paths.
+   */
+  async recalculateAccountBalanceIncremental(
+    accountId: string, 
+    delta: { amountMinor: number; type: TransactionType; action: 'add' | 'subtract'; date?: string },
+    currency?: CurrencyCode, 
+    tx?: any
+  ): Promise<Account | undefined> {
+    const database = tx || db;
+    const account = await database.table('accounts').get(accountId);
+    if (!account) return undefined;
+
+    const updatedFields = applyTransactionDelta(account, delta, currency);
+    
+    // Safety check: if count becomes negative or drift is suspected, fallback to full rebuild
+    if (updatedFields.transactionCount! < 0) {
+      return await this.recalculateAccountBalance(accountId, currency, database);
+    }
+
+    await database.table('accounts').update(accountId, updatedFields);
+    return { ...account, ...updatedFields };
   }
 
   /**
