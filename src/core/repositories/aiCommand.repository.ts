@@ -26,12 +26,14 @@ export class AICommandRepository {
     await activeDb.transaction('rw', activeDb.aiCommands, async () => {
       const existing = await activeDb.aiCommands.get(command.id);
       if (existing) {
+        if (existing.operationId !== command.operationId) {
+          throw new Error('لا يمكن تغيير operationId لأمر موجود');
+        }
         if (existing.status !== 'PENDING') {
           throw new Error(`لا يمكن إضافة أمر موجود في الحالة الحالية: ${existing.status}`);
         }
         await activeDb.aiCommands.put({
           ...existing,
-          operationId: command.operationId,
           command,
           updatedAt: new Date().toISOString(),
         });
@@ -51,10 +53,12 @@ export class AICommandRepository {
       if (existing.status !== 'PENDING' && existing.status !== 'RUNNING') {
         throw new Error(`لا يمكن تعديل الأمر من الحالة الحالية: ${existing.status}`);
       }
+      if (existing.operationId !== command.operationId) {
+        throw new Error('لا يمكن تغيير operationId أثناء تحديث الأمر');
+      }
 
       await activeDb.aiCommands.put({
         ...existing,
-        operationId: command.operationId,
         command,
         updatedAt: new Date().toISOString(),
       });
@@ -165,9 +169,11 @@ export class AICommandRepository {
       if (existing.status !== 'RUNNING') {
         throw new Error(`لا يمكن إنهاء الأمر من الحالة الحالية: ${existing.status}`);
       }
+      if (existing.operationId !== command.operationId) {
+        throw new Error('لا يمكن تغيير operationId عند إنهاء الأمر');
+      }
       await activeDb.aiCommands.put({
         ...existing,
-        operationId: command.operationId,
         command,
         status,
         updatedAt: new Date().toISOString(),
