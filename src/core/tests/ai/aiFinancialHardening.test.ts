@@ -251,7 +251,8 @@ describe('AI Financial Hardening (Round 2-A)', () => {
 
       const tx = await aiService.confirmAndExecuteCommand(command.id);
       expect(tx).toBeDefined();
-      expect(command.status).toBe('EXECUTED');
+      const storedCommand = await aiCommandRepository.getById(command.id);
+      expect(storedCommand?.status).toBe('EXECUTED');
     });
 
     it('SCENARIO 3: should rollback to READY_FOR_CONFIRMATION if engine fails', async () => {
@@ -283,8 +284,9 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       const tx = await aiService.confirmAndExecuteCommand(command.id);
       
       expect(tx).toBeDefined();
-      expect(command.status).toBe('EXECUTED');
-      expect(command.executedTransactionId).toBe(tx.id);
+      const storedCommand = await aiCommandRepository.getById(command.id);
+      expect(storedCommand?.status).toBe('EXECUTED');
+      expect(storedCommand?.executedTransactionId).toBe(tx.id);
     });
 
     it('SCENARIO 5: should prevent duplicate records on retry (Idempotency)', async () => {
@@ -314,7 +316,8 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       const command = createBaseCommand('cmd_status_check', 'op_status_check');
       let statusDuringEngineCall: string = '';
       vi.spyOn(transactionEngine, 'createTransaction').mockImplementationOnce(async () => {
-        statusDuringEngineCall = command.status; 
+        const storedCommand = await aiCommandRepository.getById(command.id);
+        statusDuringEngineCall = storedCommand?.status || '';
         throw new Error('Simulated Failure');
       });
 
@@ -386,9 +389,9 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       await aiCommandRepository.add(command);
 
       await aiService.cancelCommand(command.id);
-      expect(command.status).toBe('CANCELLED');
+      expect(await aiCommandRepository.getRecordById(command.id)).toBeUndefined();
 
-      // cancellation removes it from registry
+      // cancellation removes it from durable storage
       await expect(aiService.confirmAndExecuteCommand(command.id))
         .rejects.toThrow(/الأمر المالي غير موجود أو انتهت صلاحيته/);
     });
@@ -412,7 +415,8 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       await aiService.confirmAndExecuteCommand(command.id);
 
       expect(createSpy).toHaveBeenCalled();
-      expect(command.status).toBe('EXECUTED');
+      const storedCommand = await aiCommandRepository.getById(command.id);
+      expect(storedCommand?.status).toBe('EXECUTED');
     });
 
     it('SCENARIO 12: should verify audit log recording upon successful execution', async () => {
@@ -479,7 +483,8 @@ describe('AI Financial Hardening (Round 2-A)', () => {
 
         const tx = await aiService.confirmAndExecuteCommand(cmd.id);
         expect(tx).toBeDefined();
-        expect(cmd.status).toBe('EXECUTED');
+        const executedCommand = await aiService.getPendingCommand(cmd.id);
+        expect(executedCommand?.status).toBe('EXECUTED');
         // Command should still be marked executed in storage
         const stored = await aiService.getPendingCommand(cmd.id);
         expect(stored?.status).toBe('EXECUTED');
