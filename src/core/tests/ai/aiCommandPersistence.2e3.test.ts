@@ -142,6 +142,35 @@ export class AICommandPersistence2E3TestSuite {
         }
       });
 
+      // T-C7: Cancellation and claim cannot both win the same command.
+      await runTest('T-C7', async () => {
+        const command = createCommand(`${prefix}_c7`, `${prefix}_op_c7`);
+        commandIds.add(command.id);
+        await aiCommandRepository.add(command);
+
+        const [claimResult, cancelResult] = await Promise.allSettled([
+          aiCommandRepository.claimCommand(command.id),
+          aiCommandRepository.cancelPendingCommand(command.id),
+        ]);
+        const stored = await aiCommandRepository.getRecordById(command.id);
+
+        if (claimResult.status === 'fulfilled') {
+          if (cancelResult.status !== 'rejected') {
+            throw new Error('Cancellation also succeeded after the claim won');
+          }
+          if (stored?.status !== 'RUNNING') {
+            throw new Error('Claim winner was not retained as RUNNING');
+          }
+        } else {
+          if (cancelResult.status !== 'fulfilled' || !cancelResult.value) {
+            throw new Error('Cancellation did not win cleanly when it acquired the transaction first');
+          }
+          if (stored?.status !== 'FAILED' || stored.command.status !== 'CANCELLED') {
+            throw new Error('Cancelled command was not durably made non-claimable');
+          }
+        }
+      });
+
       // T-C6: A v12 legacy settings JSON payload migrates atomically into v13 aiCommands.
       await runTest('T-C6', async () => {
         const migrationDbName = `hisabati_ai_v12_migration_${prefix}`;
