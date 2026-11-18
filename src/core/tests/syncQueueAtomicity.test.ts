@@ -18,7 +18,7 @@ export class SyncQueueAtomicityTestSuite {
     results: SyncQueueAtomicityResult[];
   }> {
     const results: SyncQueueAtomicityResult[] = [];
-    const createdIds = new Set<string>();
+    const testOperationIds = new Set<string>();
     const originalIsConnected = googleDriveService.isConnected.bind(googleDriveService);
     const prefix = `e2_atomic_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -39,10 +39,10 @@ export class SyncQueueAtomicityTestSuite {
       // T-S1: Sequential duplicate operationId returns the persisted queue item.
       await runTest('T-S1', async () => {
         const operationId = `${prefix}_sequential`;
+        testOperationIds.add(operationId);
         const first = await syncEngine.enqueueMutation(
           'transaction', 'trx_e2_sequential', 'CREATE', { marker: 'first' }, operationId
         );
-        createdIds.add(first.id);
 
         const second = await syncEngine.enqueueMutation(
           'transaction', 'trx_e2_sequential', 'CREATE', { marker: 'second' }, operationId
@@ -57,12 +57,11 @@ export class SyncQueueAtomicityTestSuite {
       // T-S2: Concurrent duplicate operationId calls are serialized atomically.
       await runTest('T-S2', async () => {
         const operationId = `${prefix}_concurrent`;
+        testOperationIds.add(operationId);
         const [first, second] = await Promise.all([
           syncEngine.enqueueMutation('transaction', 'trx_e2_concurrent', 'CREATE', { call: 1 }, operationId),
           syncEngine.enqueueMutation('transaction', 'trx_e2_concurrent', 'CREATE', { call: 2 }, operationId),
         ]);
-        createdIds.add(first.id);
-        createdIds.add(second.id);
 
         const rows = await db.syncQueue.where('operationId').equals(operationId).toArray();
         if (rows.length !== 1) throw new Error(`Expected one concurrent row; found ${rows.length}`);
@@ -75,12 +74,12 @@ export class SyncQueueAtomicityTestSuite {
       await runTest('T-S3', async () => {
         const firstOpId = `${prefix}_distinct_a`;
         const secondOpId = `${prefix}_distinct_b`;
+        testOperationIds.add(firstOpId);
+        testOperationIds.add(secondOpId);
         const [first, second] = await Promise.all([
           syncEngine.enqueueMutation('transaction', 'trx_e2_distinct_a', 'CREATE', undefined, firstOpId),
           syncEngine.enqueueMutation('transaction', 'trx_e2_distinct_b', 'CREATE', undefined, secondOpId),
         ]);
-        createdIds.add(first.id);
-        createdIds.add(second.id);
 
         const firstCount = await db.syncQueue.where('operationId').equals(firstOpId).count();
         const secondCount = await db.syncQueue.where('operationId').equals(secondOpId).count();
@@ -100,10 +99,9 @@ export class SyncQueueAtomicityTestSuite {
       // T-S5: Pre-existing pending/processing rows are retained and no new row is added.
       await runTest('T-S5', async () => {
         const operationId = `${prefix}_existing_active`;
+        testOperationIds.add(operationId);
         const pendingId = `${prefix}_pending`;
         const processingId = `${prefix}_processing`;
-        createdIds.add(pendingId);
-        createdIds.add(processingId);
 
         await db.syncQueue.bulkAdd([
           {
@@ -134,7 +132,6 @@ export class SyncQueueAtomicityTestSuite {
           'transaction', 'trx_e2_should_not_be_added', 'CREATE', { marker: 'new' }, operationId
         );
         const rows = await db.syncQueue.where('operationId').equals(operationId).toArray();
-        createdIds.add(returned.id);
 
         if (rows.length !== 2) throw new Error(`Expected both existing rows to remain; found ${rows.length}`);
         if (!rows.some(row => row.id === pendingId && row.status === 'pending')) {
@@ -149,8 +146,8 @@ export class SyncQueueAtomicityTestSuite {
       });
     } finally {
       googleDriveService.isConnected = originalIsConnected;
-      if (createdIds.size > 0) {
-        await db.syncQueue.bulkDelete([...createdIds]);
+      for (const operationId of testOperationIds) {
+        await db.syncQueue.where('operationId').equals(operationId).delete();
       }
     }
 
