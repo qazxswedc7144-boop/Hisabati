@@ -160,6 +160,37 @@ export class AICommandRepository {
     });
   }
 
+  /**
+   * Atomically cancels only an unclaimed command. The FAILED lifecycle state
+   * makes it non-claimable while preserving the CANCELLED business status for
+   * audit/cleanup if the subsequent audit write fails.
+   */
+  public async cancelPendingCommand(commandId: string): Promise<StructuredAICommand | undefined> {
+    const activeDb = getDb();
+    return await activeDb.transaction('rw', activeDb.aiCommands, async () => {
+      const record = await activeDb.aiCommands.get(commandId);
+      if (!record) return undefined;
+      if (record.status !== 'PENDING') {
+        throw new Error(`لا يمكن إلغاء الأمر من الحالة الحالية: ${record.status}`);
+      }
+
+      const expiresAt = Date.parse(record.expiresAt);
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return undefined;
+
+      const command: StructuredAICommand = {
+        ...record.command,
+        status: 'CANCELLED',
+      };
+      await activeDb.aiCommands.put({
+        ...record,
+        status: 'FAILED',
+        command,
+        updatedAt: new Date().toISOString(),
+      });
+      return command;
+    });
+  }
+
   public async delete(commandId: string): Promise<void> {
     await getDb().aiCommands.delete(commandId);
   }
