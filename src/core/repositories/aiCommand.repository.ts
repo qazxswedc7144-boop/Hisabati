@@ -110,16 +110,21 @@ export class AICommandRepository {
     status: 'DONE' | 'FAILED'
   ): Promise<void> {
     const activeDb = getDb();
-    const existing = await activeDb.aiCommands.get(command.id);
-    if (!existing) {
-      throw new Error(`لا يمكن تحديث حالة الأمر غير الموجود: ${command.id}`);
-    }
-    await activeDb.aiCommands.put({
-      ...existing,
-      operationId: command.operationId,
-      command,
-      status,
-      updatedAt: new Date().toISOString(),
+    await activeDb.transaction('rw', activeDb.aiCommands, async () => {
+      const existing = await activeDb.aiCommands.get(command.id);
+      if (!existing) {
+        throw new Error(`لا يمكن تحديث حالة الأمر غير الموجود: ${command.id}`);
+      }
+      if (existing.status !== 'RUNNING') {
+        throw new Error(`لا يمكن إنهاء الأمر من الحالة الحالية: ${existing.status}`);
+      }
+      await activeDb.aiCommands.put({
+        ...existing,
+        operationId: command.operationId,
+        command,
+        status,
+        updatedAt: new Date().toISOString(),
+      });
     });
   }
 
