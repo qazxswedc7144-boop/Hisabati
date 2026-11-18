@@ -205,26 +205,35 @@ export class AIService {
   }
 
   /**
-   * Cancels a pending structured command, leaving the database completely untouched.
+   * Cancels a command only while it is still PENDING, then removes its durable record.
    */
   public async cancelCommand(commandId: string): Promise<void> {
-    const command = await aiCommandRepository.getById(commandId);
-    if (command) {
-      command.status = 'CANCELLED';
-      await aiCommandRepository.update(command);
-      await aiAuditRepository.addLog({
-        id: 'audit_cancel_' + Date.now(),
-        requestId: command.id,
-        intent: command.intent,
-        timestamp: new Date().toISOString(),
-        status: 'canceled',
-        provider: 'user_action',
-        confidence: 1.0,
-        action: 'User cancelled command execution',
-        confirmed: false,
-      });
-      await aiCommandRepository.delete(commandId);
+    const record = await aiCommandRepository.getRecordById(commandId);
+    if (!record || record.status !== 'PENDING') {
+      if (record?.status === 'RUNNING') {
+        throw new Error('لا يمكن إلغاء أمر قيد التنفيذ');
+      }
+      return;
     }
+
+    const expiresAt = Date.parse(record.expiresAt);
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return;
+
+    const command = record.command;
+    command.status = 'CANCELLED';
+    await aiCommandRepository.update(command);
+    await aiAuditRepository.addLog({
+      id: 'audit_cancel_' + Date.now(),
+      requestId: command.id,
+      intent: command.intent,
+      timestamp: new Date().toISOString(),
+      status: 'canceled',
+      provider: 'user_action',
+      confidence: 1.0,
+      action: 'User cancelled command execution',
+      confirmed: false,
+    });
+    await aiCommandRepository.delete(commandId);
   }
 
   public async getPendingCommand(commandId: string): Promise<StructuredAICommand | undefined> {
