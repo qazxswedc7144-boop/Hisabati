@@ -616,11 +616,8 @@ export class FinancialTransactionEngine {
     }
 
     const freshSettings = await settingsRepository.getSettings();
-    let updatedTrx!: Transaction;
-    let targetAccount!: Account;
-
     const activeDb = getDb();
-    await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, async (transaction) => {
+    const { updatedTrx, targetAccount } = await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, async (transaction) => {
       // Authoritative read and immutable-ledger validation are atomic with write.
       const freshTrx = await transaction.table('transactions').get(id) as Transaction | undefined;
       if (!freshTrx) throw new Error(`العملية رقم ${id} غير موجودة`);
@@ -706,8 +703,7 @@ export class FinancialTransactionEngine {
         tx: transaction
       });
 
-      updatedTrx = finalUpdatedTrx;
-      targetAccount = account;
+      return { updatedTrx: finalUpdatedTrx, targetAccount: account };
     });
 
     await this.postProcessTransaction(updatedTrx, 'UPDATE', currentActor, targetAccount, options);
@@ -734,13 +730,10 @@ export class FinancialTransactionEngine {
     }
 
     const fallbackSystemCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER');
-    let deleted = false;
-    let deletedTransaction: Transaction | undefined;
-
     const activeDb = getDb();
-    await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, activeDb.settings, async (transaction) => {
+    const deletedTransaction = await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, activeDb.settings, async (transaction) => {
       const trxToDelete = await transaction.table('transactions').get(id) as Transaction | undefined;
-      if (!trxToDelete) return;
+      if (!trxToDelete) return undefined;
 
       const currentStatus = trxToDelete.status || 'posted'; // Legacy policy: missing = POSTED
       if (!options?.isRemote) {
@@ -764,7 +757,6 @@ export class FinancialTransactionEngine {
         systemCurrency,
       });
 
-      deletedTransaction = trxToDelete;
       await transaction.table('transactions').delete(id);
 
       // POSTED is rejected above for local and remote deletion. Keep the
@@ -809,14 +801,14 @@ export class FinancialTransactionEngine {
       } catch (e) {
         console.warn('Permanent tombstone write warning:', e);
       }
-      deleted = true;
+      return trxToDelete;
     });
 
-    if (deleted && !options?.isRemote && deletedTransaction) {
+    if (deletedTransaction && !options?.isRemote) {
       await this.enqueueSyncMutation('transaction', id, 'DELETE', { id }, deletedTransaction.operationId);
     }
 
-    return deleted;
+    return Boolean(deletedTransaction);
   }
 
   /**
