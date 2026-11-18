@@ -263,9 +263,11 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       await aiCommandRepository.add(command);
 
       await expect(aiService.confirmAndExecuteCommand(command.id)).rejects.toThrow('Engine Crash');
-      
-      expect(command.status).toBe('READY_FOR_CONFIRMATION'); 
+
+      expect(command.status).toBe('READY_FOR_CONFIRMATION');
       expect(command.executedTransactionId).toBeUndefined();
+      const failedRecord = await aiCommandRepository.getRecordById(command.id);
+      expect(failedRecord?.status).toBe('FAILED');
     });
 
     it('SCENARIO 4: should mark as EXECUTED even if audit log fails AFTER transaction creation', async () => {
