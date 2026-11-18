@@ -7,6 +7,7 @@ import { BackupMigratorTestSuite } from './backupMigrator.test';
 import { RestoreHardeningTestSuite } from './restoreHardening.test';
 import { MessagingTestSuite } from './messaging.test';
 import { AITestSuite } from './ai.test';
+import { AICommandPersistence2E3TestSuite } from './ai/aiCommandPersistence.2e3.test';
 import { OCRTestSuite } from './ocr.test';
 import { RBACTestSuite } from './rbac.test';
 import { runBITests } from './bi.test';
@@ -197,6 +198,25 @@ async function main() {
     }
   } catch (err: any) {
     console.error('Phase 6 crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // ROUND 2-E.3: Durable AI Command State Machine — F-001
+  console.log('\\n--- [ROUND 2-E.3] Durable AI Command State Machine ---');
+  try {
+    const aiCommands = await AICommandPersistence2E3TestSuite.runAll();
+    console.log(`AI Command Persistence Result: Passed ${aiCommands.passed}/${aiCommands.total}`);
+    totalPassed += aiCommands.passed;
+    totalFailed += aiCommands.failed;
+    totalCount += aiCommands.total;
+    if (aiCommands.failed > 0) {
+      for (const result of aiCommands.results.filter((item) => !item.passed)) {
+        console.error(`  ❌ [${result.id}] ${result.message}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('AI Command Persistence Suite crashed:', err);
     totalFailed++;
     totalCount++;
   }
