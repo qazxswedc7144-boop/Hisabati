@@ -171,6 +171,27 @@ export class AICommandPersistence2E3TestSuite {
         }
       });
 
+      // T-C8: operationId remains immutable across command updates.
+      await runTest('T-C8', async () => {
+        const command = createCommand(`${prefix}_c8`, `${prefix}_op_c8`);
+        commandIds.add(command.id);
+        await aiCommandRepository.add(command);
+
+        const altered = { ...command, operationId: `${prefix}_changed_op_c8` };
+        let rejected = false;
+        try {
+          await aiCommandRepository.update(altered);
+        } catch (error: any) {
+          rejected = String(error?.message || error).includes('operationId');
+        }
+        if (!rejected) throw new Error('Changing operationId was not rejected');
+
+        const stored = await aiCommandRepository.getRecordById(command.id);
+        if (stored?.operationId !== command.operationId) {
+          throw new Error('Persisted operationId changed after rejected update');
+        }
+      });
+
       // T-C6: A v12 legacy settings JSON payload migrates atomically into v13 aiCommands.
       await runTest('T-C6', async () => {
         const migrationDbName = `hisabati_ai_v12_migration_${prefix}`;
