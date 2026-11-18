@@ -132,6 +132,12 @@ export class AIService {
    * This is the ONLY legitimate execution gate.
    */
   public async confirmAndExecuteCommand(commandId: string): Promise<Transaction> {
+    // Preserve the prior retry path: explicitly re-queue retryable FAILED commands.
+    const existingRecord = await aiCommandRepository.getRecordById(commandId);
+    if (existingRecord?.status === 'FAILED') {
+      await aiCommandRepository.requeueFailedCommand(commandId);
+    }
+
     // Claim first, then validate the exact persisted payload that this tab owns.
     const claimedRecord = await aiCommandRepository.claimCommand(commandId);
     const command = claimedRecord.command;
