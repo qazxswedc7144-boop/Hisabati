@@ -185,40 +185,64 @@ export class SyncEngine {
     operation: 'CREATE' | 'UPDATE' | 'DELETE',
     payload?: any,
     operationId?: string
-  ): Promise<void> {
+  ): Promise<SyncQueueItem> {
     const opId = operationId || `op_${entityId}_${Date.now()}`;
+    const activeDb = getDb();
 
-    // 1. Idempotency Check at Queue Level
-    const existing = await db.syncQueue
-      .where('operationId')
-      .equals(opId)
-      .first();
+    // The lookup and insert share one read-write transaction. IndexedDB serializes
+    // overlapping read-write transactions on syncQueue, preventing check-then-add races.
+    const enqueueResult = await activeDb.transaction('rw', activeDb.syncQueue, async (transaction) => {
+      const queue = transaction.table('syncQueue');
+      const existingItems = await queue.where('operationId').equals(opId).toArray();
+      const activeExisting = existingItems.find(
+        (item) => item.status === 'pending' || item.status === 'processing'
+      );
 
-    if (existing && (existing.status === 'pending' || existing.status === 'processing')) {
-      return; // Already safely enqueued for replication
+      if (activeExisting) {
+        return { item: activeExisting as SyncQueueItem, inserted: false };
+      }
+
+      const queueItem: SyncQueueItem = {
+        id: 'sq_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        entityType,
+        entityId,
+        operation,
+        operationId: opId,
+        payload,
+        createdAt: new Date().toISOString(),
+        retryCount: 0,
+        status: 'pending',
+      };
+
+      try {
+        await queue.add(queueItem);
+        return { item: queueItem, inserted: true };
+      } catch (error: any) {
+        // A primary/unique-key collision must resolve to the already persisted
+        // operation when present; unrelated constraint failures still propagate.
+        if (error?.name === 'ConstraintError' || error?.name === 'DuplicateError') {
+          const duplicate = await queue.where('operationId').equals(opId).first();
+          if (duplicate) {
+            return { item: duplicate as SyncQueueItem, inserted: false };
+          }
+        }
+        throw error;
+      }
+    });
+
+    if (!enqueueResult.inserted) {
+      return enqueueResult.item;
     }
 
-    const queueItem: SyncQueueItem = {
-      id: 'sq_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
-      entityType,
-      entityId,
-      operation,
-      operationId: opId,
-      payload,
-      createdAt: new Date().toISOString(),
-      retryCount: 0,
-      status: 'pending',
-    };
-
-    await db.syncQueue.add(queueItem);
-
-    // 2. Trigger best effort background sync if online & connected
+    // Trigger background sync only for a newly inserted queue item.
     const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
     if (isOnline && googleDriveService.isConnected()) {
       this.processQueueBestEffort();
     } else if (!isOnline) {
       this.notifyStatus('offline');
     }
+
+    return enqueueResult.item;
   }
 
   /**
