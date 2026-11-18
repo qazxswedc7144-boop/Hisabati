@@ -22,28 +22,9 @@ export class AIService {
   private lastRequestTimestamp = 0;
   private minIntervalMs = 200;
 
-  // In-memory active structured commands registry (mirrored in Dexie)
-  private pendingCommands = new Map<string, StructuredAICommand>();
-
   constructor() {
     this.selectBestProvider();
-    this.loadPendingFromStorage();
   }
-
-  /**
-   * Loads pending commands from Dexie to memory for recovery after restart.
-   */
-  private async loadPendingFromStorage(): Promise<void> {
-    try {
-      const stored = await aiCommandRepository.getAllPending();
-      for (const cmd of stored) {
-        this.pendingCommands.set(cmd.id, cmd);
-      }
-    } catch (err) {
-      console.error('[AIService] Failed to load pending commands from storage:', err);
-    }
-  }
-
 
   /**
    * Evaluates environment and selects the best available provider
@@ -114,7 +95,6 @@ export class AIService {
 
       // If command generated, register into pending commands registry and validate immediately
       if (response.command) {
-        this.pendingCommands.set(response.command.id, response.command);
         // Pre-validate to move from PENDING_VALIDATION to READY_FOR_CONFIRMATION or REJECTED
         await aiValidationService.validate(response.command);
         // Persist to Dexie for recovery
@@ -152,7 +132,7 @@ export class AIService {
    * This is the ONLY legitimate execution gate.
    */
   public async confirmAndExecuteCommand(commandId: string): Promise<Transaction> {
-    const command = this.pendingCommands.get(commandId);
+    let command = await aiCommandRepository.getById(commandId);
     if (!command) {
       throw new Error('الأمر المالي غير موجود أو انتهت صلاحيته');
     }
@@ -204,25 +184,35 @@ export class AIService {
       throw new Error('بيانات الأمر المالي ناقصة أو غير صالحة بعد التحقق النهائي');
     }
 
+    // Atomically claim the durable record after all preflight checks.
+    const claimedRecord = await aiCommandRepository.claimCommand(commandId);
+    command = claimedRecord.command;
+
+    if (command.status !== 'READY_FOR_CONFIRMATION' && command.status !== 'CONFIRMED') {
+      await aiCommandRepository.markFailed(command);
+      throw new Error(`لا يمكن تنفيذ أمر مالي في حالته الحالية: ${command.status}. يجب أن يكون الأمر جاهزاً للتأكيد.`);
+    }
+
     try {
-      // Transition status to CONFIRMED
       command.status = 'CONFIRMED';
       await aiCommandRepository.update(command);
 
       // Execute strictly via AITools -> FinancialTransactionEngine
       const transaction = await aiTools.executeConfirmedCommand(command);
-
-      // Update in-memory registry and storage with final state
-      this.pendingCommands.set(commandId, command);
-      await aiCommandRepository.update(command);
+      await aiCommandRepository.markDone(command);
 
       return transaction;
     } catch (err) {
-      // Rollback status if it's not EXECUTED (meaning engine likely failed or rejected)
-      // We cast to any to bypass TS narrowing from line 167
-      if ((command.status as any) !== 'EXECUTED') {
-        command.status = 'READY_FOR_CONFIRMATION';
-        await aiCommandRepository.update(command);
+      // Persist a terminal lifecycle state. A failed command is not silently re-claimed.
+      try {
+        if (command.status === 'EXECUTED') {
+          await aiCommandRepository.markDone(command);
+        } else {
+          command.status = 'READY_FOR_CONFIRMATION';
+          await aiCommandRepository.markFailed(command);
+        }
+      } catch (persistenceError) {
+        console.error('[AIService] Failed to persist command terminal state:', persistenceError);
       }
       throw err;
     }
@@ -232,7 +222,7 @@ export class AIService {
    * Cancels a pending structured command, leaving the database completely untouched.
    */
   public async cancelCommand(commandId: string): Promise<void> {
-    const command = this.pendingCommands.get(commandId);
+    const command = await aiCommandRepository.getById(commandId);
     if (command) {
       command.status = 'CANCELLED';
       await aiCommandRepository.update(command);
@@ -247,13 +237,12 @@ export class AIService {
         action: 'User cancelled command execution',
         confirmed: false,
       });
-      this.pendingCommands.delete(commandId);
       await aiCommandRepository.delete(commandId);
     }
   }
 
-  public getPendingCommand(commandId: string): StructuredAICommand | undefined {
-    return this.pendingCommands.get(commandId);
+  public async getPendingCommand(commandId: string): Promise<StructuredAICommand | undefined> {
+    return await aiCommandRepository.getById(commandId);
   }
 }
 
