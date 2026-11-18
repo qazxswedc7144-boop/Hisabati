@@ -132,83 +132,69 @@ export class AIService {
    * This is the ONLY legitimate execution gate.
    */
   public async confirmAndExecuteCommand(commandId: string): Promise<Transaction> {
-    let command = await aiCommandRepository.getById(commandId);
-    if (!command) {
-      throw new Error('الأمر المالي غير موجود أو انتهت صلاحيته');
-    }
-
-    // 0. Strict RBAC Guard: assert ai:query AND specific mutation permission
-    const { rbacGuard } = await import('../rbac/RBACGuard.service');
-    
-    // Always check ai:query first
-    await rbacGuard.assertPermission('ai:query', {
-      targetType: 'ai',
-      targetId: commandId,
-      details: `استخدام المساعد لتنفيذ: ${command.intent}`,
-    });
-
-    // Map intent to specific financial permission
-    const intentPermissionMap: Record<string, Permission> = {
-      'CREATE_TRANSACTION_REQUEST': 'transactions:create',
-      'EDIT_TRANSACTION_REQUEST': 'transactions:update',
-      'DELETE_TRANSACTION_REQUEST': 'transactions:delete',
-    };
-
-    const requiredFinancialPermission = intentPermissionMap[command.intent];
-    if (requiredFinancialPermission) {
-      await rbacGuard.assertPermission(requiredFinancialPermission, {
-        targetType: 'transaction',
-        targetId: command.accountId,
-        details: `تنفيذ أمر مالي مولد بالذكاء الاصطناعي: ${command.intent}`,
-      });
-    }
-
-    // Strict State Guard: Execution is only allowed for commands in READY_FOR_CONFIRMATION or CONFIRMED (retry) state
-    if (command.status !== 'READY_FOR_CONFIRMATION' && command.status !== 'CONFIRMED') {
-      throw new Error(`لا يمكن تنفيذ أمر مالي في حالته الحالية: ${command.status}. يجب أن يكون الأمر جاهزاً للتأكيد.`);
-    }
-
-    // Strict Zod Runtime Schema validation
-    const schemaResult = validateStructuredAICommand(command);
-    if (!schemaResult.success) {
-      throw new Error('بيانات الأمر المالي غير صالحة وفق المعايير التقنية');
-    }
-
-    // Final integrity check before execution (business rules)
-    const valResult = await aiValidationService.validate(command);
-    if (!valResult.isValid) {
-      throw new Error(valResult.errors[0] || 'تعذر التحقق من صحة العملية قبل التنفيذ النهائي');
-    }
-
-    if (!command.accountId || !command.operationId || typeof command.amountMinor !== 'number' || command.amountMinor < 0) {
-      throw new Error('بيانات الأمر المالي ناقصة أو غير صالحة بعد التحقق النهائي');
-    }
-
-    // Atomically claim the durable record after all preflight checks.
+    // Claim first, then validate the exact persisted payload that this tab owns.
     const claimedRecord = await aiCommandRepository.claimCommand(commandId);
-    command = claimedRecord.command;
-
-    if (command.status !== 'READY_FOR_CONFIRMATION' && command.status !== 'CONFIRMED') {
-      await aiCommandRepository.markFailed(command);
-      throw new Error(`لا يمكن تنفيذ أمر مالي في حالته الحالية: ${command.status}. يجب أن يكون الأمر جاهزاً للتأكيد.`);
-    }
+    const command = claimedRecord.command;
 
     try {
+      // Strict RBAC Guard: assert ai:query AND specific mutation permission.
+      const { rbacGuard } = await import('../rbac/RBACGuard.service');
+      await rbacGuard.assertPermission('ai:query', {
+        targetType: 'ai',
+        targetId: commandId,
+        details: `استخدام المساعد لتنفيذ: ${command.intent}`,
+      });
+
+      const intentPermissionMap: Record<string, Permission> = {
+        'CREATE_TRANSACTION_REQUEST': 'transactions:create',
+        'EDIT_TRANSACTION_REQUEST': 'transactions:update',
+        'DELETE_TRANSACTION_REQUEST': 'transactions:delete',
+      };
+
+      const requiredFinancialPermission = intentPermissionMap[command.intent];
+      if (requiredFinancialPermission) {
+        await rbacGuard.assertPermission(requiredFinancialPermission, {
+          targetType: 'transaction',
+          targetId: command.accountId,
+          details: `تنفيذ أمر مالي مولد بالذكاء الاصطناعي: ${command.intent}`,
+        });
+      }
+
+      if (command.status !== 'READY_FOR_CONFIRMATION' && command.status !== 'CONFIRMED') {
+        throw new Error(`لا يمكن تنفيذ أمر مالي في حالته الحالية: ${command.status}. يجب أن يكون الأمر جاهزاً للتأكيد.`);
+      }
+
+      const schemaResult = validateStructuredAICommand(command);
+      if (!schemaResult.success) {
+        throw new Error('بيانات الأمر المالي غير صالحة وفق المعايير التقنية');
+      }
+
+      const valResult = await aiValidationService.validate(command);
+      if (!valResult.isValid) {
+        throw new Error(valResult.errors[0] || 'تعذر التحقق من صحة العملية قبل التنفيذ النهائي');
+      }
+
+      if (!command.accountId || !command.operationId || typeof command.amountMinor !== 'number' || command.amountMinor < 0) {
+        throw new Error('بيانات الأمر المالي ناقصة أو غير صالحة بعد التحقق النهائي');
+      }
+
       command.status = 'CONFIRMED';
       await aiCommandRepository.update(command);
 
-      // Execute strictly via AITools -> FinancialTransactionEngine
+      // Execute strictly via AITools -> FinancialTransactionEngine.
       const transaction = await aiTools.executeConfirmedCommand(command);
       await aiCommandRepository.markDone(command);
 
       return transaction;
     } catch (err) {
-      // Persist a terminal lifecycle state. A failed command is not silently re-claimed.
+      // Persist a terminal lifecycle state; a failed command is not silently re-claimed.
       try {
         if (command.status === 'EXECUTED') {
           await aiCommandRepository.markDone(command);
         } else {
-          command.status = 'READY_FOR_CONFIRMATION';
+          if (command.status === 'CONFIRMED') {
+            command.status = 'READY_FOR_CONFIRMATION';
+          }
           await aiCommandRepository.markFailed(command);
         }
       } catch (persistenceError) {
