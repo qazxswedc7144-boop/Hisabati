@@ -463,7 +463,7 @@ export class AITestSuite {
         }
 
         const cmdId = aiResp.command.id;
-        const pendingCmd = aiService.getPendingCommand(cmdId);
+        const pendingCmd = await aiService.getPendingCommand(cmdId);
         if (!pendingCmd) throw new Error('Command was not registered in pending commands');
 
         // Verify balance is untouched before confirmation
