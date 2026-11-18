@@ -48,7 +48,8 @@ export class AICommandRepository {
 
   public async getById(commandId: string): Promise<StructuredAICommand | undefined> {
     const record = await getDb().aiCommands.get(commandId);
-    if (!record || Date.parse(record.expiresAt) <= Date.now()) return undefined;
+    const expiresAt = record ? Date.parse(record.expiresAt) : Number.NaN;
+    if (!record || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) return undefined;
     return record.command;
   }
 
@@ -81,7 +82,8 @@ export class AICommandRepository {
       if (record.status !== 'PENDING') {
         throw new Error(`لا يمكن امتلاك الأمر من الحالة الحالية: ${record.status}`);
       }
-      if (Date.parse(record.expiresAt) <= Date.now()) {
+      const expiresAt = Date.parse(record.expiresAt);
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
         throw new Error('انتهت صلاحية الأمر المالي قبل المطالبة به');
       }
 
