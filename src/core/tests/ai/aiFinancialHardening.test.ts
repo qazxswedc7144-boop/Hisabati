@@ -269,7 +269,12 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       expect(command.executedTransactionId).toBeUndefined();
       const failedRecord = await aiCommandRepository.getRecordById(command.id);
       expect(failedRecord?.status).toBe('FAILED');
-    });
+
+      // A deliberate retry re-queues FAILED → PENDING before the next claim.
+      const retryTransaction = await aiService.confirmAndExecuteCommand(command.id);
+      expect(retryTransaction).toBeDefined();
+      const completedRecord = await aiCommandRepository.getRecordById(command.id);
+      expect(completedRecord?.status).toBe('DONE');
 
     it('SCENARIO 4: should mark as EXECUTED even if audit log fails AFTER transaction creation', async () => {
       const { aiService } = await import('@/core/services/ai/AIService');
