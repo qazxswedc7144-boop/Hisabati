@@ -35,6 +35,7 @@ import { runQuickAddModalTests } from './quickAddModal.test';
 import { tenantService } from '../services/TenantService';
 import { accountService } from '../services/account.service';
 import { FinancialAuditSnapshotP2B13TestSuite } from './financialAuditSnapshotP2B13.test';
+import { TransactionConcurrencySafetyTestSuite } from './transactionConcurrencySafety.test';
 
 async function main() {
   console.log('====================================================');
@@ -693,6 +694,25 @@ async function main() {
   }
 
   console.log('\n====================================================');
+  // --- ROUND 2-E.1 Transaction Concurrency Safety Tests ---
+  console.log('\\n--- [ROUND 2-E.1] Transaction Concurrency Safety Tests ---');
+  try {
+    const concurrencyResult = await TransactionConcurrencySafetyTestSuite.runAll();
+    console.log(`ROUND 2-E.1 Result: Passed ${concurrencyResult.passed}/${concurrencyResult.total}`);
+    totalPassed += concurrencyResult.passed;
+    totalFailed += concurrencyResult.failed;
+    totalCount += concurrencyResult.total;
+    if (concurrencyResult.failed > 0) {
+      for (const r of concurrencyResult.results.filter((x) => !x.passed)) {
+        console.error(`  ❌ [${r.id}] ${r.title}: ${r.error || 'Concurrency invariant failed'}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('ROUND 2-E.1 Transaction Concurrency Safety suite crashed:', err);
+    totalFailed += 1;
+    totalCount += 1;
+  }
+
   console.log(`🎉 GRAND TOTAL: ${totalPassed}/${totalCount} tests PASSED`);
   if (totalFailed > 0) {
     console.error(`⚠️ FAILED: ${totalFailed} tests`);
