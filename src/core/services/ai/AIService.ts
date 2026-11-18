@@ -211,23 +211,12 @@ export class AIService {
   }
 
   /**
-   * Cancels a command only while it is still PENDING, then removes its durable record.
+   * Cancels only an unclaimed PENDING command through an atomic repository transition.
    */
   public async cancelCommand(commandId: string): Promise<void> {
-    const record = await aiCommandRepository.getRecordById(commandId);
-    if (!record || record.status !== 'PENDING') {
-      if (record?.status === 'RUNNING') {
-        throw new Error('لا يمكن إلغاء أمر قيد التنفيذ');
-      }
-      return;
-    }
+    const command = await aiCommandRepository.cancelPendingCommand(commandId);
+    if (!command) return;
 
-    const expiresAt = Date.parse(record.expiresAt);
-    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return;
-
-    const command = record.command;
-    command.status = 'CANCELLED';
-    await aiCommandRepository.update(command);
     await aiAuditRepository.addLog({
       id: 'audit_cancel_' + Date.now(),
       requestId: command.id,
