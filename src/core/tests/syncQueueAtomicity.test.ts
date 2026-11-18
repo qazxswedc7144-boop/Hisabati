@@ -3,6 +3,7 @@ import { db } from '../database/db';
 import { syncEngine } from '../services/syncEngine.service';
 import { googleDriveService } from '../services/googleDrive.service';
 import { tenantService } from '../services/TenantService';
+import { DATABASE_SCHEMA_VERSION } from '../database/schemaVersion';
 
 interface SyncQueueAtomicityResult {
   id: string;
@@ -89,11 +90,14 @@ export class SyncQueueAtomicityTestSuite {
         if (first.id === second.id) throw new Error('Distinct operations unexpectedly share a queue row');
       });
 
-      // T-S4: No schema migration/unique index was introduced; v12 remains the active schema.
+      // T-S4: v13 is active for durable AI commands; syncQueue.operationId remains non-unique.
       await runTest('T-S4', async () => {
-        if (db.verno !== 12) {
-          throw new Error(`Expected unchanged Dexie schema v12; found v${db.verno}`);
+        if (DATABASE_SCHEMA_VERSION !== 13 || db.verno !== DATABASE_SCHEMA_VERSION) {
+          throw new Error(`Expected Dexie v13 to match DATABASE_SCHEMA_VERSION; found db=${db.verno}, constant=${DATABASE_SCHEMA_VERSION}`);
         }
+        const operationIdIndex = db.syncQueue.schema.indexes.find(index => index.name === 'operationId');
+        if (!operationIdIndex) throw new Error('syncQueue.operationId index is missing');
+        if (operationIdIndex.unique) throw new Error('syncQueue.operationId must remain non-unique; no unique index was authorized in ROUND 2-E.2');
       });
 
       // T-S5: Pre-existing pending/processing rows are retained and no new row is added.
