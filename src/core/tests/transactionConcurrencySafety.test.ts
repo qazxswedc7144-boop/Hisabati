@@ -18,12 +18,17 @@ function deferred<T = void>() {
 }
 
 async function waitForGate(promise: Promise<void>, label: string): Promise<void> {
-  await Promise.race([
-    promise,
-    new Promise<void>((_, reject) => {
-      setTimeout(() => reject(new Error(`Timed out waiting for concurrency gate: ${label}`)), 5000);
-    }),
-  ]);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      promise,
+      new Promise<void>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Timed out waiting for concurrency gate: ${label}`)), 5000);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 let sequence = 0;

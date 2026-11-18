@@ -645,7 +645,7 @@ export class FinancialTransactionEngine {
       if (!account) throw new Error('الحساب المرتبط غير موجود');
 
       const activeCurrency = resolveRequiredCurrency({
-        transactionCurrency: dto.currency || freshTrx.currency,
+        transactionCurrency: dto.currency,
         accountCurrency: account.currency,
         systemCurrency: freshSettings.currency,
       });

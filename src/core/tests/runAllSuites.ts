@@ -693,9 +693,8 @@ async function main() {
     totalCount += 1;
   }
 
-  console.log('\n====================================================');
   // --- ROUND 2-E.1 Transaction Concurrency Safety Tests ---
-  console.log('\\n--- [ROUND 2-E.1] Transaction Concurrency Safety Tests ---');
+  console.log('\n--- [ROUND 2-E.1] Transaction Concurrency Safety Tests ---');
   try {
     const concurrencyResult = await TransactionConcurrencySafetyTestSuite.runAll();
     console.log(`ROUND 2-E.1 Result: Passed ${concurrencyResult.passed}/${concurrencyResult.total}`);
@@ -713,6 +712,7 @@ async function main() {
     totalCount += 1;
   }
 
+  console.log('\n====================================================');
   console.log(`🎉 GRAND TOTAL: ${totalPassed}/${totalCount} tests PASSED`);
   if (totalFailed > 0) {
     console.error(`⚠️ FAILED: ${totalFailed} tests`);
