@@ -27,6 +27,7 @@ import { FinancialCoreHardeningTestSuite } from './financialCoreHardening.test';
 import { FinancialAuditPart2TestSuite } from './financialAuditPart2.test';
 import { FinancialHardeningPart3TestSuite } from './financialHardeningPart3.test';
 import { SyncHardeningPart1TestSuite } from './syncHardeningPart1.test';
+import { SyncQueueAtomicityTestSuite } from './syncQueueAtomicity.test';
 import { ImmutableLedgerTestSuite } from './immutableLedger.test';
 import { TrashCycleTestSuite } from './trashCycle.test';
 import { runTenantTests } from './tenant.test';
@@ -582,6 +583,25 @@ async function main() {
     }
   } catch (err: any) {
     console.error('Sync Hardening Part 1 Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // ROUND 2-E.2: Atomic Sync Queue — F-004
+  console.log('\\n--- [ROUND 2-E.2] Atomic Sync Queue Idempotency ---');
+  try {
+    const syncAtomic = await SyncQueueAtomicityTestSuite.runAll();
+    console.log(`Sync Queue Atomicity Result: Passed ${syncAtomic.passed}/${syncAtomic.total}`);
+    totalPassed += syncAtomic.passed;
+    totalFailed += syncAtomic.failed;
+    totalCount += syncAtomic.total;
+    if (syncAtomic.failed > 0) {
+      for (const result of syncAtomic.results.filter((item) => !item.passed)) {
+        console.error(`  ❌ [${result.id}] ${result.message}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Sync Queue Atomicity Suite crashed:', err);
     totalFailed++;
     totalCount++;
   }
