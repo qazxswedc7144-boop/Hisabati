@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { validateStructuredAICommand } from '@/core/services/ai/aiValidation';
 import { aiValidationService } from '@/core/services/ai/AIValidationService';
 import { db } from '@/core/database/db';
+import { aiCommandRepository } from '@/core/repositories/aiCommand.repository';
 import { Account } from '@/shared/types';
 import { tenantService } from '@/core/services/TenantService';
 import { useTenantStore } from '@/shared/stores/tenantStore';
@@ -23,6 +24,7 @@ describe('AI Financial Hardening (Round 2-A)', () => {
 
     await db.accounts.clear();
     await db.transactions.clear();
+    await db.aiCommands.clear();
     vi.clearAllMocks();
   });
 
@@ -231,7 +233,7 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       });
 
       const command = createBaseCommand('cmd_rbac_fail', 'op_rbac_1');
-      (aiService as any).pendingCommands.set(command.id, command);
+      await aiCommandRepository.add(command);
 
       await expect(aiService.confirmAndExecuteCommand(command.id))
         .rejects.toThrow('Permission Denied: transactions:create');
@@ -245,11 +247,12 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       vi.spyOn(rbacGuard, 'assertPermission').mockResolvedValue(undefined);
 
       const command = createBaseCommand('cmd_success', 'op_success_1');
-      (aiService as any).pendingCommands.set(command.id, command);
+      await aiCommandRepository.add(command);
 
       const tx = await aiService.confirmAndExecuteCommand(command.id);
       expect(tx).toBeDefined();
-      expect(command.status).toBe('EXECUTED');
+      const storedCommand = await aiCommandRepository.getById(command.id);
+      expect(storedCommand?.status).toBe('EXECUTED');
     });
 
     it('SCENARIO 3: should rollback to READY_FOR_CONFIRMATION if engine fails', async () => {
@@ -258,12 +261,20 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       vi.spyOn(transactionEngine, 'createTransaction').mockRejectedValueOnce(new Error('Engine Crash'));
 
       const command = createBaseCommand('cmd_retry', 'op_retry_1');
-      (aiService as any).pendingCommands.set(command.id, command);
+      await aiCommandRepository.add(command);
 
       await expect(aiService.confirmAndExecuteCommand(command.id)).rejects.toThrow('Engine Crash');
-      
-      expect(command.status).toBe('READY_FOR_CONFIRMATION'); 
+
+      expect(command.status).toBe('READY_FOR_CONFIRMATION');
       expect(command.executedTransactionId).toBeUndefined();
+      const failedRecord = await aiCommandRepository.getRecordById(command.id);
+      expect(failedRecord?.status).toBe('FAILED');
+
+      // A deliberate retry re-queues FAILED → PENDING before the next claim.
+      const retryTransaction = await aiService.confirmAndExecuteCommand(command.id);
+      expect(retryTransaction).toBeDefined();
+      const completedRecord = await aiCommandRepository.getRecordById(command.id);
+      expect(completedRecord?.status).toBe('DONE');
     });
 
     it('SCENARIO 4: should mark as EXECUTED even if audit log fails AFTER transaction creation', async () => {
@@ -273,14 +284,15 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       vi.spyOn(aiAuditRepository, 'addLog').mockRejectedValueOnce(new Error('Audit DB Full'));
 
       const command = createBaseCommand('cmd_audit_fail', 'op_audit_fail_1');
-      (aiService as any).pendingCommands.set(command.id, command);
+      await aiCommandRepository.add(command);
 
       // It should SUCCEED now because we isolated the audit failure in Round 2-D
       const tx = await aiService.confirmAndExecuteCommand(command.id);
       
       expect(tx).toBeDefined();
-      expect(command.status).toBe('EXECUTED');
-      expect(command.executedTransactionId).toBe(tx.id);
+      const storedCommand = await aiCommandRepository.getById(command.id);
+      expect(storedCommand?.status).toBe('EXECUTED');
+      expect(storedCommand?.executedTransactionId).toBe(tx.id);
     });
 
     it('SCENARIO 5: should prevent duplicate records on retry (Idempotency)', async () => {
@@ -288,16 +300,19 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       const opId = 'op_idem_final';
       
       const command = createBaseCommand('cmd_idem', opId);
-      (aiService as any).pendingCommands.set(command.id, command);
+      await aiCommandRepository.add(command);
 
       const tx1 = await aiService.confirmAndExecuteCommand(command.id);
-      
+
       command.status = 'READY_FOR_CONFIRMATION';
-      const tx2 = await aiService.confirmAndExecuteCommand(command.id);
-      
-      expect(tx1.id).toBe(tx2.id);
+      await expect(aiService.confirmAndExecuteCommand(command.id))
+        .rejects.toThrow(/EXECUTED|الحالة الحالية/);
+
+      const storedRecord = await aiCommandRepository.getRecordById(command.id);
+      expect(storedRecord?.status).toBe('DONE');
       const dbCount = await db.transactions.where('operationId').equals(opId).count();
       expect(dbCount).toBe(1);
+      expect(tx1).toBeDefined();
     });
 
     it('SCENARIO 6: should not change status to EXECUTED before successful engine call', async () => {
@@ -307,11 +322,12 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       const command = createBaseCommand('cmd_status_check', 'op_status_check');
       let statusDuringEngineCall: string = '';
       vi.spyOn(transactionEngine, 'createTransaction').mockImplementationOnce(async () => {
-        statusDuringEngineCall = command.status; 
+        const storedCommand = await aiCommandRepository.getById(command.id);
+        statusDuringEngineCall = storedCommand?.status || '';
         throw new Error('Simulated Failure');
       });
 
-      (aiService as any).pendingCommands.set(command.id, command);
+      await aiCommandRepository.add(command);
 
       try { await aiService.confirmAndExecuteCommand(command.id); } catch {}
       
@@ -325,7 +341,7 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       vi.spyOn(transactionEngine, 'createTransaction').mockRejectedValueOnce(new Error('DB Fail'));
 
       const command = createBaseCommand('cmd_no_id_on_fail', 'op_no_id_fail');
-      (aiService as any).pendingCommands.set(command.id, command);
+      await aiCommandRepository.add(command);
 
       try { await aiService.confirmAndExecuteCommand(command.id); } catch {}
       
@@ -336,7 +352,7 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       const { aiService } = await import('@/core/services/ai/AIService');
       const command = createBaseCommand('cmd_already_exec', 'op_already');
       command.status = 'EXECUTED';
-      (aiService as any).pendingCommands.set(command.id, command);
+      await aiCommandRepository.add(command);
 
       await expect(aiService.confirmAndExecuteCommand(command.id))
         .rejects.toThrow(/لا يمكن تنفيذ أمر مالي في حالته الحالية: EXECUTED/);
@@ -346,7 +362,7 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       const { aiService } = await import('@/core/services/ai/AIService');
       const command = createBaseCommand('cmd_still_pending', 'op_pending');
       command.status = 'PENDING_VALIDATION';
-      (aiService as any).pendingCommands.set(command.id, command);
+      await aiCommandRepository.add(command);
 
       await expect(aiService.confirmAndExecuteCommand(command.id))
         .rejects.toThrow(/يجب أن يكون الأمر جاهزاً للتأكيد/);
@@ -360,7 +376,7 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       const command = createBaseCommand('cmd_integrity', 'op_integ_1');
       command.amount = 123.45;
       command.amountMinor = 12345;
-      (aiService as any).pendingCommands.set(command.id, command);
+      await aiCommandRepository.add(command);
 
       await aiService.confirmAndExecuteCommand(command.id);
 
@@ -376,12 +392,12 @@ describe('AI Financial Hardening (Round 2-A)', () => {
     it('SCENARIO 11: should prevent execution if user cancels the command', async () => {
       const { aiService } = await import('@/core/services/ai/AIService');
       const command = createBaseCommand('cmd_cancel_test', 'op_cancel');
-      (aiService as any).pendingCommands.set(command.id, command);
+      await aiCommandRepository.add(command);
 
       await aiService.cancelCommand(command.id);
-      expect(command.status).toBe('CANCELLED');
+      expect(await aiCommandRepository.getRecordById(command.id)).toBeUndefined();
 
-      // cancellation removes it from registry
+      // cancellation removes it from durable storage
       await expect(aiService.confirmAndExecuteCommand(command.id))
         .rejects.toThrow(/الأمر المالي غير موجود أو انتهت صلاحيته/);
     });
@@ -394,17 +410,19 @@ describe('AI Financial Hardening (Round 2-A)', () => {
 
       const command = createBaseCommand('cmd_happy_path', 'op_happy_path');
       command.status = 'PENDING_VALIDATION'; // Start at the beginning
-      (aiService as any).pendingCommands.set(command.id, command);
+      await aiCommandRepository.add(command);
 
       // 1. App validates command (User sees the card)
       await aiValidationService.validate(command);
       expect(command.status).toBe('READY_FOR_CONFIRMATION');
+      await aiCommandRepository.update(command);
 
       // 2. User confirms (User clicks button)
       await aiService.confirmAndExecuteCommand(command.id);
 
       expect(createSpy).toHaveBeenCalled();
-      expect(command.status).toBe('EXECUTED');
+      const storedCommand = await aiCommandRepository.getById(command.id);
+      expect(storedCommand?.status).toBe('EXECUTED');
     });
 
     it('SCENARIO 12: should verify audit log recording upon successful execution', async () => {
@@ -413,7 +431,7 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       const addLogSpy = vi.spyOn(aiAuditRepository, 'addLog');
 
       const command = createBaseCommand('cmd_audit_verify', 'op_audit_verify_1');
-      (aiService as any).pendingCommands.set(command.id, command);
+      await aiCommandRepository.add(command);
 
       await aiService.confirmAndExecuteCommand(command.id);
 
@@ -430,14 +448,14 @@ describe('AI Financial Hardening (Round 2-A)', () => {
         const { aiService } = await import('@/core/services/ai/AIService');
         const editCmd = createBaseCommand('cmd_edit', 'op_edit');
         editCmd.intent = 'EDIT_TRANSACTION_REQUEST';
-        (aiService as any).pendingCommands.set(editCmd.id, editCmd);
+        await aiCommandRepository.add(editCmd);
 
         await expect(aiService.confirmAndExecuteCommand(editCmd.id))
           .rejects.toThrow(/غير مدعومة حالياً عبر المساعد/);
 
         const delCmd = createBaseCommand('cmd_del', 'op_del');
         delCmd.intent = 'DELETE_TRANSACTION_REQUEST';
-        (aiService as any).pendingCommands.set(delCmd.id, delCmd);
+        await aiCommandRepository.add(delCmd);
 
         await expect(aiService.confirmAndExecuteCommand(delCmd.id))
           .rejects.toThrow(/غير مدعومة حالياً عبر المساعد/);
@@ -450,14 +468,10 @@ describe('AI Financial Hardening (Round 2-A)', () => {
         const cmd = createBaseCommand('cmd_recover', 'op_recover');
         await aiCommandRepository.add(cmd);
 
-        // Clear memory to simulate restart
-        (aiService as any).pendingCommands.clear();
-        expect(aiService.getPendingCommand(cmd.id)).toBeUndefined();
-
-        // Trigger manual reload
-        await (aiService as any).loadPendingFromStorage();
-
-        const recovered = aiService.getPendingCommand(cmd.id);
+        // A fresh service instance must read the durable record without an in-memory cache.
+        const { AIService } = await import('@/core/services/ai/AIService');
+        const restartedService = new AIService();
+        const recovered = await restartedService.getPendingCommand(cmd.id);
         expect(recovered).toBeDefined();
         expect(recovered?.operationId).toBe('op_recover');
         expect(recovered?.status).toBe('READY_FOR_CONFIRMATION');
@@ -471,11 +485,12 @@ describe('AI Financial Hardening (Round 2-A)', () => {
         vi.spyOn(aiAuditRepository, 'addLog').mockRejectedValueOnce(new Error('Audit Failure'));
 
         const cmd = createBaseCommand('cmd_audit_fail_isolated', 'op_audit_fail_isolated');
-        (aiService as any).pendingCommands.set(cmd.id, cmd);
+        await aiCommandRepository.add(cmd);
 
         const tx = await aiService.confirmAndExecuteCommand(cmd.id);
         expect(tx).toBeDefined();
-        expect(cmd.status).toBe('EXECUTED');
+        const executedCommand = await aiService.getPendingCommand(cmd.id);
+        expect(executedCommand?.status).toBe('EXECUTED');
         // Command should still be marked executed in storage
         const stored = await aiService.getPendingCommand(cmd.id);
         expect(stored?.status).toBe('EXECUTED');
@@ -487,20 +502,21 @@ describe('AI Financial Hardening (Round 2-A)', () => {
         const opId = 'op_dup_recovery';
         
         const cmd = createBaseCommand('cmd_dup', opId);
-        (aiService as any).pendingCommands.set(cmd.id, cmd);
+        await aiCommandRepository.add(cmd);
 
-        // 1. Execute first time
+        // 1. Execute first time and persist DONE.
         const tx1 = await aiService.confirmAndExecuteCommand(cmd.id);
-        
-        // 2. Simulate failure where status didn't update to EXECUTED in UI/memory but TX exists in DB
-        cmd.status = 'READY_FOR_CONFIRMATION';
-        
-        // 3. Retry execution
-        const tx2 = await aiService.confirmAndExecuteCommand(cmd.id);
 
-        expect(tx1.id).toBe(tx2.id);
+        // 2. A stale UI attempts to retry after completion.
+        cmd.status = 'READY_FOR_CONFIRMATION';
+        await expect(aiService.confirmAndExecuteCommand(cmd.id))
+          .rejects.toThrow(/EXECUTED|الحالة الحالية/);
+
+        const storedRecord = await aiCommandRepository.getRecordById(cmd.id);
+        expect(storedRecord?.status).toBe('DONE');
         const count = await db.transactions.where('operationId').equals(opId).count();
         expect(count).toBe(1);
+        expect(tx1).toBeDefined();
       });
     });
   });

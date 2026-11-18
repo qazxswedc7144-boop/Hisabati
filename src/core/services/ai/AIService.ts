@@ -22,28 +22,9 @@ export class AIService {
   private lastRequestTimestamp = 0;
   private minIntervalMs = 200;
 
-  // In-memory active structured commands registry (mirrored in Dexie)
-  private pendingCommands = new Map<string, StructuredAICommand>();
-
   constructor() {
     this.selectBestProvider();
-    this.loadPendingFromStorage();
   }
-
-  /**
-   * Loads pending commands from Dexie to memory for recovery after restart.
-   */
-  private async loadPendingFromStorage(): Promise<void> {
-    try {
-      const stored = await aiCommandRepository.getAllPending();
-      for (const cmd of stored) {
-        this.pendingCommands.set(cmd.id, cmd);
-      }
-    } catch (err) {
-      console.error('[AIService] Failed to load pending commands from storage:', err);
-    }
-  }
-
 
   /**
    * Evaluates environment and selects the best available provider
@@ -112,9 +93,8 @@ export class AIService {
         response.isOfflineFallback = true;
       }
 
-      // If command generated, register into pending commands registry and validate immediately
+      // If a command is generated, validate it and persist its durable record.
       if (response.command) {
-        this.pendingCommands.set(response.command.id, response.command);
         // Pre-validate to move from PENDING_VALIDATION to READY_FOR_CONFIRMATION or REJECTED
         await aiValidationService.validate(response.command);
         // Persist to Dexie for recovery
@@ -152,108 +132,107 @@ export class AIService {
    * This is the ONLY legitimate execution gate.
    */
   public async confirmAndExecuteCommand(commandId: string): Promise<Transaction> {
-    const command = this.pendingCommands.get(commandId);
-    if (!command) {
-      throw new Error('الأمر المالي غير موجود أو انتهت صلاحيته');
+    // Preserve the prior retry path: explicitly re-queue retryable FAILED commands.
+    const existingRecord = await aiCommandRepository.getRecordById(commandId);
+    if (existingRecord?.status === 'FAILED') {
+      await aiCommandRepository.requeueFailedCommand(commandId);
     }
 
-    // 0. Strict RBAC Guard: assert ai:query AND specific mutation permission
-    const { rbacGuard } = await import('../rbac/RBACGuard.service');
-    
-    // Always check ai:query first
-    await rbacGuard.assertPermission('ai:query', {
-      targetType: 'ai',
-      targetId: commandId,
-      details: `استخدام المساعد لتنفيذ: ${command.intent}`,
-    });
-
-    // Map intent to specific financial permission
-    const intentPermissionMap: Record<string, Permission> = {
-      'CREATE_TRANSACTION_REQUEST': 'transactions:create',
-      'EDIT_TRANSACTION_REQUEST': 'transactions:update',
-      'DELETE_TRANSACTION_REQUEST': 'transactions:delete',
-    };
-
-    const requiredFinancialPermission = intentPermissionMap[command.intent];
-    if (requiredFinancialPermission) {
-      await rbacGuard.assertPermission(requiredFinancialPermission, {
-        targetType: 'transaction',
-        targetId: command.accountId,
-        details: `تنفيذ أمر مالي مولد بالذكاء الاصطناعي: ${command.intent}`,
-      });
-    }
-
-    // Strict State Guard: Execution is only allowed for commands in READY_FOR_CONFIRMATION or CONFIRMED (retry) state
-    if (command.status !== 'READY_FOR_CONFIRMATION' && command.status !== 'CONFIRMED') {
-      throw new Error(`لا يمكن تنفيذ أمر مالي في حالته الحالية: ${command.status}. يجب أن يكون الأمر جاهزاً للتأكيد.`);
-    }
-
-    // Strict Zod Runtime Schema validation
-    const schemaResult = validateStructuredAICommand(command);
-    if (!schemaResult.success) {
-      throw new Error('بيانات الأمر المالي غير صالحة وفق المعايير التقنية');
-    }
-
-    // Final integrity check before execution (business rules)
-    const valResult = await aiValidationService.validate(command);
-    if (!valResult.isValid) {
-      throw new Error(valResult.errors[0] || 'تعذر التحقق من صحة العملية قبل التنفيذ النهائي');
-    }
-
-    if (!command.accountId || !command.operationId || typeof command.amountMinor !== 'number' || command.amountMinor < 0) {
-      throw new Error('بيانات الأمر المالي ناقصة أو غير صالحة بعد التحقق النهائي');
-    }
+    // Claim first, then validate the exact persisted payload that this tab owns.
+    const claimedRecord = await aiCommandRepository.claimCommand(commandId);
+    const command = claimedRecord.command;
 
     try {
-      // Transition status to CONFIRMED
+      // Strict RBAC Guard: assert ai:query AND specific mutation permission.
+      const { rbacGuard } = await import('../rbac/RBACGuard.service');
+      await rbacGuard.assertPermission('ai:query', {
+        targetType: 'ai',
+        targetId: commandId,
+        details: `استخدام المساعد لتنفيذ: ${command.intent}`,
+      });
+
+      const intentPermissionMap: Record<string, Permission> = {
+        'CREATE_TRANSACTION_REQUEST': 'transactions:create',
+        'EDIT_TRANSACTION_REQUEST': 'transactions:update',
+        'DELETE_TRANSACTION_REQUEST': 'transactions:delete',
+      };
+
+      const requiredFinancialPermission = intentPermissionMap[command.intent];
+      if (requiredFinancialPermission) {
+        await rbacGuard.assertPermission(requiredFinancialPermission, {
+          targetType: 'transaction',
+          targetId: command.accountId,
+          details: `تنفيذ أمر مالي مولد بالذكاء الاصطناعي: ${command.intent}`,
+        });
+      }
+
+      if (command.status !== 'READY_FOR_CONFIRMATION' && command.status !== 'CONFIRMED') {
+        throw new Error(`لا يمكن تنفيذ أمر مالي في حالته الحالية: ${command.status}. يجب أن يكون الأمر جاهزاً للتأكيد.`);
+      }
+
+      const schemaResult = validateStructuredAICommand(command);
+      if (!schemaResult.success) {
+        throw new Error('بيانات الأمر المالي غير صالحة وفق المعايير التقنية');
+      }
+
+      const valResult = await aiValidationService.validate(command);
+      if (!valResult.isValid) {
+        throw new Error(valResult.errors[0] || 'تعذر التحقق من صحة العملية قبل التنفيذ النهائي');
+      }
+
+      if (!command.accountId || !command.operationId || typeof command.amountMinor !== 'number' || command.amountMinor < 0) {
+        throw new Error('بيانات الأمر المالي ناقصة أو غير صالحة بعد التحقق النهائي');
+      }
+
       command.status = 'CONFIRMED';
       await aiCommandRepository.update(command);
 
-      // Execute strictly via AITools -> FinancialTransactionEngine
+      // Execute strictly via AITools -> FinancialTransactionEngine.
       const transaction = await aiTools.executeConfirmedCommand(command);
-
-      // Update in-memory registry and storage with final state
-      this.pendingCommands.set(commandId, command);
-      await aiCommandRepository.update(command);
+      await aiCommandRepository.markDone(command);
 
       return transaction;
     } catch (err) {
-      // Rollback status if it's not EXECUTED (meaning engine likely failed or rejected)
-      // We cast to any to bypass TS narrowing from line 167
-      if ((command.status as any) !== 'EXECUTED') {
-        command.status = 'READY_FOR_CONFIRMATION';
-        await aiCommandRepository.update(command);
+      // Persist a terminal lifecycle state; a failed command is not silently re-claimed.
+      try {
+        if (command.status === 'EXECUTED') {
+          await aiCommandRepository.markDone(command);
+        } else {
+          if (command.status === 'CONFIRMED') {
+            command.status = 'READY_FOR_CONFIRMATION';
+          }
+          await aiCommandRepository.markFailed(command);
+        }
+      } catch (persistenceError) {
+        console.error('[AIService] Failed to persist command terminal state:', persistenceError);
       }
       throw err;
     }
   }
 
   /**
-   * Cancels a pending structured command, leaving the database completely untouched.
+   * Cancels only an unclaimed PENDING command through an atomic repository transition.
    */
   public async cancelCommand(commandId: string): Promise<void> {
-    const command = this.pendingCommands.get(commandId);
-    if (command) {
-      command.status = 'CANCELLED';
-      await aiCommandRepository.update(command);
-      await aiAuditRepository.addLog({
-        id: 'audit_cancel_' + Date.now(),
-        requestId: command.id,
-        intent: command.intent,
-        timestamp: new Date().toISOString(),
-        status: 'canceled',
-        provider: 'user_action',
-        confidence: 1.0,
-        action: 'User cancelled command execution',
-        confirmed: false,
-      });
-      this.pendingCommands.delete(commandId);
-      await aiCommandRepository.delete(commandId);
-    }
+    const command = await aiCommandRepository.cancelPendingCommand(commandId);
+    if (!command) return;
+
+    await aiAuditRepository.addLog({
+      id: 'audit_cancel_' + Date.now(),
+      requestId: command.id,
+      intent: command.intent,
+      timestamp: new Date().toISOString(),
+      status: 'canceled',
+      provider: 'user_action',
+      confidence: 1.0,
+      action: 'User cancelled command execution',
+      confirmed: false,
+    });
+    await aiCommandRepository.delete(commandId);
   }
 
-  public getPendingCommand(commandId: string): StructuredAICommand | undefined {
-    return this.pendingCommands.get(commandId);
+  public async getPendingCommand(commandId: string): Promise<StructuredAICommand | undefined> {
+    return await aiCommandRepository.getById(commandId);
   }
 }
 

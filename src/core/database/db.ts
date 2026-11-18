@@ -27,6 +27,7 @@ import {
   FinancialAuditEntry,
   FinancialSnapshot,
   PendingSideEffect,
+  AICommandRecord,
 } from '@/shared/types';
 
 export class HisabatiDatabase extends Dexie {
@@ -62,6 +63,7 @@ export class HisabatiDatabase extends Dexie {
   financialAuditLogs!: Table<FinancialAuditEntry, string>;
   financialSnapshots!: Table<FinancialSnapshot, string>;
   pendingSideEffects!: Table<PendingSideEffect, string>;
+  aiCommands!: Table<AICommandRecord, string>;
 
   constructor(dbName: string = 'HisabatiDatabase') {
     super(dbName);
@@ -337,6 +339,83 @@ export class HisabatiDatabase extends Dexie {
           };
         }
       });
+    });
+
+    // Version 13 Schema (Durable AI Command State Machine)
+    this.version(13).stores({
+      accounts: 'id, name, phone, archived, dueDate, createdAt, updatedAt, [archived+dueDate]',
+      transactions: 'id, accountId, type, date, operationId, status, createdAt, updatedAt, [accountId+date]',
+      settings: 'id, key, updatedAt',
+      syncQueue: 'id, entityType, entityId, operation, operationId, status, createdAt',
+      syncAuditLogs: 'id, action, timestamp, deviceId, success',
+      messages: 'id, messageId, channel, type, status, recipient, priority, operationId, createdAt, scheduledAt',
+      messageTemplates: 'id, name, type, defaultChannel, active, createdAt',
+      inAppNotifications: 'id, type, priority, read, createdAt, idempotencyKey, relatedEntityId, [type+idempotencyKey]',
+      scheduledMessages: 'id, channel, status, scheduledAt, nextRunAt, operationId, createdAt',
+      messageQueue: 'id, messageId, channel, status, operationId, nextRetryAt, createdAt',
+      aiAuditLogs: 'id, requestId, intent, status, provider, confirmed, timestamp',
+      users: 'id, email, phone, role, activeTeamId, createdAt',
+      teams: 'id, name, ownerId, createdAt',
+      teamMembers: 'id, teamId, userId, role, status, [teamId+userId], createdAt',
+      auditTrail: 'id, sequenceNumber, timestamp, action, targetType, targetId, riskLevel, [targetType+targetId]',
+      trash: 'id, entityType, entityId, deletedAt, expiresAt, deletedBy, status, [entityType+entityId]',
+      safetyBackups: 'id, createdAt, type',
+      debts: 'id, accountId, dueDate, status, [accountId+status], [status+dueDate]',
+      financialAuditLogs: 'id, sequenceNumber, eventType, operationId, targetType, targetId, organizationId, timestamp',
+      financialSnapshots: 'id, organizationId, ledgerRevision, createdAt',
+      pendingSideEffects: 'id, sourceType, sourceId, effectType, createdAt',
+      aiCommands: '&commandId, operationId, status, expiresAt, [status+expiresAt]',
+    }).upgrade(async (tx) => {
+      // Migrate the legacy JSON-backed command registry atomically.
+      const settingsTable = tx.table('settings');
+      const legacyEntry = await settingsTable.get('pending_ai_commands');
+      if (!legacyEntry) return;
+
+      if (typeof legacyEntry.value !== 'string') {
+        throw new Error('Cannot migrate pending_ai_commands: legacy settings value is not JSON text.');
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(legacyEntry.value);
+      } catch {
+        // Throwing aborts the Dexie upgrade transaction; the v12 setting remains intact.
+        throw new Error('Cannot migrate pending_ai_commands: invalid JSON; v13 migration rolled back.');
+      }
+
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Cannot migrate pending_ai_commands: expected an object keyed by commandId.');
+      }
+
+      const migratedAt = new Date();
+      const nowIso = migratedAt.toISOString();
+      const expiresAt = new Date(migratedAt.getTime() + 30 * 60 * 1000).toISOString();
+      const entries = Object.entries(parsed as Record<string, unknown>);
+      const records: AICommandRecord[] = entries.map(([legacyId, rawCommand]) => {
+        if (!rawCommand || typeof rawCommand !== 'object' || Array.isArray(rawCommand)) {
+          throw new Error(`Cannot migrate pending_ai_commands: invalid command record ${legacyId}.`);
+        }
+
+        const command = rawCommand as Record<string, unknown>;
+        if (typeof command.id !== 'string' || command.id !== legacyId || typeof command.operationId !== 'string' || !command.operationId) {
+          throw new Error(`Cannot migrate pending_ai_commands: invalid identity or operationId for ${legacyId}.`);
+        }
+
+        return {
+          commandId: legacyId,
+          operationId: command.operationId,
+          status: 'PENDING',
+          expiresAt,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          command: command as unknown as AICommandRecord['command'],
+        };
+      });
+
+      if (records.length > 0) {
+        await tx.table('aiCommands').bulkAdd(records);
+      }
+      await settingsTable.delete('pending_ai_commands');
     });
   }
 }

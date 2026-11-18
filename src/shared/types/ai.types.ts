@@ -29,6 +29,19 @@ export type AICommandStatus =
   | 'REJECTED'
   | 'CANCELLED';
 
+export type AICommandLifecycleStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED';
+
+export interface AICommandRecord {
+  commandId: string;
+  operationId: string;
+  status: AICommandLifecycleStatus;
+  claimedAt?: string;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+  command: StructuredAICommand;
+}
+
 export interface StructuredAICommand {
   id: string;
   intent: 'CREATE_TRANSACTION_REQUEST' | 'EDIT_TRANSACTION_REQUEST' | 'DELETE_TRANSACTION_REQUEST';
