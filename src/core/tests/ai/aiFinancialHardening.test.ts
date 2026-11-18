@@ -275,6 +275,7 @@ describe('AI Financial Hardening (Round 2-A)', () => {
       expect(retryTransaction).toBeDefined();
       const completedRecord = await aiCommandRepository.getRecordById(command.id);
       expect(completedRecord?.status).toBe('DONE');
+    });
 
     it('SCENARIO 4: should mark as EXECUTED even if audit log fails AFTER transaction creation', async () => {
       const { aiService } = await import('@/core/services/ai/AIService');
