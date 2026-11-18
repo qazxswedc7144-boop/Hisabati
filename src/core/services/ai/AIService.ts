@@ -93,7 +93,7 @@ export class AIService {
         response.isOfflineFallback = true;
       }
 
-      // If command generated, register into pending commands registry and validate immediately
+      // If a command is generated, validate it and persist its durable record.
       if (response.command) {
         // Pre-validate to move from PENDING_VALIDATION to READY_FOR_CONFIRMATION or REJECTED
         await aiValidationService.validate(response.command);
