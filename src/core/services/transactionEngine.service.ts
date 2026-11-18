@@ -606,6 +606,8 @@ export class FinancialTransactionEngine {
       details: `تعديل القيد المالي رقم ${id}`,
     });
 
+    // Initial lookup is only a fast not-found check. Never use this snapshot
+    // for status validation, balance calculations, or audit state.
     const existing = await db.transactions.get(id);
     if (!existing) throw new Error(`العملية رقم ${id} غير موجودة`);
 
@@ -613,123 +615,104 @@ export class FinancialTransactionEngine {
       throw new Error('isRemote ممنوع خارج محرك المزامنة (syncEngine)');
     }
 
-    if (!this.canEditTransaction(existing) && !options?.isRemote) {
-      throw new Error('لا يمكن تعديل عملية مرحلة (POSTED) أو معكوسة (REVERSED)');
-    }
+    const freshSettings = await settingsRepository.getSettings();
+    const activeDb = getDb();
+    const { updatedTrx, targetAccount } = await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, async (transaction) => {
+      // Authoritative read and immutable-ledger validation are atomic with write.
+      const freshTrx = await transaction.table('transactions').get(id) as Transaction | undefined;
+      if (!freshTrx) throw new Error(`العملية رقم ${id} غير موجودة`);
 
-    if (options?.isRemote) {
-      const currentStatus = existing.status || 'posted';
-      
-      // رفض مطلق لتعديل REVERSED
-      if (currentStatus === 'reversed') {
-        throw new Error('لا يمكن تعديل قيد معكوس (REVERSED) حتى من المزامنة');
-      }
-      
-      // POSTED: يُسمح فقط بتعديل الحقول الوصفية
-      if (currentStatus === 'posted') {
-        if (!this.isOnlyMetadataChange(existing, dto)) {
+      const currentStatus = freshTrx.status || 'posted'; // Legacy policy: missing = POSTED
+      if (!options?.isRemote) {
+        if (!this.canEditTransaction(freshTrx)) {
+          throw new Error('لا يمكن تعديل عملية مرحلة (POSTED) أو معكوسة (REVERSED)');
+        }
+      } else {
+        if (currentStatus === 'reversed') {
+          throw new Error('لا يمكن تعديل قيد معكوس (REVERSED) حتى من المزامنة');
+        }
+        if (currentStatus === 'posted' && !this.isOnlyMetadataChange(freshTrx, dto)) {
           throw new Error('لا يمكن تعديل الحقول المالية لقيد مرحّل (POSTED) عبر المزامنة. الحقول المسموحة: الملاحظة، رقم الفاتورة، المستند');
         }
       }
-    }
 
-    const oldAccountId = existing.accountId;
-    const targetAccountId = dto.accountId || oldAccountId;
+      const oldAccountId = freshTrx.accountId;
+      const targetAccountId = dto.accountId || oldAccountId;
+      const account = await transaction.table('accounts').get(targetAccountId) as Account | undefined;
+      if (!account) throw new Error('الحساب المرتبط غير موجود');
 
-    const [account, freshSettings] = await Promise.all([
-      db.accounts.get(targetAccountId),
-      settingsRepository.getSettings()
-    ]);
+      const activeCurrency = resolveRequiredCurrency({
+        transactionCurrency: dto.currency,
+        accountCurrency: account.currency,
+        systemCurrency: freshSettings.currency,
+      });
 
-    if (!account) throw new Error('الحساب المرتبط غير موجود');
+      let financial;
+      if (dto.amountMinor !== undefined || dto.amount !== undefined) {
+        financial = validateAndResolveFinancialAmount(dto.amount, dto.amountMinor, activeCurrency);
+      } else {
+        financial = { amount: freshTrx.amount, amountMinor: freshTrx.amountMinor };
+      }
 
-    const activeCurrency = resolveRequiredCurrency({
-      transactionCurrency: dto.currency,
-      accountCurrency: account.currency,
-      systemCurrency: freshSettings.currency,
-    });
+      const finalUpdatedTrx: Transaction = {
+        ...freshTrx,
+        accountId: targetAccountId,
+        type: dto.type || freshTrx.type,
+        amount: financial.amount,
+        amountMinor: financial.amountMinor,
+        currency: activeCurrency,
+        date: dto.date || freshTrx.date,
+        note: dto.note !== undefined ? (dto.note.trim() || undefined) : freshTrx.note,
+        receiptNumber: dto.receiptNumber !== undefined ? (dto.receiptNumber.trim() || undefined) : freshTrx.receiptNumber,
+        updatedAt: new Date().toISOString(),
+      };
 
-    // Resolve and validate financial amount (Source of Truth: amountMinor)
-    // If a new value is provided in DTO, it takes precedence. 
-    // If only one of (amount, amountMinor) is provided, the other is derived.
-    let financial;
-    if (dto.amountMinor !== undefined || dto.amount !== undefined) {
-      financial = validateAndResolveFinancialAmount(dto.amount, dto.amountMinor, activeCurrency);
-    } else {
-      financial = { amount: existing.amount, amountMinor: existing.amountMinor };
-    }
+      await transaction.table('transactions').put(finalUpdatedTrx);
 
-    const updatedTrx: Transaction = {
-      ...existing,
-      accountId: targetAccountId,
-      type: dto.type || existing.type,
-      amount: financial.amount,
-      amountMinor: financial.amountMinor,
-      currency: activeCurrency,
-      date: dto.date || existing.date,
-      note: dto.note !== undefined ? (dto.note.trim() || undefined) : existing.note,
-      receiptNumber: dto.receiptNumber !== undefined ? (dto.receiptNumber.trim() || undefined) : existing.receiptNumber,
-      updatedAt: new Date().toISOString(),
-    };
-
-    const activeDb = getDb();
-    await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, async (transaction) => {
-      await transaction.table('transactions').put(updatedTrx);
-      
-      // If financial fields or status changed, we need to update balance.
-      // For UPDATE, it's safer to rebuild if it's complex, but we can do a smart delta:
-      // Subtract old posted effect, add new posted effect.
-      
-      const statusChanged = existing.status !== updatedTrx.status;
-      const amountChanged = existing.amountMinor !== updatedTrx.amountMinor;
-      const typeChanged = existing.type !== updatedTrx.type;
+      const statusChanged = currentStatus !== (finalUpdatedTrx.status || 'posted');
+      const amountChanged = freshTrx.amountMinor !== finalUpdatedTrx.amountMinor;
+      const typeChanged = freshTrx.type !== finalUpdatedTrx.type;
       const accountChanged = oldAccountId !== targetAccountId;
 
       if (statusChanged || amountChanged || typeChanged || accountChanged) {
-        // Safe Choice: If it's a complex multi-field change or account swap, perform O(N) authoritative rebuild 
-        // to ensure integrity. The O(N) impact is acceptable for "Edit" which is less frequent than "Create".
         await this.recalculateAccountBalance(oldAccountId, activeCurrency, transaction);
         if (accountChanged) {
           await this.recalculateAccountBalance(targetAccountId, activeCurrency, transaction);
         }
       }
 
-      // Log update atomically
       await financialAuditService.logFinancialEvent({
         eventType: 'TRANSACTION_UPDATE',
         targetType: 'transaction',
         targetId: id,
-        amountMinor: updatedTrx.amountMinor,
+        amountMinor: finalUpdatedTrx.amountMinor,
         currency: activeCurrency,
-        operationId: updatedTrx.operationId,
+        operationId: finalUpdatedTrx.operationId,
         beforeState: {
-          amountMinor: existing.amountMinor || 0,
-          accountId: existing.accountId,
-          type: existing.type,
-          revision: existing.id,
+          amountMinor: freshTrx.amountMinor || 0,
+          accountId: freshTrx.accountId,
+          type: freshTrx.type,
+          revision: freshTrx.id,
         },
         afterState: {
-          amountMinor: updatedTrx.amountMinor,
-          accountId: targetAccountId,
-          type: updatedTrx.type,
-          revision: id,
+          amountMinor: finalUpdatedTrx.amountMinor,
+          accountId: finalUpdatedTrx.accountId,
+          type: finalUpdatedTrx.type,
+          revision: finalUpdatedTrx.id,
         },
         tx: transaction
       });
+
+      return { updatedTrx: finalUpdatedTrx, targetAccount: account };
     });
 
-    await this.postProcessTransaction(updatedTrx, 'UPDATE', currentActor, account, options);
-
+    await this.postProcessTransaction(updatedTrx, 'UPDATE', currentActor, targetAccount, options);
     return updatedTrx;
   }
 
-  /**
-   * Deletes a transaction and recalculates the affected account balance.
-   */
   async deleteTransaction(id: string, actor?: AuditActor, options?: { isRemote?: boolean }): Promise<boolean> {
     const currentActor = actor || rbacGuard.getActiveActor();
 
-    // Strict RBAC Guard: assert transactions:delete permission
     await rbacGuard.assertPermission('transactions:delete', {
       actor: currentActor,
       targetType: 'transaction',
@@ -737,78 +720,72 @@ export class FinancialTransactionEngine {
       details: `حذف القيد المالي رقم ${id}`,
     });
 
+    // Initial lookup is only an optimization; state is re-read and revalidated
+    // under the same Dexie read-write transaction that performs deletion.
     const existing = await db.transactions.get(id);
-    if (!existing) {
-      return false;
-    }
+    if (!existing) return false;
 
     if (options?.isRemote && !this.isInsideSyncApply()) {
       throw new Error('isRemote ممنوع خارج محرك المزامنة (syncEngine)');
     }
 
-    if (!this.canDeleteTransaction(existing) && !options?.isRemote) {
-      throw new Error('لا يمكن حذف عملية مرحلة (POSTED) أو معكوسة (REVERSED)');
-    }
-
-    if (options?.isRemote) {
-      const currentStatus = existing.status || 'posted';
-      
-      if (currentStatus === 'posted') {
-        throw new Error('لا يمكن حذف قيد مرحّل (POSTED) عبر المزامنة. يجب إنشاء قيد عكسي بدلاً من ذلك');
-      }
-      if (currentStatus === 'reversed') {
-        throw new Error('لا يمكن حذف قيد معكوس (REVERSED)');
-      }
-      // DRAFT فقط يُسمح بحذفه من Sync
-    }
-
-    const accountId = existing.accountId;
-    const systemCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER');
-
-    // Resolve currency for balance recalculation
-    const activeCurrency = resolveRequiredCurrency({
-      transactionCurrency: existing.currency,
-      systemCurrency,
-    });
-
-    let deleted = false;
+    const fallbackSystemCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER');
     const activeDb = getDb();
-    await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, activeDb.settings, async (transaction) => {
-      // Re-verify existence inside transaction to prevent concurrent double-delete/recalculate race
-      const trxToDelete = await transaction.table('transactions').get(id);
-      if (!trxToDelete) return;
+    const deletedTransaction = await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, activeDb.settings, async (transaction) => {
+      const trxToDelete = await transaction.table('transactions').get(id) as Transaction | undefined;
+      if (!trxToDelete) return undefined;
+
+      const currentStatus = trxToDelete.status || 'posted'; // Legacy policy: missing = POSTED
+      if (!options?.isRemote) {
+        if (!this.canDeleteTransaction(trxToDelete)) {
+          throw new Error('لا يمكن حذف عملية مرحلة (POSTED) أو معكوسة (REVERSED)');
+        }
+      } else {
+        if (currentStatus === 'posted') {
+          throw new Error('لا يمكن حذف قيد مرحّل (POSTED) عبر المزامنة. يجب إنشاء قيد عكسي بدلاً من ذلك');
+        }
+        if (currentStatus === 'reversed') {
+          throw new Error('لا يمكن حذف قيد معكوس (REVERSED)');
+        }
+        // Only DRAFT transactions may be deleted through Sync.
+      }
+
+      const currencyEntry = await transaction.table('settings').get('currency');
+      const systemCurrency = (currencyEntry?.value || fallbackSystemCurrency || 'YER') as CurrencyCode;
+      const activeCurrency = resolveRequiredCurrency({
+        transactionCurrency: trxToDelete.currency,
+        systemCurrency,
+      });
 
       await transaction.table('transactions').delete(id);
-      
-      // OPTIMIZED: Incremental update for DRAFT delete (no change) or subtraction if POSTED
-      const status = existing.status || 'posted';
-      if (status === 'posted') {
-        await this.recalculateAccountBalanceIncremental(accountId, {
-          amountMinor: existing.amountMinor,
-          type: existing.type,
+
+      // POSTED is rejected above for local and remote deletion. Keep the
+      // defensive balance correction tied exclusively to the fresh snapshot.
+      if (currentStatus === 'posted') {
+        await this.recalculateAccountBalanceIncremental(trxToDelete.accountId, {
+          amountMinor: trxToDelete.amountMinor,
+          type: trxToDelete.type,
           action: 'subtract',
-          date: existing.date
+          date: trxToDelete.date
         }, activeCurrency, transaction);
       }
 
-      // Log deletion atomically
       await financialAuditService.logFinancialEvent({
         eventType: 'TRANSACTION_DELETE',
         targetType: 'transaction',
         targetId: id,
-        amountMinor: existing.amountMinor,
+        amountMinor: trxToDelete.amountMinor,
         currency: activeCurrency,
-        operationId: existing.operationId,
+        operationId: trxToDelete.operationId,
         beforeState: {
-          amountMinor: existing.amountMinor || 0,
-          accountId: existing.accountId,
-          type: existing.type,
-          revision: existing.id,
+          amountMinor: trxToDelete.amountMinor || 0,
+          accountId: trxToDelete.accountId,
+          type: trxToDelete.type,
+          revision: trxToDelete.id,
         },
         tx: transaction
       });
 
-      // Phase 2.5: Record Permanent Delete Marker (Permanent Tombstone)
       try {
         const existingTombstones = await transaction.table('settings').get('hisabati_permanent_tombstones');
         const list = existingTombstones && Array.isArray(existingTombstones.value) ? existingTombstones.value : [];
@@ -824,14 +801,14 @@ export class FinancialTransactionEngine {
       } catch (e) {
         console.warn('Permanent tombstone write warning:', e);
       }
-      deleted = true;
+      return trxToDelete;
     });
 
-    if (deleted && !options?.isRemote) {
-      await this.enqueueSyncMutation('transaction', id, 'DELETE', { id }, existing.operationId);
+    if (deletedTransaction && !options?.isRemote) {
+      await this.enqueueSyncMutation('transaction', id, 'DELETE', { id }, deletedTransaction.operationId);
     }
 
-    return deleted;
+    return Boolean(deletedTransaction);
   }
 
   /**
