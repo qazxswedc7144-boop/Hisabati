@@ -155,9 +155,35 @@ export class AICommandPersistence2E3TestSuite {
         try {
           legacyDb = new Dexie(migrationDbName);
           legacyDb.version(12).stores({
+            accounts: 'id, name, phone, archived, dueDate, createdAt, updatedAt, [archived+dueDate]',
+            transactions: 'id, accountId, type, date, operationId, status, createdAt, updatedAt, [accountId+date]',
             settings: 'id, key, updatedAt',
+            syncQueue: 'id, entityType, entityId, operation, operationId, status, createdAt',
+            syncAuditLogs: 'id, action, timestamp, deviceId, success',
+            messages: 'id, messageId, channel, type, status, recipient, priority, operationId, createdAt, scheduledAt',
+            messageTemplates: 'id, name, type, defaultChannel, active, createdAt',
+            inAppNotifications: 'id, type, priority, read, createdAt, idempotencyKey, relatedEntityId, [type+idempotencyKey]',
+            scheduledMessages: 'id, channel, status, scheduledAt, nextRunAt, operationId, createdAt',
+            messageQueue: 'id, messageId, channel, status, operationId, nextRetryAt, createdAt',
+            aiAuditLogs: 'id, requestId, intent, status, provider, confirmed, timestamp',
+            users: 'id, email, phone, role, activeTeamId, createdAt',
+            teams: 'id, name, ownerId, createdAt',
+            teamMembers: 'id, teamId, userId, role, status, [teamId+userId], createdAt',
+            auditTrail: 'id, sequenceNumber, timestamp, action, targetType, targetId, riskLevel, [targetType+targetId]',
+            trash: 'id, entityType, entityId, deletedAt, expiresAt, deletedBy, status, [entityType+entityId]',
+            safetyBackups: 'id, createdAt, type',
+            debts: 'id, accountId, dueDate, status, [accountId+status], [status+dueDate]',
+            financialAuditLogs: 'id, sequenceNumber, eventType, operationId, targetType, targetId, organizationId, timestamp',
+            financialSnapshots: 'id, organizationId, ledgerRevision, createdAt',
+            pendingSideEffects: 'id, sourceType, sourceId, effectType, createdAt',
           });
           await legacyDb.open();
+          await legacyDb.table('settings').put({
+            id: 'currency',
+            key: 'currency',
+            value: 'SAR',
+            updatedAt: new Date().toISOString(),
+          });
           await legacyDb.table('settings').put({
             id: 'pending_ai_commands',
             key: 'pending_ai_commands',
@@ -172,6 +198,10 @@ export class AICommandPersistence2E3TestSuite {
 
           const migrated = await upgradedDb.aiCommands.get(legacyCommand.id);
           const oldSetting = await upgradedDb.settings.get('pending_ai_commands');
+          const preservedCurrency = await upgradedDb.settings.get('currency');
+          if (!preservedCurrency || preservedCurrency.value !== 'SAR') {
+            throw new Error('Migration did not preserve unrelated v12 settings data');
+          }
           if (upgradedDb.verno !== 13) throw new Error(`Expected schema v13, got v${upgradedDb.verno}`);
           if (!migrated) throw new Error('Legacy command was not migrated into aiCommands');
           if (migrated.status !== 'PENDING') throw new Error(`Expected migrated PENDING, got ${migrated.status}`);
