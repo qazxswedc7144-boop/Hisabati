@@ -23,26 +23,41 @@ function createPendingRecord(command: StructuredAICommand): AICommandRecord {
 export class AICommandRepository {
   public async add(command: StructuredAICommand): Promise<void> {
     const activeDb = getDb();
-    const existing = await activeDb.aiCommands.get(command.id);
-    if (existing) {
-      await this.update(command);
-      return;
-    }
-    await activeDb.aiCommands.add(createPendingRecord(command));
+    await activeDb.transaction('rw', activeDb.aiCommands, async () => {
+      const existing = await activeDb.aiCommands.get(command.id);
+      if (existing) {
+        if (existing.status !== 'PENDING') {
+          throw new Error(`لا يمكن إضافة أمر موجود في الحالة الحالية: ${existing.status}`);
+        }
+        await activeDb.aiCommands.put({
+          ...existing,
+          operationId: command.operationId,
+          command,
+          updatedAt: new Date().toISOString(),
+        });
+        return;
+      }
+      await activeDb.aiCommands.add(createPendingRecord(command));
+    });
   }
 
   public async update(command: StructuredAICommand): Promise<void> {
     const activeDb = getDb();
-    const existing = await activeDb.aiCommands.get(command.id);
-    if (!existing) {
-      await activeDb.aiCommands.add(createPendingRecord(command));
-      return;
-    }
+    await activeDb.transaction('rw', activeDb.aiCommands, async () => {
+      const existing = await activeDb.aiCommands.get(command.id);
+      if (!existing) {
+        throw new Error(`لا يمكن تحديث الأمر غير الموجود: ${command.id}`);
+      }
+      if (existing.status !== 'PENDING' && existing.status !== 'RUNNING') {
+        throw new Error(`لا يمكن تعديل الأمر من الحالة الحالية: ${existing.status}`);
+      }
 
-    await activeDb.aiCommands.update(command.id, {
-      operationId: command.operationId,
-      command,
-      updatedAt: new Date().toISOString(),
+      await activeDb.aiCommands.put({
+        ...existing,
+        operationId: command.operationId,
+        command,
+        updatedAt: new Date().toISOString(),
+      });
     });
   }
 
