@@ -193,10 +193,13 @@ export class SyncEngine {
     // overlapping read-write transactions on syncQueue, preventing check-then-add races.
     const enqueueResult = await activeDb.transaction('rw', activeDb.syncQueue, async (transaction) => {
       const queue = transaction.table('syncQueue');
-      const existing = await queue.where('operationId').equals(opId).first();
+      const existingItems = await queue.where('operationId').equals(opId).toArray();
+      const activeExisting = existingItems.find(
+        (item) => item.status === 'pending' || item.status === 'processing'
+      );
 
-      if (existing && (existing.status === 'pending' || existing.status === 'processing')) {
-        return { item: existing as SyncQueueItem, inserted: false };
+      if (activeExisting) {
+        return { item: activeExisting as SyncQueueItem, inserted: false };
       }
 
       const queueItem: SyncQueueItem = {
