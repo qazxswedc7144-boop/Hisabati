@@ -120,10 +120,10 @@ export class AICommandRepository {
         throw new Error('انتهت صلاحية الأمر المالي قبل إعادة المحاولة');
       }
 
-      const { claimedAt: _claimedAt, ...unclaimedRecord } = record;
       await activeDb.aiCommands.put({
-        ...unclaimedRecord,
+        ...record,
         status: 'PENDING',
+        claimedAt: undefined,
         updatedAt: new Date().toISOString(),
       });
     });
