@@ -99,6 +99,36 @@ export class AICommandRepository {
     });
   }
 
+  /**
+   * Re-queues a failed command only when its business status is retryable.
+   * claimCommand still accepts PENDING only; this transition is explicit and atomic.
+   */
+  public async requeueFailedCommand(commandId: string): Promise<void> {
+    const activeDb = getDb();
+    await activeDb.transaction('rw', activeDb.aiCommands, async () => {
+      const record = await activeDb.aiCommands.get(commandId);
+      if (!record) {
+        throw new Error('الأمر المالي غير موجود أو انتهت صلاحيته');
+      }
+      if (record.status === 'PENDING') return;
+      if (record.status !== 'FAILED' || record.command.status !== 'READY_FOR_CONFIRMATION') {
+        throw new Error(`لا يمكن إعادة محاولة الأمر من الحالة الحالية: ${record.status}`);
+      }
+
+      const expiresAt = Date.parse(record.expiresAt);
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+        throw new Error('انتهت صلاحية الأمر المالي قبل إعادة المحاولة');
+      }
+
+      const { claimedAt: _claimedAt, ...unclaimedRecord } = record;
+      await activeDb.aiCommands.put({
+        ...unclaimedRecord,
+        status: 'PENDING',
+        updatedAt: new Date().toISOString(),
+      });
+    });
+  }
+
   public async markDone(command: StructuredAICommand): Promise<void> {
     await this.updateLifecycle(command, 'DONE');
   }
