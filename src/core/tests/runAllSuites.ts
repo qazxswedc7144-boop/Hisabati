@@ -588,7 +588,7 @@ async function main() {
   }
 
   // ROUND 2-E.2: Atomic Sync Queue — F-004
-  console.log('\\n--- [ROUND 2-E.2] Atomic Sync Queue Idempotency ---');
+  console.log('\n--- [ROUND 2-E.2] Atomic Sync Queue Idempotency ---');
   try {
     const syncAtomic = await SyncQueueAtomicityTestSuite.runAll();
     console.log(`Sync Queue Atomicity Result: Passed ${syncAtomic.passed}/${syncAtomic.total}`);
