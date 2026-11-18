@@ -203,7 +203,7 @@ async function main() {
   }
 
   // ROUND 2-E.3: Durable AI Command State Machine — F-001
-  console.log('\\n--- [ROUND 2-E.3] Durable AI Command State Machine ---');
+  console.log('\n--- [ROUND 2-E.3] Durable AI Command State Machine ---');
   try {
     const aiCommands = await AICommandPersistence2E3TestSuite.runAll();
     console.log(`AI Command Persistence Result: Passed ${aiCommands.passed}/${aiCommands.total}`);
