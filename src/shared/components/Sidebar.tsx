@@ -17,7 +17,7 @@ export const Sidebar: React.FC = () => {
     <aside
       id="desktop-sidebar-navigation"
       aria-label="القائمة الجانبية"
-      className="hidden md:flex flex-col w-64 lg:w-72 shrink-0 border-e border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 h-screen sticky top-0 z-30 p-5 select-none transition-colors"
+      className="app-navigation-surface hidden md:flex flex-col w-64 lg:w-72 shrink-0 border-e h-screen sticky top-0 z-30 p-5 select-none transition-colors"
     >
       {/* Brand Header */}
       <div className="flex items-center gap-3 px-2 pb-6 border-b border-slate-100 dark:border-slate-800">
