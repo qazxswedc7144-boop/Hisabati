@@ -282,7 +282,7 @@ export const ScheduleCollectionModal: React.FC = () => {
                     aria-label="تاريخ الاستحقاق بصيغة سنة/شهر/يوم"
                     value={deadlineDateDisplay}
                     onChange={(e) => {
-                      const digits = e.target.value.replace(/\\D/g, '').slice(0, 8);
+                      const digits = e.target.value.replace(/\D/g, '').slice(0, 8);
                       const formatted = digits.length > 6
                         ? `${digits.slice(0, 4)}/${digits.slice(4, 6)}/${digits.slice(6)}`
                         : digits.length > 4
