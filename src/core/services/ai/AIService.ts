@@ -106,19 +106,7 @@ export class AIService {
         const safetyResult = aiTextSafetyGuard.inspect(rawPrompt, response.command);
         if (!safetyResult.allowed) {
           response.command.status = 'REJECTED';
-          response.command.validationErrors = ['تم رفض الطلب بواسطة فاحص سلامة النص قبل الحفظ.'];
-          await aiAuditRepository.addLog({
-            id: 'audit_safety_' + requestId,
-            requestId,
-            promptPreview: aiPrivacyService.sanitizePromptForAudit(rawPrompt),
-            intent: response.intent,
-            timestamp: new Date().toISOString(),
-            status: 'rejected',
-            provider: response.provider || this.activeProvider.id,
-            confidence: response.confidence,
-            action: 'Blocked unsafe CREATE text: ' + safetyResult.reasons.join(','),
-            confirmed: false,
-          });
+          response.command.validationErrors = ['تم رفض الطلب بواسطة فاحص سلامة النص قبل الحفظ: ' + safetyResult.reasons.join(', ')];
         } else {
           // Existing command validation and lifecycle are unchanged.
           await aiValidationService.validate(response.command);
