@@ -438,7 +438,7 @@ export const ScheduleCollectionModal: React.FC = () => {
           )}
 
           {/* Form Actions */}
-          <div className="sticky bottom-0 z-10 -mx-4 -mb-3 px-4 py-2 flex items-center justify-end gap-2.5 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
+          <div className="sticky bottom-0 z-10 -mx-4 -mb-3 px-4 py-2 flex items-center justify-end gap-5 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
             <button
               type="button"
               onClick={closeScheduleModal}
