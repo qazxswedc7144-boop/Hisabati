@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Clock,
@@ -48,7 +48,6 @@ export const ScheduleCollectionModal: React.FC = () => {
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [deadlineDate, setDeadlineDate] = useState<string>('');
   const [deadlineDateDisplay, setDeadlineDateDisplay] = useState<string>('');
-  const datePickerRef = useRef<HTMLInputElement>(null);
   const [reminderTime, setReminderTime] = useState<string>('09:00');
   const [remindDaysBefore, setRemindDaysBefore] = useState<number>(0);
   const [channel, setChannel] = useState<MessageChannel>('in_app');
@@ -261,79 +260,36 @@ export const ScheduleCollectionModal: React.FC = () => {
             </h3>
 
             {/* Due date, reminder timing, and send time in one row */}
-            <div className="grid grid-cols-[1.15fr_1fr_1fr] gap-2">
-              <div className="min-w-0 space-y-1 -mr-3 w-[calc(100%+0.75rem)]">
+            <div className="grid grid-cols-3 gap-2">
+              <div className="min-w-0 space-y-1">
                 <label htmlFor="input-collection-deadline-date" className="min-h-8 text-[10px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 flex items-end leading-tight">
                   <span>تاريخ الاستحقاق</span>
                 </label>
-                <div className="relative flex min-w-0">
+                <div className="relative min-w-0">
                   <input
-                    id="input-collection-deadline-date"
                     type="text"
                     dir="ltr"
                     lang="en"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    placeholder="YYYY/MM/DD"
-                    aria-label="تاريخ الاستحقاق بصيغة سنة/شهر/يوم"
                     value={deadlineDateDisplay}
-                    onChange={(e) => {
-                      const digits = e.target.value.replace(/\D/g, '').slice(0, 8);
-                      const formatted = digits.length > 6
-                        ? `${digits.slice(0, 4)}/${digits.slice(4, 6)}/${digits.slice(6)}`
-                        : digits.length > 4
-                          ? `${digits.slice(0, 4)}/${digits.slice(4)}`
-                          : digits;
-                      setDeadlineDateDisplay(formatted);
-
-                      if (digits.length === 8) {
-                        const year = Number(digits.slice(0, 4));
-                        const month = Number(digits.slice(4, 6));
-                        const day = Number(digits.slice(6, 8));
-                        const parsed = new Date(Date.UTC(year, month - 1, day));
-                        if (
-                          parsed.getUTCFullYear() === year &&
-                          parsed.getUTCMonth() === month - 1 &&
-                          parsed.getUTCDate() === day
-                        ) {
-                          setDeadlineDate(`${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`);
-                        } else {
-                          setDeadlineDate('');
-                        }
-                      } else {
-                        setDeadlineDate('');
-                      }
-                    }}
-                    className="block min-w-0 w-full px-2 py-2 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-semibold text-left tabular-nums tracking-tight text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
-                    required
+                    placeholder="YYYY/MM/DD"
+                    readOnly
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    className="block min-w-0 w-full px-1 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-semibold text-center tabular-nums tracking-tight text-slate-900 dark:text-slate-100 placeholder:text-slate-400 pointer-events-none focus:outline-none min-h-[44px]"
                   />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const picker = datePickerRef.current;
-                      if (!picker) return;
-                      if (typeof picker.showPicker === 'function') picker.showPicker();
-                      else picker.click();
-                    }}
-                    className="absolute left-1 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700"
-                    aria-label="فتح التقويم"
-                    title="اختيار التاريخ من التقويم"
-                  >
-                    <Calendar className="w-4 h-4" />
-                  </button>
                   <input
-                    ref={datePickerRef}
+                    id="input-collection-deadline-date"
                     type="date"
                     dir="ltr"
                     lang="en"
-                    tabIndex={-1}
-                    aria-hidden="true"
                     value={deadlineDate}
                     onChange={(e) => {
                       setDeadlineDate(e.target.value);
                       setDeadlineDateDisplay(e.target.value.replace(/-/g, '/'));
                     }}
-                    className="absolute w-px h-px opacity-0 pointer-events-none"
+                    aria-label="اختيار تاريخ الاستحقاق"
+                    className="absolute inset-0 block w-full h-full opacity-0 cursor-pointer"
+                    required
                   />
                 </div>
               </div>
