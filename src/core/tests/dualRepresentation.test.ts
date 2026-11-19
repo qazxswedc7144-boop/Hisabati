@@ -6,7 +6,7 @@ import { decimalToMinor, minorToDecimal } from '../money/converter';
 import { getAmountMinor } from '../money/compat';
 import { computeAccountMetricsFromTransactions } from '../utils/financial';
 import { integrityService } from '../services/integrity.service';
-import { FINANCIAL_FORMAT_VERSION, BACKUP_SCHEMA_VERSION } from '../database/schemaVersion';
+import { DATABASE_SCHEMA_VERSION, FINANCIAL_FORMAT_VERSION, BACKUP_SCHEMA_VERSION } from '../database/schemaVersion';
 
 export interface DualRepTestResult {
   id: string;
@@ -197,9 +197,9 @@ export class DualRepresentationTestSuite {
     });
 
     // Test 7: Schema Version and Constants Immunity
-    await run('DUAL-07', 'حظر تغيير إصدار Dexie (ثابت على 12) وثبات Backup Schema V6 و Format V1', async () => {
-      if (db.verno !== 12) {
-        throw new Error(`خطأ حرج: تم تعديل إصدار Dexie إلى ${db.verno}. يجب أن يبقى 12 حصراً.`);
+    await run('DUAL-07', 'مطابقة إصدار Dexie v13 مع ثبات Backup Schema V6 و Format V1', async () => {
+      if (DATABASE_SCHEMA_VERSION !== 13 || db.verno !== DATABASE_SCHEMA_VERSION) {
+        throw new Error(`خطأ حرج: إصدار Dexie (${db.verno}) و DATABASE_SCHEMA_VERSION (${DATABASE_SCHEMA_VERSION}) يجب أن يكونا 13.`);
       }
       if (BACKUP_SCHEMA_VERSION !== 6) {
         throw new Error(`خطأ حرج: تم تعديل BACKUP_SCHEMA_VERSION إلى ${BACKUP_SCHEMA_VERSION}. يجب أن يبقى 6.`);
