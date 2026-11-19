@@ -48,7 +48,7 @@ export const DashboardPage: React.FC = () => {
   const openScannerModal = useOCRStore((state) => state.openScannerModal);
 
   return (
-    <div id="dashboard-page" className="space-y-3 sm:space-y-5 animate-in fade-in duration-200">
+    <div id="dashboard-page" className="app-page-stack animate-in fade-in duration-200">
       {/* Welcome Banner & Quick Actions - Compact Row on All Screens */}
       <div className="flex flex-row items-center justify-between gap-2 sm:gap-3 w-full">
         <div className="min-w-0 flex-1">
@@ -147,8 +147,8 @@ export const DashboardPage: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">
         {/* Latest Operations (2 Cols on lg) */}
         <div className="lg:col-span-2 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+          <div className="app-section-heading">
+            <h3 className="app-section-title">
               <Clock className="w-5 h-5 text-teal-600 dark:text-teal-400" />
               <span>آخر العمليات</span>
             </h3>
@@ -171,7 +171,7 @@ export const DashboardPage: React.FC = () => {
               onAction={() => openQuickAdd()}
             />
           ) : (
-            <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800 shadow-xs">
+            <div className="app-panel overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
               {recentTransactions.map((trx) => (
                 <div
                   key={trx.id}
@@ -252,7 +252,7 @@ export const DashboardPage: React.FC = () => {
             </button>
           </div>
 
-          <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 space-y-2 shadow-xs">
+          <div className="app-panel p-3 space-y-2">
             {accounts.length === 0 ? (
               <div className="py-6 text-center">
                 <p className="text-xs text-slate-500 dark:text-slate-400">لا توجد حسابات مسجلة بعد</p>
