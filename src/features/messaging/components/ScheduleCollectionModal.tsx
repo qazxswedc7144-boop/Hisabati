@@ -291,10 +291,16 @@ export const ScheduleCollectionModal: React.FC = () => {
                       setDeadlineDateDisplay(formatted);
 
                       if (digits.length === 8) {
-                        const candidate = `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
-                        const parsed = new Date(`${candidate}T00:00:00`);
-                        if (!Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === candidate) {
-                          setDeadlineDate(candidate);
+                        const year = Number(digits.slice(0, 4));
+                        const month = Number(digits.slice(4, 6));
+                        const day = Number(digits.slice(6, 8));
+                        const parsed = new Date(Date.UTC(year, month - 1, day));
+                        if (
+                          parsed.getUTCFullYear() === year &&
+                          parsed.getUTCMonth() === month - 1 &&
+                          parsed.getUTCDate() === day
+                        ) {
+                          setDeadlineDate(`${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`);
                         } else {
                           setDeadlineDate('');
                         }
