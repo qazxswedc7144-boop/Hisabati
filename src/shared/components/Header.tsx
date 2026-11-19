@@ -68,7 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header
       id="main-app-header"
-      className="sticky top-0 z-30 w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 px-3 sm:px-6 py-2.5 sm:py-3 transition-colors"
+      className="app-header-surface sticky top-0 z-30 w-full backdrop-blur-md border-b px-3 sm:px-6 py-2.5 sm:py-3 transition-colors"
     >
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-1.5 sm:gap-4">
         {/* Left (Start): Mobile Menu Toggle + Logo + Title + v1.0 */}
