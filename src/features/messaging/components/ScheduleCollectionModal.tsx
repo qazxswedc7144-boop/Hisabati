@@ -47,6 +47,7 @@ export const ScheduleCollectionModal: React.FC = () => {
   // Form State
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [deadlineDate, setDeadlineDate] = useState<string>('');
+  const [deadlineDateDisplay, setDeadlineDateDisplay] = useState<string>('');
   const [reminderTime, setReminderTime] = useState<string>('09:00');
   const [remindDaysBefore, setRemindDaysBefore] = useState<number>(0);
   const [channel, setChannel] = useState<MessageChannel>('in_app');
@@ -66,13 +67,14 @@ export const ScheduleCollectionModal: React.FC = () => {
     if (isScheduleModalOpen) {
       const defaultDate = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
       setDeadlineDate(defaultDate);
+      setDeadlineDateDisplay(defaultDate.replace(/-/g, '/'));
       setReminderTime('09:00');
       setRemindDaysBefore(0);
       setChannel('in_app');
       setRepeatRule('once');
       setCustomNote('');
 
-      const targetId = scheduleModalAccount?.id || (debtorAccounts[0]?.id ?? '');
+      const targetId = scheduleModalAccount?.id || '';
       setSelectedAccountId(targetId);
     }
   }, [isScheduleModalOpen, scheduleModalAccount]);
@@ -94,12 +96,6 @@ export const ScheduleCollectionModal: React.FC = () => {
 
   const currentAccount = accounts.find((a) => a.id === selectedAccountId);
   const currentDebtAmount = currentAccount ? Math.abs(currentAccount.currentBalance) : 0;
-
-  // Shortcut helpers for deadline dates
-  const setQuickDeadline = (daysAhead: number) => {
-    const d = new Date(Date.now() + daysAhead * 86400000);
-    setDeadlineDate(d.toISOString().split('T')[0]);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -166,57 +162,83 @@ export const ScheduleCollectionModal: React.FC = () => {
   return (
     <div
       id="schedule-collection-modal-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-1 sm:p-2 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200"
       dir="rtl"
     >
       <div
         id="schedule-collection-modal"
-        className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90dvh] my-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="schedule-collection-modal-title"
+        className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[88dvh] my-auto"
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-100 dark:border-slate-800 shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="relative flex items-center justify-between px-3 py-2 border-b border-slate-100 dark:border-slate-800 shrink-0">
+          <div className="flex items-center gap-2">
             <div className="w-10 h-10 rounded-2xl bg-teal-50 dark:bg-teal-950/70 text-teal-700 dark:text-teal-300 flex items-center justify-center border border-teal-200/60 dark:border-teal-800/60 shrink-0">
               <Clock className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-slate-100">
+              <h2 id="schedule-collection-modal-title" className="text-base sm:text-lg font-black text-slate-900 dark:text-slate-100">
                 جدولة تنبيه تحصيل دين
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                تحديد موعد الاستحقاق النهائي وتلقي إشعارات المتابعة
-              </p>
+              {/* Redundant subtitle removed to keep the modal compact */}
             </div>
           </div>
 
           <button
             id="btn-close-schedule-modal"
             onClick={closeScheduleModal}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-h-[44px] min-w-[44px] flex items-center justify-center"
+            className="absolute top-1 left-1 z-10 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-h-[40px] min-w-[40px] flex items-center justify-center"
             title="إغلاق"
+            aria-label="إغلاق نافذة جدولة التنبيه"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Modal Form Content */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 max-h-[75dvh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2">
           {/* Account Selection */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-              <User className="w-4 h-4 text-teal-600" />
-              <span>العميل / الحساب المعني</span>
-            </label>
+          <div className="space-y-0">
+            <div className="relative">
+              <User className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-teal-600 pointer-events-none" aria-hidden="true" />
+              <input
+                id="input-schedule-account"
+                type="text"
+                list="schedule-debtor-accounts"
+                defaultValue={scheduleModalAccount?.name ?? ''}
+                placeholder="اسم العميل"
+                autoComplete="off"
+                onChange={(e) => {
+                  const enteredName = e.target.value.trim().toLocaleLowerCase();
+                  const matchedAccount = debtorAccounts.find(
+                    (account) => account.name.trim().toLocaleLowerCase() === enteredName,
+                  );
+                  setSelectedAccountId(matchedAccount?.id ?? '');
+                }}
+                className="w-full pr-10 pl-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
+              />
+            </div>
+            <datalist id="schedule-debtor-accounts">
+              {debtorAccounts.map((acc) => (
+                <option
+                  key={acc.id}
+                  value={acc.name}
+                  label={acc.phone ? `${acc.phone} • مطلوب: ${formatCurrency(acc.currentBalance, currency)}` : `مطلوب: ${formatCurrency(acc.currentBalance, currency)}`}
+                />
+              ))}
+            </datalist>
 
-            {scheduleModalAccount ? (
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+            {currentAccount && (
+              <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
                 <div>
                   <span className="font-extrabold text-sm text-slate-900 dark:text-slate-100 block">
-                    {scheduleModalAccount.name}
+                    {currentAccount.name}
                   </span>
-                  {scheduleModalAccount.phone && (
+                  {currentAccount.phone && (
                     <span className="text-xs text-slate-400 font-mono block mt-0.5">
-                      {scheduleModalAccount.phone}
+                      {currentAccount.phone}
                     </span>
                   )}
                 </div>
@@ -227,107 +249,90 @@ export const ScheduleCollectionModal: React.FC = () => {
                   </span>
                 </div>
               </div>
-            ) : (
-              <select
-                id="select-schedule-account"
-                value={selectedAccountId}
-                onChange={(e) => setSelectedAccountId(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
-              >
-                <option value="">-- اختر حساباً مطلوباً منه دين --</option>
-                {debtorAccounts.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.name} (مطلوب: {formatCurrency(acc.currentBalance, currency)})
-                  </option>
-                ))}
-              </select>
             )}
           </div>
 
-          {/* Collection Deadline Date */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Calendar className="w-4 h-4 text-teal-600" />
-                <span>الموعد النهائي للتحصيل (تاريخ الاستحقاق)</span>
-              </label>
-              <div className="flex items-center gap-1 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => setQuickDeadline(3)}
-                  className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-teal-50 hover:text-teal-700 dark:hover:bg-teal-950 font-bold transition"
+          {/* Due Date & Reminder Group */}
+          <section className="rounded-xl border border-teal-200/80 dark:border-teal-800/60 bg-teal-50/40 dark:bg-teal-950/15 p-2 space-y-1">
+            <h3 className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-teal-600 shrink-0" />
+              <span>موعد الاستحقاق والتذكير</span>
+            </h3>
+
+            {/* Due date, reminder timing, and send time in one row */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="min-w-0 space-y-1">
+                <label htmlFor="input-collection-deadline-date" className="min-h-8 text-[10px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 flex items-end leading-tight">
+                  <span>تاريخ الاستحقاق</span>
+                </label>
+                <div className="relative min-w-0">
+                  <input
+                    type="text"
+                    dir="ltr"
+                    lang="en"
+                    value={deadlineDateDisplay}
+                    placeholder="YYYY/MM/DD"
+                    readOnly
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    className="block min-w-0 w-full px-1 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-semibold text-center tabular-nums tracking-tight text-slate-900 dark:text-slate-100 placeholder:text-slate-400 pointer-events-none focus:outline-none min-h-[44px]"
+                  />
+                  <input
+                    id="input-collection-deadline-date"
+                    type="date"
+                    dir="ltr"
+                    lang="en"
+                    value={deadlineDate}
+                    onChange={(e) => {
+                      setDeadlineDate(e.target.value);
+                      setDeadlineDateDisplay(e.target.value.replace(/-/g, '/'));
+                    }}
+                    aria-label="اختيار تاريخ الاستحقاق"
+                    className="absolute inset-0 block w-full h-full opacity-0 cursor-pointer"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="min-w-0 space-y-1">
+                <label htmlFor="select-remind-days-before" className="min-h-8 text-[10px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 flex items-end gap-1 leading-tight">
+                  <Bell className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <span>توقيت التذكير</span>
+                </label>
+                <select
+                  id="select-remind-days-before"
+                  value={remindDaysBefore}
+                  onChange={(e) => setRemindDaysBefore(Number(e.target.value))}
+                  className="block min-w-0 w-full px-1.5 sm:px-2 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
                 >
-                  +3 أيام
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setQuickDeadline(7)}
-                  className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-teal-50 hover:text-teal-700 dark:hover:bg-teal-950 font-bold transition"
-                >
-                  +أسبوع
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setQuickDeadline(14)}
-                  className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-teal-50 hover:text-teal-700 dark:hover:bg-teal-950 font-bold transition"
-                >
-                  +أسبوعين
-                </button>
+                  <option value={0}>في نفس يوم الاستحقاق</option>
+                  <option value={1}>قبل الاستحقاق بيوم واحد</option>
+                  <option value={3}>قبل الاستحقاق بـ 3 أيام</option>
+                  <option value={7}>قبل الاستحقاق بأسبوع كامل</option>
+                </select>
+              </div>
+
+              <div className="min-w-0 space-y-1">
+                <label htmlFor="input-reminder-time" className="min-h-8 text-[10px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 flex items-end gap-1 leading-tight">
+                  <Clock className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                  <span>ساعة الإرسال</span>
+                </label>
+                <input
+                  id="input-reminder-time"
+                  type="time"
+                  value={reminderTime}
+                  onChange={(e) => setReminderTime(e.target.value)}
+                  className="block min-w-0 w-full px-1.5 sm:px-2 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
+                />
               </div>
             </div>
-
-            <input
-              id="input-collection-deadline-date"
-              type="date"
-              value={deadlineDate}
-              onChange={(e) => setDeadlineDate(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
-              required
-            />
-          </div>
-
-          {/* Alert Timing & Days Before */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* When to Remind */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Bell className="w-4 h-4 text-amber-500" />
-                <span>موعد إرسال التنبيه</span>
-              </label>
-              <select
-                id="select-remind-days-before"
-                value={remindDaysBefore}
-                onChange={(e) => setRemindDaysBefore(Number(e.target.value))}
-                className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
-              >
-                <option value={0}>في نفس يوم الاستحقاق</option>
-                <option value={1}>قبل الاستحقاق بيوم واحد</option>
-                <option value={3}>قبل الاستحقاق بـ 3 أيام</option>
-                <option value={7}>قبل الاستحقاق بأسبوع كامل</option>
-              </select>
-            </div>
-
-            {/* Alert Time */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Clock className="w-4 h-4 text-teal-600" />
-                <span>ساعة التنبيه</span>
-              </label>
-              <input
-                id="input-reminder-time"
-                type="time"
-                value={reminderTime}
-                onChange={(e) => setReminderTime(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
-              />
-            </div>
-          </div>
+          </section>
 
           {/* Channel & Recurrence */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Channel */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <label htmlFor="select-alert-channel" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <Smartphone className="w-4 h-4 text-teal-600" />
                 <span>قناة استلام التنبيه</span>
               </label>
@@ -345,7 +350,7 @@ export const ScheduleCollectionModal: React.FC = () => {
 
             {/* Recurrence Rule */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <label htmlFor="select-repeat-rule" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <Repeat className="w-4 h-4 text-teal-600" />
                 <span>تكرار التنبيه</span>
               </label>
@@ -365,7 +370,7 @@ export const ScheduleCollectionModal: React.FC = () => {
 
           {/* Custom Note */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+            <label htmlFor="input-custom-collection-note" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
               <FileText className="w-4 h-4 text-slate-500" />
               <span>ملاحظة أو تعليمات إضافية للتحصيل (اختياري)</span>
             </label>
@@ -380,7 +385,7 @@ export const ScheduleCollectionModal: React.FC = () => {
           </div>
 
           {/* Live Preview Box */}
-          <div className="p-3.5 rounded-2xl bg-teal-50/70 dark:bg-teal-950/30 border border-teal-200/80 dark:border-teal-800/60 space-y-1">
+          <div className="p-2.5 rounded-2xl bg-teal-50/70 dark:bg-teal-950/30 border border-teal-200/80 dark:border-teal-800/60 space-y-1">
             <span className="text-[11px] font-bold text-teal-800 dark:text-teal-300 block">
               نص التنبيه المتوقع:
             </span>
@@ -401,7 +406,7 @@ export const ScheduleCollectionModal: React.FC = () => {
                 {accountSchedules.map((sched) => (
                   <div
                     key={sched.id}
-                    className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 flex items-center justify-between gap-2"
+                    className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 flex items-center justify-between gap-2"
                   >
                     <div className="min-w-0">
                       <span className="font-bold text-slate-800 dark:text-slate-200 block truncate">
@@ -450,7 +455,7 @@ export const ScheduleCollectionModal: React.FC = () => {
           )}
 
           {/* Form Actions */}
-          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+          <div className="sticky bottom-0 z-10 -mx-3 -mb-2 px-3 py-1.5 flex items-center justify-between gap-5 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
             <button
               type="button"
               onClick={closeScheduleModal}
