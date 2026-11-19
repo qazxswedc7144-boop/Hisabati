@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Clock,
@@ -47,6 +47,8 @@ export const ScheduleCollectionModal: React.FC = () => {
   // Form State
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [deadlineDate, setDeadlineDate] = useState<string>('');
+  const [deadlineDateDisplay, setDeadlineDateDisplay] = useState<string>('');
+  const datePickerRef = useRef<HTMLInputElement>(null);
   const [reminderTime, setReminderTime] = useState<string>('09:00');
   const [remindDaysBefore, setRemindDaysBefore] = useState<number>(0);
   const [channel, setChannel] = useState<MessageChannel>('in_app');
@@ -66,6 +68,7 @@ export const ScheduleCollectionModal: React.FC = () => {
     if (isScheduleModalOpen) {
       const defaultDate = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
       setDeadlineDate(defaultDate);
+      setDeadlineDateDisplay(defaultDate.replace(/-/g, '/'));
       setReminderTime('09:00');
       setRemindDaysBefore(0);
       setChannel('in_app');
@@ -255,7 +258,7 @@ export const ScheduleCollectionModal: React.FC = () => {
           </div>
 
           {/* Due Date & Reminder Group */}
-          <section className="rounded-2xl border border-teal-200/80 dark:border-teal-800/60 bg-teal-50/40 dark:bg-teal-950/15 p-3 space-y-3">
+          <section className="rounded-2xl border border-teal-200/80 dark:border-teal-800/60 bg-teal-50/40 dark:bg-teal-950/15 p-3 space-y-1.5">
             <h3 className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-2">
               <Calendar className="w-4 h-4 text-teal-600 shrink-0" />
               <span>موعد الاستحقاق والتذكير</span>
@@ -267,15 +270,70 @@ export const ScheduleCollectionModal: React.FC = () => {
                 <label htmlFor="input-collection-deadline-date" className="min-h-8 text-[10px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 flex items-end leading-tight">
                   <span>تاريخ الاستحقاق</span>
                 </label>
-                <input
-                  id="input-collection-deadline-date"
-                  type="date"
-                  dir="ltr"
-                  value={deadlineDate}
-                  onChange={(e) => setDeadlineDate(e.target.value)}
-                  className="block min-w-0 w-full px-1.5 sm:px-2 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
-                  required
-                />
+                <div className="relative flex min-w-0">
+                  <input
+                    id="input-collection-deadline-date"
+                    type="text"
+                    dir="ltr"
+                    lang="en"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    placeholder="YYYY/MM/DD"
+                    aria-label="تاريخ الاستحقاق بصيغة سنة/شهر/يوم"
+                    value={deadlineDateDisplay}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\\D/g, '').slice(0, 8);
+                      const formatted = digits.length > 6
+                        ? `${digits.slice(0, 4)}/${digits.slice(4, 6)}/${digits.slice(6)}`
+                        : digits.length > 4
+                          ? `${digits.slice(0, 4)}/${digits.slice(4)}`
+                          : digits;
+                      setDeadlineDateDisplay(formatted);
+
+                      if (digits.length === 8) {
+                        const candidate = `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+                        const parsed = new Date(`${candidate}T00:00:00`);
+                        if (!Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === candidate) {
+                          setDeadlineDate(candidate);
+                        } else {
+                          setDeadlineDate('');
+                        }
+                      } else {
+                        setDeadlineDate('');
+                      }
+                    }}
+                    className="block min-w-0 w-full px-2 py-2 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-semibold text-left tabular-nums tracking-tight text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const picker = datePickerRef.current;
+                      if (!picker) return;
+                      if (typeof picker.showPicker === 'function') picker.showPicker();
+                      else picker.click();
+                    }}
+                    className="absolute left-1 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700"
+                    aria-label="فتح التقويم"
+                    title="اختيار التاريخ من التقويم"
+                  >
+                    <Calendar className="w-4 h-4" />
+                  </button>
+                  <input
+                    ref={datePickerRef}
+                    type="date"
+                    dir="ltr"
+                    lang="en"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    value={deadlineDate}
+                    onChange={(e) => {
+                      setDeadlineDate(e.target.value);
+                      setDeadlineDateDisplay(e.target.value.replace(/-/g, '/'));
+                    }}
+                    className="absolute w-px h-px opacity-0 pointer-events-none"
+                  />
+                </div>
               </div>
 
               <div className="min-w-0 space-y-1">
