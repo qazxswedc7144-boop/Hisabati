@@ -180,7 +180,7 @@ export const ScheduleCollectionModal: React.FC = () => {
             </div>
             <div>
               <h2 id="schedule-collection-modal-title" className="text-base sm:text-lg font-black text-slate-900 dark:text-slate-100">
-                جدولة تنبيه تحصيل دين
+                جدولة تنبيه تحصيل الديون
               </h2>
               {/* Redundant subtitle removed to keep the modal compact */}
             </div>
