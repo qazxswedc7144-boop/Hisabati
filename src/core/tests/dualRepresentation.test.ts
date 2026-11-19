@@ -197,9 +197,9 @@ export class DualRepresentationTestSuite {
     });
 
     // Test 7: Schema Version and Constants Immunity
-    await run('DUAL-07', 'مطابقة إصدار Dexie v13 مع ثبات Backup Schema V6 و Format V1', async () => {
-      if (DATABASE_SCHEMA_VERSION !== 13 || db.verno !== DATABASE_SCHEMA_VERSION) {
-        throw new Error(`خطأ حرج: إصدار Dexie (${db.verno}) و DATABASE_SCHEMA_VERSION (${DATABASE_SCHEMA_VERSION}) يجب أن يكونا 13.`);
+    await run('DUAL-07', 'مطابقة إصدار Dexie v14 مع ثبات Backup Schema V6 و Format V1', async () => {
+      if (DATABASE_SCHEMA_VERSION !== 14 || db.verno !== DATABASE_SCHEMA_VERSION) {
+        throw new Error(`خطأ حرج: إصدار Dexie (${db.verno}) و DATABASE_SCHEMA_VERSION (${DATABASE_SCHEMA_VERSION}) يجب أن يكونا 14.`);
       }
       if (BACKUP_SCHEMA_VERSION !== 6) {
         throw new Error(`خطأ حرج: تم تعديل BACKUP_SCHEMA_VERSION إلى ${BACKUP_SCHEMA_VERSION}. يجب أن يبقى 6.`);
