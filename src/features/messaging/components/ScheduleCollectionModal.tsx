@@ -95,12 +95,6 @@ export const ScheduleCollectionModal: React.FC = () => {
   const currentAccount = accounts.find((a) => a.id === selectedAccountId);
   const currentDebtAmount = currentAccount ? Math.abs(currentAccount.currentBalance) : 0;
 
-  // Shortcut helpers for deadline dates
-  const setQuickDeadline = (daysAhead: number) => {
-    const d = new Date(Date.now() + daysAhead * 86400000);
-    setDeadlineDate(d.toISOString().split('T')[0]);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedAccountId || !currentAccount) {
@@ -261,35 +255,12 @@ export const ScheduleCollectionModal: React.FC = () => {
           </div>
 
           {/* Collection Deadline Date */}
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <label htmlFor="input-collection-deadline-date" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Calendar className="w-4 h-4 text-teal-600" />
-                <span>الموعد النهائي للتحصيل (تاريخ الاستحقاق)</span>
+          <div className="space-y-0.5">
+            <div className="flex items-center">
+              <label htmlFor="input-collection-deadline-date" className="text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 whitespace-nowrap">
+                <Calendar className="w-4 h-4 text-teal-600 shrink-0" />
+                <span className="whitespace-nowrap">الموعد النهائي للتحصيل (تاريخ الاستحقاق)</span>
               </label>
-              <div className="flex flex-wrap items-center gap-1 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => setQuickDeadline(3)}
-                  className="px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-teal-50 hover:text-teal-700 dark:hover:bg-teal-950 font-bold transition min-h-[36px]"
-                >
-                  +3 أيام
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setQuickDeadline(7)}
-                  className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-teal-50 hover:text-teal-700 dark:hover:bg-teal-950 font-bold transition"
-                >
-                  +أسبوع
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setQuickDeadline(14)}
-                  className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-teal-50 hover:text-teal-700 dark:hover:bg-teal-950 font-bold transition"
-                >
-                  +أسبوعين
-                </button>
-              </div>
             </div>
 
             <input
