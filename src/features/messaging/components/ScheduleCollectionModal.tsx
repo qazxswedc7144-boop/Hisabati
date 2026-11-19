@@ -261,33 +261,32 @@ export const ScheduleCollectionModal: React.FC = () => {
               <span>موعد الاستحقاق والتذكير</span>
             </h3>
 
-            {/* Collection Deadline Date */}
-            <div className="space-y-1">
-              <label htmlFor="input-collection-deadline-date" className="text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 whitespace-nowrap">
-                <span className="whitespace-nowrap">تاريخ الاستحقاق</span>
-              </label>
-              <input
-                id="input-collection-deadline-date"
-                type="date"
-                value={deadlineDate}
-                onChange={(e) => setDeadlineDate(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
-                required
-              />
-            </div>
+            {/* Due date, reminder timing, and send time in one row */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="min-w-0 space-y-1">
+                <label htmlFor="input-collection-deadline-date" className="min-h-8 text-[10px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 flex items-end leading-tight">
+                  <span>تاريخ الاستحقاق</span>
+                </label>
+                <input
+                  id="input-collection-deadline-date"
+                  type="date"
+                  value={deadlineDate}
+                  onChange={(e) => setDeadlineDate(e.target.value)}
+                  className="block min-w-0 w-full px-1.5 sm:px-2 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
+                  required
+                />
+              </div>
 
-            {/* Alert Timing & Time */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div className="space-y-1">
-                <label htmlFor="select-remind-days-before" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                  <Bell className="w-4 h-4 text-amber-500" />
+              <div className="min-w-0 space-y-1">
+                <label htmlFor="select-remind-days-before" className="min-h-8 text-[10px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 flex items-end gap-1 leading-tight">
+                  <Bell className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                   <span>توقيت التذكير</span>
                 </label>
                 <select
                   id="select-remind-days-before"
                   value={remindDaysBefore}
                   onChange={(e) => setRemindDaysBefore(Number(e.target.value))}
-                  className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
+                  className="block min-w-0 w-full px-1.5 sm:px-2 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
                 >
                   <option value={0}>في نفس يوم الاستحقاق</option>
                   <option value={1}>قبل الاستحقاق بيوم واحد</option>
@@ -296,9 +295,9 @@ export const ScheduleCollectionModal: React.FC = () => {
                 </select>
               </div>
 
-              <div className="space-y-1">
-                <label htmlFor="input-reminder-time" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-teal-600" />
+              <div className="min-w-0 space-y-1">
+                <label htmlFor="input-reminder-time" className="min-h-8 text-[10px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 flex items-end gap-1 leading-tight">
+                  <Clock className="w-3.5 h-3.5 text-teal-600 shrink-0" />
                   <span>ساعة الإرسال</span>
                 </label>
                 <input
@@ -306,7 +305,7 @@ export const ScheduleCollectionModal: React.FC = () => {
                   type="time"
                   value={reminderTime}
                   onChange={(e) => setReminderTime(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
+                  className="block min-w-0 w-full px-1.5 sm:px-2 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
                 />
               </div>
             </div>
