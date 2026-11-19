@@ -254,61 +254,63 @@ export const ScheduleCollectionModal: React.FC = () => {
             )}
           </div>
 
-          {/* Collection Deadline Date */}
-          <div className="space-y-0.5">
-            <div className="flex items-center">
+          {/* Due Date & Reminder Group */}
+          <section className="rounded-2xl border border-teal-200/80 dark:border-teal-800/60 bg-teal-50/40 dark:bg-teal-950/15 p-3 space-y-3">
+            <h3 className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-teal-600 shrink-0" />
+              <span>موعد الاستحقاق والتذكير</span>
+            </h3>
+
+            {/* Collection Deadline Date */}
+            <div className="space-y-1">
               <label htmlFor="input-collection-deadline-date" className="text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 whitespace-nowrap">
-                <Calendar className="w-4 h-4 text-teal-600 shrink-0" />
                 <span className="whitespace-nowrap">تاريخ الاستحقاق</span>
               </label>
-            </div>
-
-            <input
-              id="input-collection-deadline-date"
-              type="date"
-              value={deadlineDate}
-              onChange={(e) => setDeadlineDate(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
-              required
-            />
-          </div>
-
-          {/* Alert Timing & Days Before */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            {/* When to Remind */}
-            <div className="space-y-1.5">
-              <label htmlFor="select-remind-days-before" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Bell className="w-4 h-4 text-amber-500" />
-                <span>موعد إرسال التنبيه</span>
-              </label>
-              <select
-                id="select-remind-days-before"
-                value={remindDaysBefore}
-                onChange={(e) => setRemindDaysBefore(Number(e.target.value))}
-                className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
-              >
-                <option value={0}>في نفس يوم الاستحقاق</option>
-                <option value={1}>قبل الاستحقاق بيوم واحد</option>
-                <option value={3}>قبل الاستحقاق بـ 3 أيام</option>
-                <option value={7}>قبل الاستحقاق بأسبوع كامل</option>
-              </select>
-            </div>
-
-            {/* Alert Time */}
-            <div className="space-y-1.5">
-              <label htmlFor="input-reminder-time" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Clock className="w-4 h-4 text-teal-600" />
-                <span>ساعة التنبيه</span>
-              </label>
               <input
-                id="input-reminder-time"
-                type="time"
-                value={reminderTime}
-                onChange={(e) => setReminderTime(e.target.value)}
+                id="input-collection-deadline-date"
+                type="date"
+                value={deadlineDate}
+                onChange={(e) => setDeadlineDate(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
+                required
               />
             </div>
-          </div>
+
+            {/* Alert Timing & Time */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="space-y-1">
+                <label htmlFor="select-remind-days-before" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Bell className="w-4 h-4 text-amber-500" />
+                  <span>توقيت التذكير</span>
+                </label>
+                <select
+                  id="select-remind-days-before"
+                  value={remindDaysBefore}
+                  onChange={(e) => setRemindDaysBefore(Number(e.target.value))}
+                  className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
+                >
+                  <option value={0}>في نفس يوم الاستحقاق</option>
+                  <option value={1}>قبل الاستحقاق بيوم واحد</option>
+                  <option value={3}>قبل الاستحقاق بـ 3 أيام</option>
+                  <option value={7}>قبل الاستحقاق بأسبوع كامل</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label htmlFor="input-reminder-time" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-teal-600" />
+                  <span>ساعة الإرسال</span>
+                </label>
+                <input
+                  id="input-reminder-time"
+                  type="time"
+                  value={reminderTime}
+                  onChange={(e) => setReminderTime(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
+                />
+              </div>
+            </div>
+          </section>
 
           {/* Channel & Recurrence */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
