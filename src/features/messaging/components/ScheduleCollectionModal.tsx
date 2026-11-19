@@ -259,7 +259,7 @@ export const ScheduleCollectionModal: React.FC = () => {
             <div className="flex items-center">
               <label htmlFor="input-collection-deadline-date" className="text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 whitespace-nowrap">
                 <Calendar className="w-4 h-4 text-teal-600 shrink-0" />
-                <span className="whitespace-nowrap">الموعد النهائي للتحصيل (تاريخ الاستحقاق)</span>
+                <span className="whitespace-nowrap">تاريخ الاستحقاق</span>
               </label>
             </div>
 
