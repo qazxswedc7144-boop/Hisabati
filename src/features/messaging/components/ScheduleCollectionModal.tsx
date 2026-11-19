@@ -263,7 +263,7 @@ export const ScheduleCollectionModal: React.FC = () => {
           {/* Collection Deadline Date */}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <label htmlFor="input-collection-deadline-date" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <Calendar className="w-4 h-4 text-teal-600" />
                 <span>الموعد النهائي للتحصيل (تاريخ الاستحقاق)</span>
               </label>
@@ -306,7 +306,7 @@ export const ScheduleCollectionModal: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {/* When to Remind */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <label htmlFor="select-remind-days-before" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <Bell className="w-4 h-4 text-amber-500" />
                 <span>موعد إرسال التنبيه</span>
               </label>
@@ -325,7 +325,7 @@ export const ScheduleCollectionModal: React.FC = () => {
 
             {/* Alert Time */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <label htmlFor="input-reminder-time" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <Clock className="w-4 h-4 text-teal-600" />
                 <span>ساعة التنبيه</span>
               </label>
@@ -343,7 +343,7 @@ export const ScheduleCollectionModal: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Channel */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <label htmlFor="select-alert-channel" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <Smartphone className="w-4 h-4 text-teal-600" />
                 <span>قناة استلام التنبيه</span>
               </label>
@@ -361,7 +361,7 @@ export const ScheduleCollectionModal: React.FC = () => {
 
             {/* Recurrence Rule */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <label htmlFor="select-repeat-rule" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <Repeat className="w-4 h-4 text-teal-600" />
                 <span>تكرار التنبيه</span>
               </label>
@@ -381,7 +381,7 @@ export const ScheduleCollectionModal: React.FC = () => {
 
           {/* Custom Note */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+            <label htmlFor="input-custom-collection-note" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
               <FileText className="w-4 h-4 text-slate-500" />
               <span>ملاحظة أو تعليمات إضافية للتحصيل (اختياري)</span>
             </label>
