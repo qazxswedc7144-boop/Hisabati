@@ -485,8 +485,8 @@ export class RestoreHardeningTestSuite {
       'RST-11',
       'عزل قاعدة البيانات: ثبات Dexie v13 مع ثبات BACKUP_SCHEMA_VERSION=6 و FINANCIAL_FORMAT_VERSION=1',
       async () => {
-        if (DATABASE_SCHEMA_VERSION !== 13) {
-          throw new Error(`DATABASE_SCHEMA_VERSION must remain 13, got ${DATABASE_SCHEMA_VERSION}`);
+        if (DATABASE_SCHEMA_VERSION !== 14) {
+          throw new Error(`DATABASE_SCHEMA_VERSION must remain 14, got ${DATABASE_SCHEMA_VERSION}`);
         }
         if (BACKUP_SCHEMA_VERSION !== 6) {
           throw new Error(`BACKUP_SCHEMA_VERSION must remain 6, got ${BACKUP_SCHEMA_VERSION}`);
