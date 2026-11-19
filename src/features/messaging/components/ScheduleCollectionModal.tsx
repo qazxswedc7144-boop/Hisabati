@@ -163,7 +163,7 @@ export const ScheduleCollectionModal: React.FC = () => {
   return (
     <div
       id="schedule-collection-modal-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-3 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-1 sm:p-2 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200"
       dir="rtl"
     >
       <div
@@ -171,11 +171,11 @@ export const ScheduleCollectionModal: React.FC = () => {
         role="dialog"
         aria-modal="true"
         aria-labelledby="schedule-collection-modal-title"
-        className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[82dvh] my-auto"
+        className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[88dvh] my-auto"
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-100 dark:border-slate-800 shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="relative flex items-center justify-between px-3 py-2 border-b border-slate-100 dark:border-slate-800 shrink-0">
+          <div className="flex items-center gap-2">
             <div className="w-10 h-10 rounded-2xl bg-teal-50 dark:bg-teal-950/70 text-teal-700 dark:text-teal-300 flex items-center justify-center border border-teal-200/60 dark:border-teal-800/60 shrink-0">
               <Clock className="w-5 h-5" />
             </div>
@@ -183,16 +183,14 @@ export const ScheduleCollectionModal: React.FC = () => {
               <h2 id="schedule-collection-modal-title" className="text-base sm:text-lg font-black text-slate-900 dark:text-slate-100">
                 جدولة تنبيه تحصيل دين
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                تحديد موعد الاستحقاق النهائي وتلقي إشعارات المتابعة
-              </p>
+              {/* Redundant subtitle removed to keep the modal compact */}
             </div>
           </div>
 
           <button
             id="btn-close-schedule-modal"
             onClick={closeScheduleModal}
-            className="p-2 -translate-y-0.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-h-[44px] min-w-[44px] flex items-center justify-center"
+            className="absolute top-1 left-1 z-10 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-h-[40px] min-w-[40px] flex items-center justify-center"
             title="إغلاق"
             aria-label="إغلاق نافذة جدولة التنبيه"
           >
@@ -201,7 +199,7 @@ export const ScheduleCollectionModal: React.FC = () => {
         </div>
 
         {/* Modal Form Content */}
-        <form onSubmit={handleSubmit} className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3">
+        <form onSubmit={handleSubmit} className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2">
           {/* Account Selection */}
           <div className="space-y-1">
             <label htmlFor="input-schedule-account" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
@@ -258,7 +256,7 @@ export const ScheduleCollectionModal: React.FC = () => {
           </div>
 
           {/* Due Date & Reminder Group */}
-          <section className="rounded-2xl border border-teal-200/80 dark:border-teal-800/60 bg-teal-50/40 dark:bg-teal-950/15 p-3 space-y-1.5">
+          <section className="rounded-xl border border-teal-200/80 dark:border-teal-800/60 bg-teal-50/40 dark:bg-teal-950/15 p-2 space-y-1">
             <h3 className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-2">
               <Calendar className="w-4 h-4 text-teal-600 shrink-0" />
               <span>موعد الاستحقاق والتذكير</span>
