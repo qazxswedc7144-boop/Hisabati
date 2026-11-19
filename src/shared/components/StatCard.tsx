@@ -61,7 +61,7 @@ export const StatCard: React.FC<StatCardProps> = ({
     <div
       id={id}
       onClick={onClick}
-      className={`relative overflow-hidden rounded-2xl border p-3.5 sm:p-4 transition-all shadow-xs flex flex-col justify-between ${style.cardBg} ${
+      className={`app-stat-card ${style.cardBg} ${
         onClick ? 'cursor-pointer hover:shadow-md active:scale-[0.99]' : ''
       }`}
     >
