@@ -28,6 +28,7 @@ import {
   FinancialSnapshot,
   PendingSideEffect,
   AICommandRecord,
+  AIAuditRetryRecord,
 } from '@/shared/types';
 
 export class HisabatiDatabase extends Dexie {
@@ -64,6 +65,7 @@ export class HisabatiDatabase extends Dexie {
   financialSnapshots!: Table<FinancialSnapshot, string>;
   pendingSideEffects!: Table<PendingSideEffect, string>;
   aiCommands!: Table<AICommandRecord, string>;
+  aiAuditRetryQueue!: Table<AIAuditRetryRecord, string>;
 
   constructor(dbName: string = 'HisabatiDatabase') {
     super(dbName);
@@ -416,6 +418,34 @@ export class HisabatiDatabase extends Dexie {
         await tx.table('aiCommands').bulkAdd(records);
       }
       await settingsTable.delete('pending_ai_commands');
+    });
+
+    // Version 14 Schema (Durable AI Audit Retry Queue)
+    // Repeat the complete v13 schema to preserve every existing store during upgrade.
+    this.version(14).stores({
+      accounts: 'id, name, phone, archived, dueDate, createdAt, updatedAt, [archived+dueDate]',
+      transactions: 'id, accountId, type, date, operationId, status, createdAt, updatedAt, [accountId+date]',
+      settings: 'id, key, updatedAt',
+      syncQueue: 'id, entityType, entityId, operation, operationId, status, createdAt',
+      syncAuditLogs: 'id, action, timestamp, deviceId, success',
+      messages: 'id, messageId, channel, type, status, recipient, priority, operationId, createdAt, scheduledAt',
+      messageTemplates: 'id, name, type, defaultChannel, active, createdAt',
+      inAppNotifications: 'id, type, priority, read, createdAt, idempotencyKey, relatedEntityId, [type+idempotencyKey]',
+      scheduledMessages: 'id, channel, status, scheduledAt, nextRunAt, operationId, createdAt',
+      messageQueue: 'id, messageId, channel, status, operationId, nextRetryAt, createdAt',
+      aiAuditLogs: 'id, requestId, intent, status, provider, confirmed, timestamp',
+      users: 'id, email, phone, role, activeTeamId, createdAt',
+      teams: 'id, name, ownerId, createdAt',
+      teamMembers: 'id, teamId, userId, role, status, [teamId+userId], createdAt',
+      auditTrail: 'id, sequenceNumber, timestamp, action, targetType, targetId, riskLevel, [targetType+targetId]',
+      trash: 'id, entityType, entityId, deletedAt, expiresAt, deletedBy, status, [entityType+entityId]',
+      safetyBackups: 'id, createdAt, type',
+      debts: 'id, accountId, dueDate, status, [accountId+status], [status+dueDate]',
+      financialAuditLogs: 'id, sequenceNumber, eventType, operationId, targetType, targetId, organizationId, timestamp',
+      financialSnapshots: 'id, organizationId, ledgerRevision, createdAt',
+      pendingSideEffects: 'id, sourceType, sourceId, effectType, createdAt',
+      aiCommands: '&commandId, operationId, status, expiresAt, [status+expiresAt]',
+      aiAuditRetryQueue: '&id, eventId, nextRetryAt, retryCount, createdAt',
     });
   }
 }

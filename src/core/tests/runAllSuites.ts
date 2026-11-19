@@ -8,6 +8,7 @@ import { RestoreHardeningTestSuite } from './restoreHardening.test';
 import { MessagingTestSuite } from './messaging.test';
 import { AITestSuite } from './ai.test';
 import { AICommandPersistence2E3TestSuite } from './ai/aiCommandPersistence.2e3.test';
+import { Round2E4AIAuditReliabilityTestSuite } from './ai/round2E4AIAuditReliability.test';
 import { OCRTestSuite } from './ocr.test';
 import { RBACTestSuite } from './rbac.test';
 import { runBITests } from './bi.test';
@@ -217,6 +218,25 @@ async function main() {
     }
   } catch (err: any) {
     console.error('AI Command Persistence Suite crashed:', err);
+    totalFailed++;
+    totalCount++;
+  }
+
+  // ROUND 2-E.4: Text Safety Guard & Durable AI Audit Retry Queue
+  console.log('\n--- [ROUND 2-E.4] AI Text Safety & Audit Retry Reliability ---');
+  try {
+    const aiAudit = await Round2E4AIAuditReliabilityTestSuite.runAll();
+    console.log(`ROUND 2-E.4 Result: Passed ${aiAudit.passed}/${aiAudit.total}`);
+    totalPassed += aiAudit.passed;
+    totalFailed += aiAudit.failed;
+    totalCount += aiAudit.total;
+    if (aiAudit.failed > 0) {
+      for (const result of aiAudit.results.filter((item) => !item.passed)) {
+        console.error(`  ❌ [${result.id}] ${result.message}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('ROUND 2-E.4 AI Audit Reliability Suite crashed:', err);
     totalFailed++;
     totalCount++;
   }

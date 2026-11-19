@@ -1,12 +1,18 @@
 import { db } from '../database/db';
 import { AIAuditLogEntry } from '@/shared/types';
+import { aiAuditRetryRepository } from './aiAuditRetry.repository';
 
 export class AIAuditRepository {
   async addLog(entry: AIAuditLogEntry): Promise<void> {
     try {
       await db.aiAuditLogs.put(entry);
     } catch (err) {
-      console.warn('Could not write AI audit log:', err);
+      console.warn('Could not write AI audit log; persisting retry event:', err);
+      try {
+        await aiAuditRetryRepository.enqueue(entry, err);
+      } catch (queueError) {
+        console.error('Could not persist AI audit retry event:', queueError);
+      }
     }
   }
 
