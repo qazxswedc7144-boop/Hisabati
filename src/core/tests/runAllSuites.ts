@@ -223,7 +223,7 @@ async function main() {
   }
 
   // ROUND 2-E.4: Text Safety Guard & Durable AI Audit Retry Queue
-  console.log('\\n--- [ROUND 2-E.4] AI Text Safety & Audit Retry Reliability ---');
+  console.log('\n--- [ROUND 2-E.4] AI Text Safety & Audit Retry Reliability ---');
   try {
     const aiAudit = await Round2E4AIAuditReliabilityTestSuite.runAll();
     console.log(`ROUND 2-E.4 Result: Passed ${aiAudit.passed}/${aiAudit.total}`);
