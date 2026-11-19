@@ -270,6 +270,7 @@ export const ScheduleCollectionModal: React.FC = () => {
                 <input
                   id="input-collection-deadline-date"
                   type="date"
+                  dir="ltr"
                   value={deadlineDate}
                   onChange={(e) => setDeadlineDate(e.target.value)}
                   className="block min-w-0 w-full px-1.5 sm:px-2 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
