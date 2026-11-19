@@ -253,6 +253,18 @@ export class AICommandPersistence2E3TestSuite {
             throw new Error('Migration did not preserve unrelated v12 settings data');
           }
           if (upgradedDb.verno !== 14) throw new Error(`Expected schema v14, got v${upgradedDb.verno}`);
+          const expectedStores = [
+            'accounts', 'transactions', 'settings', 'syncQueue', 'syncAuditLogs',
+            'messages', 'messageTemplates', 'inAppNotifications', 'scheduledMessages',
+            'messageQueue', 'aiAuditLogs', 'users', 'teams', 'teamMembers', 'auditTrail',
+            'trash', 'safetyBackups', 'debts', 'financialAuditLogs', 'financialSnapshots',
+            'pendingSideEffects', 'aiCommands', 'aiAuditRetryQueue',
+          ];
+          const actualStores = new Set(upgradedDb.tables.map((table) => table.name));
+          const missingStores = expectedStores.filter((name) => !actualStores.has(name));
+          if (missingStores.length) {
+            throw new Error(`v14 migration dropped existing stores: ${missingStores.join(', ')}`);
+          }
           if (!migrated) throw new Error('Legacy command was not migrated into aiCommands');
           if (migrated.status !== 'PENDING') throw new Error(`Expected migrated PENDING, got ${migrated.status}`);
           if (migrated.operationId !== legacyCommand.operationId) throw new Error('Migration lost operationId');
