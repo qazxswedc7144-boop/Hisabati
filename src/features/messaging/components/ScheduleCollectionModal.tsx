@@ -239,14 +239,14 @@ export const ScheduleCollectionModal: React.FC = () => {
             </datalist>
 
             {currentAccount && (
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
                 <div>
                   <span className="font-extrabold text-sm text-slate-900 dark:text-slate-100 block">
-                    {scheduleModalAccount.name}
+                    {currentAccount.name}
                   </span>
-                  {scheduleModalAccount.phone && (
+                  {currentAccount.phone && (
                     <span className="text-xs text-slate-400 font-mono block mt-0.5">
-                      {scheduleModalAccount.phone}
+                      {currentAccount.phone}
                     </span>
                   )}
                 </div>
