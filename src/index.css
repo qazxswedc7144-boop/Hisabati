@@ -58,3 +58,92 @@
 .pt-safe {
   padding-top: env(safe-area-inset-top, 0px);
 }
+
+
+/* Hisabati Design System — shared visual tokens and primitives */
+@layer base {
+  :root {
+    color-scheme: light;
+    --app-bg: 248 250 252;
+    --app-surface: 255 255 255;
+    --app-surface-muted: 248 250 252;
+    --app-border: 226 232 240;
+    --app-text: 15 23 42;
+    --app-text-muted: 100 116 139;
+    --app-primary: 13 148 136;
+    --app-radius-card: 1rem;
+    --app-radius-control: 0.75rem;
+    --app-shadow-card: 0 1px 2px rgb(15 23 42 / 0.045);
+  }
+
+  .dark {
+    color-scheme: dark;
+    --app-bg: 2 6 23;
+    --app-surface: 15 23 42;
+    --app-surface-muted: 30 41 59;
+    --app-border: 51 65 85;
+    --app-text: 241 245 249;
+    --app-text-muted: 148 163 184;
+    --app-primary: 45 212 191;
+    --app-shadow-card: 0 1px 2px rgb(0 0 0 / 0.18);
+  }
+}
+
+@layer components {
+  .app-page-stack {
+    @apply space-y-4 sm:space-y-5;
+  }
+
+  .app-panel {
+    background: rgb(var(--app-surface));
+    border: 1px solid rgb(var(--app-border) / 0.9);
+    border-radius: var(--app-radius-card);
+    box-shadow: var(--app-shadow-card);
+  }
+
+  .app-section-heading {
+    @apply flex items-center justify-between gap-3;
+    color: rgb(var(--app-text));
+  }
+
+  .app-section-title {
+    @apply flex min-w-0 items-center gap-2 text-base sm:text-lg font-bold;
+    color: rgb(var(--app-text));
+  }
+
+  .app-icon-button {
+    @apply inline-flex min-h-10 min-w-10 items-center justify-center rounded-xl border transition-colors;
+    border-color: rgb(var(--app-border) / 0.8);
+    color: rgb(var(--app-text-muted));
+  }
+
+  .app-icon-button:hover {
+    background: rgb(var(--app-surface-muted));
+    color: rgb(var(--app-text));
+  }
+
+  .app-stat-card {
+    @apply relative flex flex-col justify-between overflow-hidden border p-3.5 sm:p-4 transition-all;
+    border-radius: var(--app-radius-card);
+    box-shadow: var(--app-shadow-card);
+  }
+
+  .app-header-surface {
+    background: rgb(var(--app-surface) / 0.96);
+    border-color: rgb(var(--app-border) / 0.85);
+  }
+
+  .app-navigation-surface {
+    background: rgb(var(--app-surface));
+    border-color: rgb(var(--app-border));
+  }
+}
+
+html {
+  background: rgb(var(--app-bg));
+}
+
+body {
+  color: rgb(var(--app-text));
+  background: rgb(var(--app-bg));
+}
