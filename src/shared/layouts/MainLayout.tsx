@@ -54,7 +54,7 @@ export const MainLayout: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0 min-h-screen pb-20 md:pb-8">
         <Header />
 
-        <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
+        <main className="app-main-content flex-1 w-full max-w-7xl mx-auto min-w-0 px-4 sm:px-6 py-4 sm:py-6">
           <Outlet />
         </main>
 
