@@ -1,16 +1,17 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowUpRight,
   ArrowDownLeft,
   Scale,
   Users,
-  Plus,
   UserPlus,
   Clock,
   ChevronLeft,
   ScanLine,
   PlusCircle,
+  Plus,
+  Wallet,
 } from 'lucide-react';
 import { useAccountStore } from '@/shared/stores/accountStore';
 import { useTransactionStore } from '@/shared/stores/transactionStore';
@@ -34,6 +35,7 @@ export const DashboardPage: React.FC = () => {
   const recentTransactions = useTransactionStore((state) => state.recentTransactions);
   const currency = useSettingsStore((state) => state.settings.currency);
 
+  // Keep the existing balance calculation unchanged; only derive a clean view list.
   const summary = useMemo(() => {
     let totalFor = 0, totalAgainst = 0;
     for (const acc of accounts) {
@@ -43,117 +45,146 @@ export const DashboardPage: React.FC = () => {
     }
     return { totalFor, totalAgainst, netBalance: totalFor + totalAgainst };
   }, [accounts]);
+
+  const activeAccounts = useMemo(
+    () => accounts.filter((account) => account.archived !== 1 && !(account as any).deletedAt),
+    [accounts]
+  );
+
+  const topAccounts = useMemo(
+    () => [...activeAccounts]
+      .sort((a, b) => Math.abs(b.currentBalance ?? 0) - Math.abs(a.currentBalance ?? 0))
+      .slice(0, 4),
+    [activeAccounts]
+  );
+
   const openQuickAdd = useUIStore((state) => state.openQuickAddTransaction);
   const openAddAccount = useUIStore((state) => state.openAddAccount);
   const openScannerModal = useOCRStore((state) => state.openScannerModal);
 
   return (
     <div id="dashboard-page" className="app-page-stack animate-in fade-in duration-200">
-      {/* Welcome Banner & Quick Actions - Compact Row on All Screens */}
-      <div className="flex flex-row items-center justify-between gap-2 sm:gap-3 w-full">
-        <div className="min-w-0 flex-1">
-          <h2 className="text-base sm:text-xl font-black tracking-tight text-slate-900 dark:text-slate-100 truncate">
+      {/* Welcome */}
+      <section className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-lg sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
             {t('dashboard.welcome')} 👋
           </h2>
-          <p className="text-[11px] sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
             {t('dashboard.quickSummary')}
           </p>
         </div>
+        <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+          <Wallet className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+          <span>{activeAccounts.length} حساب نشط</span>
+        </div>
+      </section>
 
-        {/* Quick Actions (Secondary: مسح, Tertiary: إضافة حساب) */}
-        <div className="flex flex-row items-center gap-1.5 sm:gap-2 flex-nowrap shrink-0">
-          <button
-            id="btn-dash-scan-ocr"
-            onClick={() => openScannerModal()}
-            className="w-fit inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-sky-200 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-[11px] sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[40px] sm:min-h-[44px] whitespace-nowrap shrink-0"
-          >
-            <ScanLine className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-600 dark:text-sky-400 shrink-0" />
-            <span>مسح فاتورة</span>
-          </button>
+      {/* Primary actions: transaction first, then account and receipt scan */}
+      <section aria-label="الإجراءات السريعة" className="grid grid-cols-3 gap-2 sm:gap-3">
+        <button
+          id="btn-dash-add-transaction"
+          type="button"
+          onClick={() => openQuickAdd()}
+          className="min-w-0 min-h-[52px] sm:min-h-[60px] inline-flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl sm:rounded-2xl bg-teal-600 hover:bg-teal-700 text-white px-2.5 sm:px-4 py-2.5 text-[11px] sm:text-sm font-extrabold shadow-sm hover:shadow-md active:scale-[0.98] transition"
+        >
+          <Plus className="w-4 h-4 sm:w-[18px] sm:h-[18px] shrink-0" />
+          <span className="truncate">إضافة عملية</span>
+        </button>
+        <button
+          id="btn-dash-add-acc"
+          type="button"
+          onClick={() => openAddAccount()}
+          className="min-w-0 min-h-[52px] sm:min-h-[60px] inline-flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 px-2.5 sm:px-4 py-2.5 text-[11px] sm:text-sm font-bold transition"
+        >
+          <UserPlus className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-teal-600 dark:text-teal-400 shrink-0" />
+          <span className="truncate">إضافة حساب</span>
+        </button>
+        <button
+          id="btn-dash-scan-ocr"
+          type="button"
+          onClick={() => openScannerModal()}
+          className="min-w-0 min-h-[52px] sm:min-h-[60px] inline-flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl sm:rounded-2xl border border-sky-200 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 px-2.5 sm:px-4 py-2.5 text-[11px] sm:text-sm font-bold transition"
+        >
+          <ScanLine className="w-4 h-4 sm:w-[18px] sm:h-[18px] shrink-0" />
+          <span className="truncate">مسح فاتورة</span>
+        </button>
+      </section>
 
+      {/* Financial overview: consistent 2x2 mobile grid, four balanced cards on desktop */}
+      <section aria-label="ملخص الأرصدة" className="space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">ملخص الأرصدة</h3>
           <button
-            id="btn-dash-add-acc"
-            onClick={() => openAddAccount()}
-            title="إضافة حساب"
-            className="w-fit inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] sm:text-sm font-bold shadow-xs active:scale-[0.98] transition min-h-[40px] sm:min-h-[44px] whitespace-nowrap shrink-0"
+            type="button"
+            onClick={() => navigate('/accounts')}
+            className="text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline min-h-[36px] inline-flex items-center gap-1"
           >
-            <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-600 dark:text-teal-400 shrink-0" />
-            <span>إضافة حساب</span>
+            <span>كل الحسابات</span>
+            <ChevronLeft className="w-4 h-4" />
           </button>
         </div>
-      </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+          <StatCard
+            id="stat-owed-to-me"
+            title={t('dashboard.owedToMe')}
+            subtitle={t('dashboard.owedToMeSubtitle')}
+            amount={summary.totalFor}
+            currencyCode={currency}
+            variant="emerald"
+            icon={ArrowUpRight}
+            onClick={() => navigate('/accounts?filter=owed_to_me')}
+          />
+          <StatCard
+            id="stat-owed-by-me"
+            title={t('dashboard.owedByMe')}
+            subtitle={t('dashboard.owedByMeSubtitle')}
+            amount={Math.abs(summary.totalAgainst)}
+            currencyCode={currency}
+            variant="rose"
+            icon={ArrowDownLeft}
+            onClick={() => navigate('/accounts?filter=owed_by_me')}
+          />
+          <StatCard
+            id="stat-net-balance"
+            title={t('dashboard.netBalance')}
+            subtitle={summary.netBalance >= 0 ? 'صافي مستحق لك' : 'صافي مستحق عليك'}
+            amount={summary.netBalance}
+            currencyCode={currency}
+            variant={summary.netBalance >= 0 ? 'teal' : 'rose'}
+            icon={Scale}
+          />
+          <StatCard
+            id="stat-total-accounts"
+            title={t('dashboard.totalAccounts')}
+            subtitle="الأشخاص والجهات"
+            count={activeAccounts.length}
+            isCurrency={false}
+            variant="slate"
+            icon={Users}
+            onClick={() => navigate('/accounts')}
+          />
+        </div>
+      </section>
 
-      {/* 4 Financial Stat Cards (2x2 Grid on Mobile, 4 Columns on lg) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Total Owed to Me (لك) */}
-        <StatCard
-          id="stat-owed-to-me"
-          title={t('dashboard.owedToMe')}
-          subtitle={t('dashboard.owedToMeSubtitle')}
-          amount={summary.totalFor}
-          currencyCode={currency}
-          variant="emerald"
-          icon={ArrowUpRight}
-          onClick={() => navigate('/accounts?filter=owed_to_me')}
-        />
-
-        {/* Total Owed by Me (عليك) */}
-        <StatCard
-          id="stat-owed-by-me"
-          title={t('dashboard.owedByMe')}
-          subtitle={t('dashboard.owedByMeSubtitle')}
-          amount={Math.abs(summary.totalAgainst)}
-          currencyCode={currency}
-          variant="rose"
-          icon={ArrowDownLeft}
-          onClick={() => navigate('/accounts?filter=owed_by_me')}
-        />
-
-        {/* Net Balance (صافي الرصيد) */}
-        <StatCard
-          id="stat-net-balance"
-          title={t('dashboard.netBalance')}
-          subtitle={summary.netBalance >= 0 ? 'صافي مستحق لك' : 'صافي مستحق عليك'}
-          amount={summary.netBalance}
-          currencyCode={currency}
-          variant={summary.netBalance >= 0 ? 'teal' : 'rose'}
-          icon={Scale}
-        />
-
-        {/* Number of Accounts */}
-        <StatCard
-          id="stat-total-accounts"
-          title={t('dashboard.totalAccounts')}
-          subtitle="الأشخاص والجهات"
-          count={accounts.length}
-          isCurrency={false}
-          variant="slate"
-          icon={Users}
-          onClick={() => navigate('/accounts')}
-        />
-      </div>
-
-      {/* Financial Health Card (Responsive: Vertical on Mobile, Horizontal on Desktop) */}
       <React.Suspense fallback={<div className="h-48 w-full bg-slate-50 dark:bg-slate-900 rounded-2xl animate-pulse" />}>
         <FinancialHealthCard />
       </React.Suspense>
 
-      {/* Date-based Due Debts Notification Card */}
       <React.Suspense fallback={<div className="h-32 w-full bg-slate-50 dark:bg-slate-900 rounded-2xl animate-pulse" />}>
         <DueDebtsAlertCard />
       </React.Suspense>
 
-      {/* Latest Operations & Top Accounts Overview */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">
-        {/* Latest Operations (2 Cols on lg) */}
-        <div className="lg:col-span-2 space-y-3">
+      {/* Recent activity and leading accounts */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-5">
+        <section className="lg:col-span-3 min-w-0 space-y-3">
           <div className="app-section-heading">
             <h3 className="app-section-title">
               <Clock className="w-5 h-5 text-teal-600 dark:text-teal-400" />
               <span>آخر العمليات</span>
             </h3>
-
             <button
+              type="button"
               onClick={() => navigate('/accounts')}
               className="text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-1 min-h-[36px]"
             >
@@ -173,142 +204,131 @@ export const DashboardPage: React.FC = () => {
           ) : (
             <div className="app-panel overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
               {recentTransactions.map((trx) => (
-                <div
+                <button
                   key={trx.id}
                   id={`trx-row-${trx.id}`}
+                  type="button"
                   onClick={() => navigate(`/accounts/${trx.accountId}`)}
-                  className="p-3.5 sm:p-4 flex items-center justify-between gap-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 cursor-pointer transition"
+                  className="w-full text-start p-3 sm:p-4 flex items-center justify-between gap-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                        trx.type === 'debit'
-                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/60'
-                          : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-800/60'
-                      }`}
-                    >
-                      {trx.type === 'debit' ? (
-                        <ArrowUpRight className="w-4 h-4 sm:w-5 sm:h-5" />
-                      ) : (
-                        <ArrowDownLeft className="w-4 h-4 sm:w-5 sm:h-5" />
-                      )}
-                    </div>
-
-                    <div className="min-w-0">
-                      <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                  <span className="flex items-center gap-3 min-w-0">
+                    <span className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                      trx.type === 'debit'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/60'
+                        : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-800/60'
+                    }`}>
+                      {trx.type === 'debit' ? <ArrowUpRight className="w-4 h-4 sm:w-5 sm:h-5" /> : <ArrowDownLeft className="w-4 h-4 sm:w-5 sm:h-5" />}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
                         {trx.accountName || 'حساب'}
-                      </h4>
-                      <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                        <span>{formatDate(trx.date, 'relative')}</span>
+                      </span>
+                      <span className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 min-w-0">
+                        <span className="shrink-0">{formatDate(trx.date, 'relative')}</span>
                         {trx.note && (
                           <>
                             <span>•</span>
                             <span className="truncate">{trx.note}</span>
                           </>
                         )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-end shrink-0 ps-2">
-                    <div
-                      className={`text-xs sm:text-base font-extrabold tabular-nums ${
-                        trx.type === 'debit'
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-rose-600 dark:text-rose-400'
-                      }`}
-                    >
+                      </span>
+                    </span>
+                  </span>
+                  <span className="text-end shrink-0 ps-2">
+                    <span className={`block text-xs sm:text-base font-extrabold tabular-nums ${
+                      trx.type === 'debit' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                    }`}>
                       {trx.type === 'debit' ? '+' : '-'} {formatCurrency(trx.amount, currency)}
-                    </div>
-                    <span
-                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md inline-block mt-0.5 ${
-                        trx.type === 'debit'
-                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-                          : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
-                      }`}
-                    >
+                    </span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md inline-block mt-0.5 ${
+                      trx.type === 'debit'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
+                    }`}>
                       {trx.type === 'debit' ? 'لك عنده' : 'له عندك'}
                     </span>
-                  </div>
-                </div>
+                  </span>
+                </button>
               ))}
             </div>
           )}
-        </div>
+        </section>
 
-        {/* Top Accounts Section (1 Col on lg) */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+        <section className="lg:col-span-2 min-w-0 space-y-3">
+          <div className="app-section-heading">
+            <h3 className="app-section-title">
               <Users className="w-5 h-5 text-teal-600 dark:text-teal-400" />
               <span>أبرز الحسابات</span>
             </h3>
             <button
+              type="button"
               onClick={() => navigate('/accounts')}
-              className="text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline min-h-[36px] flex items-center gap-1"
+              className="text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline min-h-[36px] inline-flex items-center gap-1"
             >
               <span>{t('dashboard.viewAll')}</span>
               <ChevronLeft className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="app-panel p-3 space-y-2">
-            {accounts.length === 0 ? (
-              <div className="py-6 text-center">
+          <div className="app-panel p-2.5 sm:p-3">
+            {topAccounts.length === 0 ? (
+              <div className="py-8 text-center">
+                <Users className="w-8 h-8 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
                 <p className="text-xs text-slate-500 dark:text-slate-400">لا توجد حسابات مسجلة بعد</p>
+                <button
+                  type="button"
+                  onClick={() => openAddAccount()}
+                  className="mt-3 text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline"
+                >
+                  إضافة أول حساب
+                </button>
               </div>
             ) : (
-              accounts.slice(0, 4).map((account) => (
-                <div
-                  key={account.id}
-                  className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-teal-500/30 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-800/80 transition flex flex-col gap-2"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div
-                      onClick={() => navigate(`/accounts/${account.id}`)}
-                      className="min-w-0 cursor-pointer flex-1"
-                    >
-                      <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate hover:text-teal-600 dark:hover:text-teal-400">
-                        {account.name}
-                      </p>
-                      <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
-                        {account.phone || account.note || 'لا توجد ملاحظات'}
-                      </p>
-                    </div>
-
-                    <BalanceBadge balance={account.currentBalance} size="sm" />
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-800">
-                    <div className="text-start">
-                      <span className="text-[10px] text-slate-400 block">الرصيد:</span>
-                      <span
-                        className={`text-xs sm:text-sm font-black tabular-nums ${
-                          account.currentBalance > 0
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : account.currentBalance < 0
-                            ? 'text-rose-600 dark:text-rose-400'
-                            : 'text-slate-600 dark:text-slate-300'
-                        }`}
-                      >
-                        {formatCurrency(Math.abs(account.currentBalance), currency)}
-                      </span>
-                    </div>
-
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                {topAccounts.map((account, index) => (
+                  <div key={account.id} className="py-3 first:pt-1 last:pb-1 flex items-center gap-2.5">
+                    <span className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[11px] font-extrabold flex items-center justify-center shrink-0">
+                      {index + 1}
+                    </span>
                     <button
+                      type="button"
+                      onClick={() => navigate(`/accounts/${account.id}`)}
+                      className="min-w-0 flex-1 text-start"
+                    >
+                      <span className="block text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate hover:text-teal-600 dark:hover:text-teal-400">
+                        {account.name}
+                      </span>
+                      <span className="block text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                        {account.phone || account.note || 'لا توجد ملاحظات'}
+                      </span>
+                    </button>
+                    <div className="text-end shrink-0">
+                      <span className={`block text-xs sm:text-sm font-black tabular-nums ${
+                        account.currentBalance > 0
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : account.currentBalance < 0
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : 'text-slate-600 dark:text-slate-300'
+                      }`}>
+                        {formatCurrency(Math.abs(account.currentBalance ?? 0), currency)}
+                      </span>
+                      <BalanceBadge balance={account.currentBalance ?? 0} size="sm" />
+                    </div>
+                    <button
+                      type="button"
                       onClick={() => openQuickAdd(account.id)}
                       title="تسجيل عملية لهذا الحساب"
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 text-teal-700 dark:text-teal-300 text-[11px] font-bold transition min-h-[36px] active:scale-[0.98]"
+                      aria-label={`إضافة عملية إلى ${account.name}`}
+                      className="w-9 h-9 sm:w-10 sm:h-10 inline-flex items-center justify-center rounded-xl bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 text-teal-700 dark:text-teal-300 transition shrink-0"
                     >
-                      <PlusCircle className="w-3.5 h-3.5" />
-                      <span>+ إضافة عملية</span>
+                      <PlusCircle className="w-4 h-4" />
                     </button>
                   </div>
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );
