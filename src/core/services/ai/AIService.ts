@@ -133,10 +133,12 @@ export class AIService {
         promptPreview: aiPrivacyService.sanitizePromptForAudit(rawPrompt),
         intent: response.intent,
         timestamp: new Date().toISOString(),
-        status: 'success',
+        status: response.command?.status === 'REJECTED' ? 'rejected' : 'success',
         provider: response.provider || this.activeProvider.id,
         confidence: response.confidence,
-        action: response.command ? `Prepared command ${response.command.intent}` : `Answered intent ${response.intent}`,
+        action: response.command?.status === 'REJECTED'
+          ? 'Rejected command before durable persistence'
+          : response.command ? `Prepared command ${response.command.intent}` : `Answered intent ${response.intent}`,
         confirmed: false,
       });
 
