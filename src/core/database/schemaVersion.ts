@@ -1,6 +1,6 @@
 /**
  * CHANGELOG
- * - 1.8: Updated DATABASE_SCHEMA_VERSION to 14 (durable AI command state machine).
+ * - 1.8: Updated DATABASE_SCHEMA_VERSION to 14 (durable AI audit retry queue).
  * - 1.7: Updated DATABASE_SCHEMA_VERSION to 11 (pendingSideEffects table for hardened sync).
  * - 1.6: Updated DATABASE_SCHEMA_VERSION to 9 and BACKUP_SCHEMA_VERSION to 5 (debts table & idempotency).
  * - 1.5: Added MIN_SUPPORTED_* version constants for backward compatibility enforcement.
