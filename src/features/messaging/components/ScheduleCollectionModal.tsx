@@ -303,7 +303,7 @@ export const ScheduleCollectionModal: React.FC = () => {
                   id="select-remind-days-before"
                   value={remindDaysBefore}
                   onChange={(e) => setRemindDaysBefore(Number(e.target.value))}
-                  className="block min-w-0 w-full px-1.5 sm:px-2 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
+                  className="block min-w-0 w-full appearance-none px-1.5 sm:px-2 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
                 >
                   <option value={0}>في نفس يوم الاستحقاق</option>
                   <option value={1}>قبل الاستحقاق بيوم واحد</option>
@@ -322,7 +322,7 @@ export const ScheduleCollectionModal: React.FC = () => {
                   type="time"
                   value={reminderTime}
                   onChange={(e) => setReminderTime(e.target.value)}
-                  className="block min-w-0 w-full px-1.5 sm:px-2 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
+                  className="block min-w-0 w-full appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-clear-button]:hidden px-1.5 sm:px-2 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] sm:text-xs font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
                 />
               </div>
             </div>
