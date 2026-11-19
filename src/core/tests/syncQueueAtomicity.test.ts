@@ -90,7 +90,7 @@ export class SyncQueueAtomicityTestSuite {
         if (first.id === second.id) throw new Error('Distinct operations unexpectedly share a queue row');
       });
 
-      // T-S4: v13 is active for durable AI commands; syncQueue.operationId remains non-unique.
+      // T-S4: v14 is active for durable AI commands; syncQueue.operationId remains non-unique.
       await runTest('T-S4', async () => {
         if (DATABASE_SCHEMA_VERSION !== 14 || db.verno !== DATABASE_SCHEMA_VERSION) {
           throw new Error(`Expected Dexie v14 to match DATABASE_SCHEMA_VERSION; found db=${db.verno}, constant=${DATABASE_SCHEMA_VERSION}`);
