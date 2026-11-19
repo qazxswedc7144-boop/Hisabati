@@ -28,6 +28,7 @@ import {
   FinancialSnapshot,
   PendingSideEffect,
   AICommandRecord,
+  AIAuditRetryRecord,
 } from '@/shared/types';
 
 export class HisabatiDatabase extends Dexie {
@@ -64,6 +65,7 @@ export class HisabatiDatabase extends Dexie {
   financialSnapshots!: Table<FinancialSnapshot, string>;
   pendingSideEffects!: Table<PendingSideEffect, string>;
   aiCommands!: Table<AICommandRecord, string>;
+  aiAuditRetryQueue!: Table<AIAuditRetryRecord, string>;
 
   constructor(dbName: string = 'HisabatiDatabase') {
     super(dbName);
@@ -416,6 +418,12 @@ export class HisabatiDatabase extends Dexie {
         await tx.table('aiCommands').bulkAdd(records);
       }
       await settingsTable.delete('pending_ai_commands');
+    });
+
+    // Version 14 Schema (Durable AI Audit Retry Queue)
+    // Existing stores remain unchanged; eventId is the queue's idempotent primary key.
+    this.version(14).stores({
+      aiAuditRetryQueue: '&id, eventId, nextRetryAt, retryCount, createdAt',
     });
   }
 }
