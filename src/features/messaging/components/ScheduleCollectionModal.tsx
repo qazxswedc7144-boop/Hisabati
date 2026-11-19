@@ -263,8 +263,8 @@ export const ScheduleCollectionModal: React.FC = () => {
             </h3>
 
             {/* Due date, reminder timing, and send time in one row */}
-            <div className="grid grid-cols-3 gap-2">
-              <div className="min-w-0 space-y-1">
+            <div className="grid grid-cols-[1.15fr_1fr_1fr] gap-2">
+              <div className="min-w-0 space-y-1 -mr-3 w-[calc(100%+0.75rem)]">
                 <label htmlFor="input-collection-deadline-date" className="min-h-8 text-[10px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 flex items-end leading-tight">
                   <span>تاريخ الاستحقاق</span>
                 </label>
@@ -501,7 +501,7 @@ export const ScheduleCollectionModal: React.FC = () => {
           )}
 
           {/* Form Actions */}
-          <div className="sticky bottom-0 z-10 -mx-3 -mb-2 px-3 py-1.5 flex items-center justify-end gap-5 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
+          <div className="sticky bottom-0 z-10 -mx-3 -mb-2 px-3 py-1.5 flex items-center justify-between gap-5 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
             <button
               type="button"
               onClick={closeScheduleModal}
