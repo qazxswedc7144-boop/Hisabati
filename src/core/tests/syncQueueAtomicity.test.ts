@@ -92,8 +92,8 @@ export class SyncQueueAtomicityTestSuite {
 
       // T-S4: v13 is active for durable AI commands; syncQueue.operationId remains non-unique.
       await runTest('T-S4', async () => {
-        if (DATABASE_SCHEMA_VERSION !== 13 || db.verno !== DATABASE_SCHEMA_VERSION) {
-          throw new Error(`Expected Dexie v13 to match DATABASE_SCHEMA_VERSION; found db=${db.verno}, constant=${DATABASE_SCHEMA_VERSION}`);
+        if (DATABASE_SCHEMA_VERSION !== 14 || db.verno !== DATABASE_SCHEMA_VERSION) {
+          throw new Error(`Expected Dexie v14 to match DATABASE_SCHEMA_VERSION; found db=${db.verno}, constant=${DATABASE_SCHEMA_VERSION}`);
         }
         const operationIdIndex = db.syncQueue.schema.indexes.find(index => index.name === 'operationId');
         if (!operationIdIndex) throw new Error('syncQueue.operationId index is missing');
