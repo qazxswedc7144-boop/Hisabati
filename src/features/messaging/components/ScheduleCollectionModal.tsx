@@ -201,28 +201,26 @@ export const ScheduleCollectionModal: React.FC = () => {
         {/* Modal Form Content */}
         <form onSubmit={handleSubmit} className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2">
           {/* Account Selection */}
-          <div className="space-y-1">
-            <label htmlFor="input-schedule-account" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-              <User className="w-4 h-4 text-teal-600" />
-              <span>اسم العميل</span>
-            </label>
-
-            <input
-              id="input-schedule-account"
-              type="text"
-              list="schedule-debtor-accounts"
-              defaultValue={scheduleModalAccount?.name ?? ''}
-              placeholder="اسم العميل"
-              autoComplete="off"
-              onChange={(e) => {
-                const enteredName = e.target.value.trim().toLocaleLowerCase();
-                const matchedAccount = debtorAccounts.find(
-                  (account) => account.name.trim().toLocaleLowerCase() === enteredName,
-                );
-                setSelectedAccountId(matchedAccount?.id ?? '');
-              }}
-              className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
-            />
+          <div className="space-y-0">
+            <div className="relative">
+              <User className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-teal-600 pointer-events-none" aria-hidden="true" />
+              <input
+                id="input-schedule-account"
+                type="text"
+                list="schedule-debtor-accounts"
+                defaultValue={scheduleModalAccount?.name ?? ''}
+                placeholder="اسم العميل"
+                autoComplete="off"
+                onChange={(e) => {
+                  const enteredName = e.target.value.trim().toLocaleLowerCase();
+                  const matchedAccount = debtorAccounts.find(
+                    (account) => account.name.trim().toLocaleLowerCase() === enteredName,
+                  );
+                  setSelectedAccountId(matchedAccount?.id ?? '');
+                }}
+                className="w-full pr-10 pl-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-hidden min-h-[44px]"
+              />
+            </div>
             <datalist id="schedule-debtor-accounts">
               {debtorAccounts.map((acc) => (
                 <option
