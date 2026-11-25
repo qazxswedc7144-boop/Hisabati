@@ -396,7 +396,7 @@ export class DualRepresentationTestSuite {
         currency: 'YER',
       });
       const operationId = 'single_retry_without_date_' + Date.now();
-      const payload = { accountId: account.id, type: 'debit' as const, amount: 15, operationId };
+      const payload = { accountId: account.id, type: 'debit' as const, amount: 15, operationId, date: undefined as any };
       const first = await engine.createTransaction(payload);
       await db.transactions.update(first.id, { date: '2026-01-01' });
       const retry = await engine.createTransaction(payload);
