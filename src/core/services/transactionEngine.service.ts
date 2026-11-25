@@ -277,7 +277,12 @@ export class FinancialTransactionEngine {
             if (
               existingTrx.accountId !== dto.accountId ||
               existingTrx.type !== dto.type ||
-              existingTrx.amountMinor !== safeAmountMinor
+              existingTrx.amountMinor !== safeAmountMinor ||
+              (existingTrx.currency || activeCurrency) !== activeCurrency ||
+              existingTrx.date !== (dto.date || now.split('T')[0]) ||
+              (existingTrx.note || undefined) !== (dto.note?.trim() || undefined) ||
+              (existingTrx.receiptNumber || undefined) !== (dto.receiptNumber?.trim() || undefined) ||
+              (existingTrx.status || 'posted') !== (dto.status || 'posted')
             ) {
               throw new Error('الرقم المرجعي operationId مستخدم سابقاً مع بيانات عملية مختلفة');
             }
@@ -455,21 +460,57 @@ export class FinancialTransactionEngine {
    */
   async createDoubleEntry(dto: CreateDoubleEntryDTO, actor?: AuditActor): Promise<Transaction[]> {
     const currentActor = actor || rbacGuard.getActiveActor();
+    await rbacGuard.assertPermission('transactions:create', {
+      actor: currentActor,
+      targetType: 'transaction',
+      details: 'إنشاء قيد يومية مزدوج متعدد الأطراف',
+    });
+
     const freshSettings = await settingsRepository.getSettings();
-    const currency = dto.currency || freshSettings.currency || 'YER';
     const date = dto.date || new Date().toISOString().split('T')[0];
 
-    if (dto.entries.length < 2) {
+    if (!Array.isArray(dto.entries) || dto.entries.length < 2) {
       throw new Error('القيد المزدوج يجب أن يحتوي على طرفين على الأقل');
     }
 
-    // Resolve and validate all legs
+    // Resolve every leg against its real account. A journal is single-currency:
+    // cross-currency postings require an explicit FX journal, not arithmetic mixing.
+    let currency: CurrencyCode | undefined;
     let totalDebitMinor = 0;
     let totalCreditMinor = 0;
     const validatedLegs: (JournalEntryLeg & { resolvedAmountMinor: number; resolvedAmount: number })[] = [];
+    const accountsById = new Map<string, Account>();
 
     for (const leg of dto.entries) {
-      const { amountMinor, amount } = validateAndResolveFinancialAmount(leg.amount, leg.amountMinor, currency);
+      if (!leg || typeof leg.accountId !== 'string' || !leg.accountId.trim()) {
+        throw new Error('كل طرف في القيد يجب أن يرتبط بحساب صالح');
+      }
+      if (leg.type !== 'debit' && leg.type !== 'credit') {
+        throw new Error(`نوع الطرف غير صالح: ${String(leg.type)}`);
+      }
+
+      let account = accountsById.get(leg.accountId);
+      if (!account) {
+        const found = await db.accounts.get(leg.accountId);
+        if (!found) throw new Error(`الحساب المحدد غير موجود: ${leg.accountId}`);
+        account = found;
+        accountsById.set(leg.accountId, account);
+      }
+
+      const legCurrency = resolveRequiredCurrency({
+        transactionCurrency: dto.currency,
+        accountCurrency: account.currency,
+        systemCurrency: freshSettings.currency,
+      });
+      if (currency && currency !== legCurrency) {
+        throw new Error(`[Financial Safety] لا يمكن إنشاء قيد يومية بعملات مختلطة (${currency} و${legCurrency}) دون قيد صرف صريح`);
+      }
+      currency = legCurrency;
+
+      const { amountMinor, amount } = validateAndResolveFinancialAmount(leg.amount, leg.amountMinor, legCurrency);
+      if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
+        throw new Error('يجب أن يكون مبلغ كل طرف عدداً صحيحاً موجباً بالوحدات الصغرى');
+      }
       validatedLegs.push({
         ...leg,
         resolvedAmountMinor: amountMinor,
@@ -478,7 +519,13 @@ export class FinancialTransactionEngine {
 
       if (leg.type === 'debit') totalDebitMinor += amountMinor;
       else totalCreditMinor += amountMinor;
+
+      if (!Number.isSafeInteger(totalDebitMinor) || !Number.isSafeInteger(totalCreditMinor)) {
+        throw new Error('إجمالي القيد يتجاوز النطاق الآمن للحسابات المالية');
+      }
     }
+
+    if (!currency) throw new Error('تعذر تحديد عملة القيد');
 
     // ENFORCE INVARIANT: SUM(DEBITS) = SUM(CREDITS)
     if (totalDebitMinor !== totalCreditMinor) {
@@ -501,16 +548,56 @@ export class FinancialTransactionEngine {
 
       const activeDb = getDb();
       await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, activeDb.settings, async (transaction) => {
-        // Check idempotency in DB
+        // Check idempotency in DB by comparing the complete normalized journal payload.
         const existing = await transaction.table('transactions').where('operationId').equals(operationId).first();
         if (existing) {
           const allSiblings = await transaction.table('transactions').where('operationId').equals(operationId).toArray();
-          const existingDebitSum = allSiblings.filter(t => t.type === 'debit').reduce((s, t) => s + (t.amountMinor || 0), 0);
-          if (allSiblings.length !== validatedLegs.length || existingDebitSum !== totalDebitMinor) {
-            throw new Error('الرقم المرجعي operationId مستخدم لقيد مزدوج مختلف');
+          const normalizeLeg = (leg: any) => ({
+            accountId: leg.accountId,
+            type: leg.type,
+            amountMinor: leg.amountMinor,
+            currency: (leg.currency || currency) as CurrencyCode,
+            date: leg.date,
+            note: leg.note || undefined,
+            receiptNumber: leg.receiptNumber || undefined,
+            status: leg.status || 'posted',
+          });
+          const sortPayload = (items: any[]) => items
+            .map(normalizeLeg)
+            .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+          const expectedPayload = sortPayload(validatedLegs.map((leg) => ({
+            accountId: leg.accountId,
+            type: leg.type,
+            amountMinor: leg.resolvedAmountMinor,
+            currency,
+            date,
+            note: leg.note || dto.note || undefined,
+            receiptNumber: leg.receiptNumber || dto.receiptNumber || undefined,
+            status: dto.status || 'posted',
+          })));
+          const actualPayload = sortPayload(allSiblings);
+          if (
+            allSiblings.length !== validatedLegs.length ||
+            JSON.stringify(actualPayload) !== JSON.stringify(expectedPayload)
+          ) {
+            throw new Error('الرقم المرجعي operationId مستخدم لقيد مزدوج ببيانات مختلفة');
           }
           createdTransactions.push(...allSiblings);
           return;
+        }
+
+        // Re-read each account inside the same write transaction before any ledger write.
+        for (const leg of validatedLegs) {
+          const account = await transaction.table('accounts').get(leg.accountId) as Account | undefined;
+          if (!account) throw new Error(`الحساب المحدد لم يعد موجوداً: ${leg.accountId}`);
+          const currentCurrency = resolveRequiredCurrency({
+            transactionCurrency: currency,
+            accountCurrency: account.currency,
+            systemCurrency: freshSettings.currency,
+          });
+          if (currentCurrency !== currency) {
+            throw new Error(`عملة الحساب ${leg.accountId} تغيرت أثناء إنشاء القيد`);
+          }
         }
 
         for (const leg of validatedLegs) {
