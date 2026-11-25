@@ -246,8 +246,8 @@ export const ImmutableLedgerTestSuite = {
       });
       const reverseBeforeA = (await db.accounts.get(reverseAccA))?.currentBalanceMinor;
       const reverseBeforeB = (await db.accounts.get(reverseAccB))?.currentBalanceMinor;
-      const reversalEntries = await transactionEngine.reverseTransaction(originalJournal[0].id);
-      const reversalRetry = await transactionEngine.reverseTransaction(originalJournal[0].id);
+      const reversalEntries = await transactionEngine.reverseTransaction(originalJournal[0].id, 'اختبار عكس قيد اليومية');
+      const reversalRetry = await transactionEngine.reverseTransaction(originalJournal[0].id, 'إعادة محاولة اختبار العكس');
       const reverseAfterA = (await db.accounts.get(reverseAccA))?.currentBalanceMinor;
       const reverseAfterB = (await db.accounts.get(reverseAccB))?.currentBalanceMinor;
       const originalsAfterReverse = await Promise.all(originalJournal.map((entry) => db.transactions.get(entry.id)));
