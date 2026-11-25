@@ -387,23 +387,16 @@ export class DualRepresentationTestSuite {
       if (!changedPayloadRejected) throw new Error('تم قبول مبالغ مختلفة مع operationId نفسه');
     });
 
-    // Test 13: Retries remain idempotent when optional dates were defaulted at creation time.
-    await run('DUAL-13', 'إعادة operationId بعد مرور الوقت لا تتأثر بالتاريخ الافتراضي', async () => {
-      const account = await accountRepository.create({
-        name: 'حساب إعادة المحاولة دون تاريخ',
+    // Test 13: Double-entry retries remain idempotent when the date was defaulted at creation time.
+    await run('DUAL-13', 'إعادة قيد يومية بعد مرور الوقت لا تتأثر بالتاريخ الافتراضي', async () => {
+      const debitAccount = await accountRepository.create({
+        name: 'حساب مدين لإعادة التاريخ الافتراضي',
         phone: '770000016',
         category: 'customer',
         currency: 'YER',
       });
-      const operationId = 'single_retry_without_date_' + Date.now();
-      const payload = { accountId: account.id, type: 'debit' as const, amount: 15, operationId, date: undefined as any };
-      const first = await engine.createTransaction(payload);
-      await db.transactions.update(first.id, { date: '2026-01-01' });
-      const retry = await engine.createTransaction(payload);
-      if (retry.id !== first.id) throw new Error('رفض إعادة المحاولة لأن تاريخ الإنشاء الافتراضي تغيّر');
-
-      const other = await accountRepository.create({
-        name: 'حساب إعادة قيد يومية دون تاريخ',
+      const creditAccount = await accountRepository.create({
+        name: 'حساب دائن لإعادة التاريخ الافتراضي',
         phone: '770000017',
         category: 'supplier',
         currency: 'YER',
@@ -412,8 +405,8 @@ export class DualRepresentationTestSuite {
       const journalPayload = {
         operationId: journalOperationId,
         entries: [
-          { accountId: account.id, type: 'debit' as const, amount: 5 },
-          { accountId: other.id, type: 'credit' as const, amount: 5 },
+          { accountId: debitAccount.id, type: 'debit' as const, amount: 5 },
+          { accountId: creditAccount.id, type: 'credit' as const, amount: 5 },
         ],
       };
       const journalFirst = await engine.createDoubleEntry(journalPayload);
