@@ -96,7 +96,6 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
     'transactions:read',
     'transactions:create',
     'transactions:update',
-    'transactions:reverse',
     'receipts:read',
     'receipts:create',
     'receipts:update',
