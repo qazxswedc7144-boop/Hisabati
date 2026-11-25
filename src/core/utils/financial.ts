@@ -75,9 +75,13 @@ export function computeAccountMetricsFromTransactions(
   let postedCount = 0;
   let lastDate: string | undefined = undefined;
 
-  const activeCurrency = (currency as CurrencyCode) || 'YER';
+  const inferredCurrency = transactions.find((trx) => trx.currency)?.currency as CurrencyCode | undefined;
+  const activeCurrency = (currency as CurrencyCode) || inferredCurrency || 'YER';
 
   for (const trx of transactions) {
+    if (trx.currency && trx.currency.trim().toUpperCase() !== activeCurrency.trim().toUpperCase()) {
+      throw new Error(`[Financial Safety] Cannot aggregate ${trx.currency} transaction into ${activeCurrency} account balance without an explicit FX conversion.`);
+    }
     // Phase 2 Fix: Only POSTED transactions (and legacy without status) affect the balance.
     // DRAFT and REVERSED are excluded from financial totals.
     const status = trx.status || 'posted'; 
@@ -141,7 +145,8 @@ export function computeStatementRunningBalances(
 ): StatementItem[] {
   if (transactions.length === 0) return [];
 
-  const activeCurrency = (currency as CurrencyCode) || 'YER';
+  const inferredCurrency = transactions.find((trx) => trx.currency)?.currency as CurrencyCode | undefined;
+  const activeCurrency = (currency as CurrencyCode) || inferredCurrency || 'YER';
 
   // Sort chronological (oldest first)
   const chronological = [...transactions].sort((a, b) => {
@@ -154,6 +159,9 @@ export function computeStatementRunningBalances(
   const itemMap = new Map<string, { decimal: number; minor: number }>();
 
   for (const trx of chronological) {
+    if (trx.currency && trx.currency.trim().toUpperCase() !== activeCurrency.trim().toUpperCase()) {
+      throw new Error(`[Financial Safety] Cannot calculate a ${activeCurrency} running balance for a ${trx.currency} transaction without an explicit FX conversion.`);
+    }
     // Phase 2 Fix: Only POSTED transactions affect the running balance.
     const status = trx.status || 'posted';
     if (status !== 'posted') {
