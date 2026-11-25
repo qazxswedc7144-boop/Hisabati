@@ -215,6 +215,7 @@ export class FinancialTransactionEngine {
     });
 
     const activeDb = getDb();
+    let createdNewReversal = false;
     const reversedEntries = await activeDb.transaction(
       'rw',
       activeDb.transactions,
@@ -338,11 +339,12 @@ export class FinancialTransactionEngine {
           });
           created.push(reversal);
         }
+        createdNewReversal = true;
         return created;
       }
     );
 
-    for (const reversal of reversedEntries) {
+    if (createdNewReversal) for (const reversal of reversedEntries) {
       try {
         const account = await db.accounts.get(reversal.accountId);
         if (account) await this.postProcessTransaction(reversal, 'CREATE', currentActor, account);
@@ -1134,10 +1136,6 @@ export class FinancialTransactionEngine {
   async recalculateAllBalances(currency?: CurrencyCode): Promise<{ accountsUpdated: number }> {
     const systemCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER');
 
-    const activeCurrency = resolveRequiredCurrency({
-      transactionCurrency: currency,
-      systemCurrency,
-    });
     const allAccounts = await db.accounts.toArray();
     let count = 0;
 
@@ -1217,24 +1215,33 @@ export class FinancialTransactionEngine {
    */
   async getGlobalSummary(currency?: CurrencyCode): Promise<TransactionSummary & { totalDebitMinor: number; totalCreditMinor: number; netBalanceMinor: number }> {
     const allAccounts = await db.accounts.toArray();
-    
+
     let totalDebitMinor = 0;
     let totalCreditMinor = 0;
     let totalTransactions = 0;
+
+    const systemCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER');
+    const accountCurrencies = new Set<CurrencyCode>();
 
     for (const acc of allAccounts) {
       totalDebitMinor += acc.totalDebitMinor || 0;
       totalCreditMinor += acc.totalCreditMinor || 0;
       totalTransactions += acc.transactionCount || 0;
+      const accountTransactions = await db.transactions.where('accountId').equals(acc.id).toArray();
+      const inferredCurrency = accountTransactions.find((trx) => trx.currency)?.currency as CurrencyCode | undefined;
+      accountCurrencies.add((acc.currency || inferredCurrency || systemCurrency) as CurrencyCode);
     }
 
-    const systemCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER');
+    if (accountCurrencies.size > 1) {
+      throw new Error('[Financial Safety] Global summary cannot combine multiple account currencies without explicit FX conversion.');
+    }
+    const ledgerCurrency = Array.from(accountCurrencies)[0] || systemCurrency;
+    if (currency && currency !== ledgerCurrency) {
+      throw new Error(`[Financial Safety] Requested summary currency ${currency} does not match ledger currency ${ledgerCurrency}; FX conversion is required.`);
+    }
 
     const netBalanceMinor = totalDebitMinor - totalCreditMinor;
-    const activeCurrency = resolveRequiredCurrency({
-      transactionCurrency: currency,
-      systemCurrency,
-    });
+    const activeCurrency = ledgerCurrency;
 
     const { minorToDecimal } = await import('../money/converter');
 
