@@ -103,7 +103,7 @@ export class RBACTestSuite {
 
           // Accountant
           if (!rbacGuard.hasPermission(accountantActor, 'transactions:create')) throw new Error('Accountant must have transactions:create');
-          if (!rbacGuard.hasPermission(accountantActor, 'transactions:reverse')) throw new Error('Accountant must have transactions:reverse');
+          if (rbacGuard.hasPermission(accountantActor, 'transactions:reverse')) throw new Error('Accountant MUST NOT have transactions:reverse');
           if (!rbacGuard.hasPermission(accountantActor, 'receipts:convert')) throw new Error('Accountant must have receipts:convert');
           if (rbacGuard.hasPermission(accountantActor, 'team:manage_members')) throw new Error('Accountant MUST NOT have team:manage_members');
           if (rbacGuard.hasPermission(accountantActor, 'team:manage_roles')) throw new Error('Accountant MUST NOT have team:manage_roles');
@@ -222,16 +222,43 @@ export class RBACTestSuite {
             type: 'debit',
             date: new Date().toISOString().split('T')[0],
           }, accountantActor);
-          let reverseDenied = false;
+          let viewerReverseDenied = false;
           try {
-            await transactionEngine.reverseTransaction(posted.id, viewerActor);
+            await transactionEngine.reverseTransaction(posted.id, 'محاولة عكس غير مصرح بها', viewerActor);
           } catch {
-            reverseDenied = true;
+            viewerReverseDenied = true;
           }
-          if (!reverseDenied) throw new Error('Viewer was able to reverse a posted transaction');
+          if (!viewerReverseDenied) throw new Error('Viewer was able to reverse a posted transaction');
+
+          let accountantReverseDenied = false;
+          try {
+            await transactionEngine.reverseTransaction(posted.id, 'تصحيح خطأ محاسبي', accountantActor);
+          } catch {
+            accountantReverseDenied = true;
+          }
+          if (!accountantReverseDenied) throw new Error('Accountant was able to reverse a posted transaction');
+
+          let blankReasonDenied = false;
+          try {
+            await transactionEngine.reverseTransaction(posted.id, '   ', adminActor);
+          } catch (error: any) {
+            blankReasonDenied = error.message.includes('سبب العكس');
+          }
+          if (!blankReasonDenied) throw new Error('Reversal without a meaningful reason was accepted');
+
+          const adminReversal = await transactionEngine.reverseTransaction(posted.id, 'تصحيح خطأ محاسبي', adminActor);
+          if (adminReversal.length !== 1) throw new Error('Admin was unable to reverse a posted transaction');
+
+          const ownerPosted = await transactionEngine.createTransaction({
+            accountId: testAccountId,
+            amount: 50,
+            type: 'credit',
+            date: new Date().toISOString().split('T')[0],
+          }, accountantActor);
+          const ownerReversal = await transactionEngine.reverseTransaction(ownerPosted.id, 'إلغاء تسجيل مكرر', ownerActor);
+          if (ownerReversal.length !== 1) throw new Error('Owner was unable to reverse a posted transaction');
 
           await transactionEngine.deleteTransaction(draft.id, ownerActor);
-          await transactionEngine.reverseTransaction(posted.id, accountantActor);
         },
       },
 
