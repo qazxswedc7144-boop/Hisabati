@@ -555,7 +555,7 @@ export class FinancialTransactionEngine {
           const normalizeLeg = (leg: any) => ({
             accountId: leg.accountId,
             type: leg.type,
-            amountMinor: leg.amountMinor,
+            amountMinor: leg.resolvedAmountMinor ?? leg.amountMinor,
             currency: (leg.currency || currency) as CurrencyCode,
             date: leg.date,
             note: leg.note || undefined,
