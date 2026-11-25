@@ -226,7 +226,46 @@ export const ImmutableLedgerTestSuite = {
       // acc1: 1900 - 500 = 1400. acc2: 0 + 500 = 500.
       addResult(14, 'القيد المزدوج المرحل يؤثر على الأرصدة بشكل متوازن', acc1N?.currentBalanceMinor === 1400 && acc2N?.currentBalanceMinor === 500);
 
-      // O. Concurrent Posting
+      // O. Reverse an entire posted journal atomically and reject a second reversal.
+      const reverseAccA = 'acc_reverse_a_' + Date.now();
+      const reverseAccB = 'acc_reverse_b_' + Date.now();
+      const reverseNow = new Date().toISOString();
+      await db.accounts.bulkAdd([
+        { id: reverseAccA, name: 'حساب عكس أ', currency: 'YER', currentBalance: 0, currentBalanceMinor: 0, totalDebit: 0, totalDebitMinor: 0, totalCredit: 0, totalCreditMinor: 0, transactionCount: 0, archived: 0, createdAt: reverseNow, updatedAt: reverseNow },
+        { id: reverseAccB, name: 'حساب عكس ب', currency: 'YER', currentBalance: 0, currentBalanceMinor: 0, totalDebit: 0, totalDebitMinor: 0, totalCredit: 0, totalCreditMinor: 0, transactionCount: 0, archived: 0, createdAt: reverseNow, updatedAt: reverseNow },
+      ] as any);
+      const journalOperationId = 'journal_to_reverse_' + Date.now();
+      const originalJournal = await transactionEngine.createDoubleEntry({
+        operationId: journalOperationId,
+        date: '2026-01-02',
+        currency: 'YER',
+        entries: [
+          { accountId: reverseAccA, type: 'debit', amount: 125 },
+          { accountId: reverseAccB, type: 'credit', amount: 125 },
+        ],
+      });
+      const reverseBeforeA = (await db.accounts.get(reverseAccA))?.currentBalanceMinor;
+      const reverseBeforeB = (await db.accounts.get(reverseAccB))?.currentBalanceMinor;
+      const reversalEntries = await transactionEngine.reverseTransaction(originalJournal[0].id);
+      const reversalRetry = await transactionEngine.reverseTransaction(originalJournal[0].id);
+      const reverseAfterA = (await db.accounts.get(reverseAccA))?.currentBalanceMinor;
+      const reverseAfterB = (await db.accounts.get(reverseAccB))?.currentBalanceMinor;
+      const originalsAfterReverse = await Promise.all(originalJournal.map((entry) => db.transactions.get(entry.id)));
+      const linksValid = originalsAfterReverse.every((entry) =>
+        !!entry?.correctedByTransactionId &&
+        reversalEntries.some((reversal) => reversal.id === entry.correctedByTransactionId)
+      ) && reversalEntries.every((reversal) =>
+        !!reversal.reversalOfTransactionId &&
+        originalJournal.some((entry) => entry.id === reversal.reversalOfTransactionId)
+      );
+      addResult(19, 'عكس القيد المزدوج ينشئ قيوداً مقابلة مرتبطة ويمنع تكرار العكس',
+        reversalEntries.length === 2 &&
+        reversalRetry.length === 2 &&
+        reversalEntries.every((entry) => reversalRetry.some((retry) => retry.id === entry.id)) &&
+        reverseAfterA === 0 && reverseAfterB === 0 && linksValid
+      );
+
+      // P. Concurrent Posting
       const concurrentTrx = await transactionEngine.createTransaction({
         accountId: testAccountId,
         type: 'debit',
@@ -304,8 +343,8 @@ export const ImmutableLedgerTestSuite = {
 
       // Cleanup
       await Promise.all([
-        db.transactions.where('accountId').anyOf([testAccountId, testAcc2]).delete(),
-        db.accounts.where('id').anyOf([testAccountId, testAcc2]).delete()
+        db.transactions.where('accountId').anyOf([testAccountId, testAcc2, reverseAccA, reverseAccB]).delete(),
+        db.accounts.where('id').anyOf([testAccountId, testAcc2, reverseAccA, reverseAccB]).delete()
       ]);
 
     } catch (err: any) {
