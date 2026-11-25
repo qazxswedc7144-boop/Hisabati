@@ -205,7 +205,7 @@ export class FinancialTransactionEngine {
    * Original entries remain immutable and posted; opposite posted entries are appended
    * and linked through reversalOfTransactionId / correctedByTransactionId.
    */
-  async reverseTransaction(id: string, actor?: AuditActor): Promise<Transaction[]> {
+  async reverseTransaction(id: string, reason: string, actor?: AuditActor): Promise<Transaction[]> {
     const currentActor = actor || rbacGuard.getActiveActor();
     await rbacGuard.assertPermission('transactions:reverse', {
       actor: currentActor,
@@ -213,6 +213,11 @@ export class FinancialTransactionEngine {
       targetId: id,
       details: 'إنشاء قيد عكسي مرتبط بالقيد الأصلي',
     });
+
+    const normalizedReason = typeof reason === 'string' ? reason.trim() : '';
+    if (normalizedReason.length < 5) {
+      throw new Error('سبب العكس مطلوب ويجب ألا يقل عن خمسة أحرف');
+    }
 
     const activeDb = getDb();
     let createdNewReversal = false;
@@ -293,7 +298,7 @@ export class FinancialTransactionEngine {
             amountMinor: source.amountMinor,
             currency,
             date: now.split('T')[0],
-            note: `عكس القيد ${source.id}${source.note ? `: ${source.note}` : ''}`,
+            note: `عكس القيد ${source.id}. سبب العكس: ${normalizedReason}${source.note ? `. البيان الأصلي: ${source.note}` : ''}`,
             receiptNumber: undefined,
             operationId: reverseOperationId,
             status: 'posted',
@@ -334,7 +339,7 @@ export class FinancialTransactionEngine {
               type: reversal.type,
               revision: reversal.id,
             },
-            metadata: { reversalOfTransactionId: source.id, originalOperationId: source.operationId },
+            metadata: { reversalOfTransactionId: source.id, originalOperationId: source.operationId, reversalReason: normalizedReason },
             tx: transaction,
           });
           created.push(reversal);
