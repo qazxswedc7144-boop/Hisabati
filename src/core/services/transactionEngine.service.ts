@@ -414,6 +414,7 @@ export class FinancialTransactionEngine {
 
     const executionPromise = (async () => {
       let createdTransaction: Transaction | null = null;
+      let createdNewTransaction = false;
       let nextInvoiceNumberToCommit: number | undefined = undefined;
 
       const now = new Date().toISOString();
@@ -532,6 +533,7 @@ export class FinancialTransactionEngine {
         });
 
         createdTransaction = newTransaction;
+        createdNewTransaction = true;
       });
 
       if (!createdTransaction) {
@@ -547,8 +549,11 @@ export class FinancialTransactionEngine {
         }
       }
 
-      // Post-commit side effects (Audit trail & Sync enqueue)
-      await this.postProcessTransaction(createdTransaction, 'CREATE', currentActor, account, options);
+      // Post-commit side effects run only for a newly committed row; an idempotent
+      // retry must not enqueue duplicate sync mutations or duplicate audit events.
+      if (createdNewTransaction) {
+        await this.postProcessTransaction(createdTransaction, 'CREATE', currentActor, account, options);
+      }
 
       return createdTransaction;
     })();
@@ -709,6 +714,7 @@ export class FinancialTransactionEngine {
 
     const executionPromise = (async () => {
       const createdTransactions: Transaction[] = [];
+      let createdNewJournal = false;
 
       const activeDb = getDb();
       await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, activeDb.settings, async (transaction) => {
@@ -816,9 +822,10 @@ export class FinancialTransactionEngine {
 
           createdTransactions.push(trx);
         }
+        createdNewJournal = true;
       });
 
-      for (const trx of createdTransactions) {
+      if (createdNewJournal) for (const trx of createdTransactions) {
         try {
           const acc = await db.accounts.get(trx.accountId);
           if (acc) await this.postProcessTransaction(trx, 'CREATE', currentActor, acc);
