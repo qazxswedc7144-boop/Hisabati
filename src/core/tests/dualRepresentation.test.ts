@@ -244,6 +244,105 @@ export class DualRepresentationTestSuite {
       }
     });
 
+    // Test 9: Account metrics must never combine unrelated minor-unit currencies.
+    await run('DUAL-09', 'رفض جمع أرصدة بعملات مختلفة دون تحويل صرف صريح', async () => {
+      const mixedCurrencyTransactions = [
+        { id: 'mix-yer', accountId: 'mix', type: 'debit' as const, amount: 100, amountMinor: 100, currency: 'YER' as const, date: '2026-03-05', createdAt: '2026-03-05T00:00:00.000Z', updatedAt: '2026-03-05T00:00:00.000Z' },
+        { id: 'mix-usd', accountId: 'mix', type: 'credit' as const, amount: 1, amountMinor: 100, currency: 'USD' as const, date: '2026-03-05', createdAt: '2026-03-05T00:00:01.000Z', updatedAt: '2026-03-05T00:00:01.000Z' },
+      ];
+      let rejected = false;
+      try {
+        computeAccountMetricsFromTransactions(mixedCurrencyTransactions as any, 'YER');
+      } catch {
+        rejected = true;
+      }
+      if (!rejected) throw new Error('تم جمع وحدات YER وUSD في رصيد واحد');
+    });
+
+    // Test 10: Double-entry creation validates accounts and single-currency journal policy.
+    await run('DUAL-10', 'رفض القيد المزدوج عند غياب الحساب أو اختلاف عملة الحسابات', async () => {
+      const yerAccount = await accountRepository.create({
+        name: 'حساب قيد يومية بالريال',
+        phone: '770000010',
+        category: 'customer',
+        currency: 'YER',
+      });
+      const sarAccount = await accountRepository.create({
+        name: 'حساب قيد يومية بالريال السعودي',
+        phone: '770000011',
+        category: 'supplier',
+        currency: 'SAR',
+      });
+
+      let missingAccountRejected = false;
+      try {
+        await engine.createDoubleEntry({
+          operationId: 'journal_missing_account_' + Date.now(),
+          entries: [
+            { accountId: yerAccount.id, type: 'debit', amount: 10 },
+            { accountId: 'missing-account-id', type: 'credit', amount: 10 },
+          ],
+        });
+      } catch {
+        missingAccountRejected = true;
+      }
+      if (!missingAccountRejected) throw new Error('تم قبول طرف مرتبط بحساب غير موجود');
+
+      let mixedCurrencyRejected = false;
+      try {
+        await engine.createDoubleEntry({
+          operationId: 'journal_mixed_currency_' + Date.now(),
+          entries: [
+            { accountId: yerAccount.id, type: 'debit', amount: 10 },
+            { accountId: sarAccount.id, type: 'credit', amount: 10 },
+          ],
+        });
+      } catch {
+        mixedCurrencyRejected = true;
+      }
+      if (!mixedCurrencyRejected) throw new Error('تم قبول قيد يومية يجمع عملتين مختلفتين');
+    });
+
+    // Test 11: Reusing a journal operationId with changed leg details must fail.
+    await run('DUAL-11', 'مطابقة جميع تفاصيل القيد عند إعادة استخدام operationId', async () => {
+      const debitAccount = await accountRepository.create({
+        name: 'حساب مدين لاختبار المرجع',
+        phone: '770000012',
+        category: 'customer',
+        currency: 'YER',
+      });
+      const creditAccount = await accountRepository.create({
+        name: 'حساب دائن لاختبار المرجع',
+        phone: '770000013',
+        category: 'supplier',
+        currency: 'YER',
+      });
+      const operationId = 'journal_payload_' + Date.now();
+      await engine.createDoubleEntry({
+        operationId,
+        date: '2026-03-06',
+        entries: [
+          { accountId: debitAccount.id, type: 'debit', amount: 50, note: 'قيد أصلي' },
+          { accountId: creditAccount.id, type: 'credit', amount: 50, note: 'قيد أصلي' },
+        ],
+      });
+
+      let changedPayloadRejected = false;
+      try {
+        await engine.createDoubleEntry({
+          operationId,
+          date: '2026-03-06',
+          entries: [
+            { accountId: debitAccount.id, type: 'debit', amount: 50, note: 'قيد معدل' },
+            { accountId: creditAccount.id, type: 'credit', amount: 50, note: 'قيد معدل' },
+          ],
+        });
+      } catch {
+        changedPayloadRejected = true;
+      }
+      if (!changedPayloadRejected) throw new Error('تم قبول operationId نفسه مع تغيير ملاحظات أطراف القيد');
+    });
+
     const passedCount = results.filter((r) => r.passed).length;
     const failedCount = results.filter((r) => !r.passed).length;
 
