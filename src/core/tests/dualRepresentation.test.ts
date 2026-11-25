@@ -343,6 +343,50 @@ export class DualRepresentationTestSuite {
       if (!changedPayloadRejected) throw new Error('تم قبول operationId نفسه مع تغيير ملاحظات أطراف القيد');
     });
 
+    // Test 12: Double-entry retry is idempotent, but changed payload is rejected.
+    await run('DUAL-12', 'إعادة القيد المزدوج بنفس operationId آمنة وتغييره مرفوض', async () => {
+      const debitAccount = await accountRepository.create({
+        name: 'حساب مدين لإعادة القيد',
+        phone: '770000014',
+        category: 'customer',
+        currency: 'YER',
+      });
+      const creditAccount = await accountRepository.create({
+        name: 'حساب دائن لإعادة القيد',
+        phone: '770000015',
+        category: 'supplier',
+        currency: 'YER',
+      });
+      const operationId = 'journal_retry_' + Date.now();
+      const payload = {
+        operationId,
+        date: '2026-03-07',
+        entries: [
+          { accountId: debitAccount.id, type: 'debit' as const, amount: 25, note: 'إعادة آمنة' },
+          { accountId: creditAccount.id, type: 'credit' as const, amount: 25, note: 'إعادة آمنة' },
+        ],
+      };
+      const first = await engine.createDoubleEntry(payload);
+      const retry = await engine.createDoubleEntry(payload);
+      if (first.length !== 2 || retry.length !== 2 || first.some((entry) => !retry.some((candidate) => candidate.id === entry.id))) {
+        throw new Error('إعادة الطلب بنفس operationId لم تُرجع أطراف القيد الأصلية');
+      }
+
+      let changedPayloadRejected = false;
+      try {
+        await engine.createDoubleEntry({
+          ...payload,
+          entries: [
+            { accountId: debitAccount.id, type: 'debit', amount: 26, note: 'إعادة آمنة' },
+            { accountId: creditAccount.id, type: 'credit', amount: 26, note: 'إعادة آمنة' },
+          ],
+        });
+      } catch {
+        changedPayloadRejected = true;
+      }
+      if (!changedPayloadRejected) throw new Error('تم قبول مبالغ مختلفة مع operationId نفسه');
+    });
+
     const passedCount = results.filter((r) => r.passed).length;
     const failedCount = results.filter((r) => !r.passed).length;
 
