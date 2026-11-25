@@ -439,13 +439,13 @@ export class FinancialTransactionEngine {
               existingTrx.accountId !== dto.accountId ||
               existingTrx.type !== dto.type ||
               existingTrx.amountMinor !== safeAmountMinor ||
-              (existingTrx.currency || activeCurrency) !== activeCurrency ||
-              existingTrx.date !== (dto.date || now.split('T')[0]) ||
-              (existingTrx.note || undefined) !== (dto.note?.trim() || undefined) ||
+              (dto.currency !== undefined && (existingTrx.currency || activeCurrency) !== activeCurrency) ||
+              (dto.date !== undefined && existingTrx.date !== dto.date) ||
+              (dto.note !== undefined && (existingTrx.note || undefined) !== (dto.note.trim() || undefined)) ||
               (dto.receiptNumber !== undefined && (existingTrx.receiptNumber || undefined) !== (dto.receiptNumber.trim() || undefined)) ||
-              (existingTrx.receiptId || undefined) !== (dto.receiptId?.trim() || undefined) ||
-              (existingTrx.documentRef || undefined) !== (dto.documentRef || undefined) ||
-              JSON.stringify(existingTrx.documentMetadata || null) !== JSON.stringify(dto.documentMetadata || null) ||
+              (dto.receiptId !== undefined && (existingTrx.receiptId || undefined) !== (dto.receiptId.trim() || undefined)) ||
+              (dto.documentRef !== undefined && (existingTrx.documentRef || undefined) !== (dto.documentRef || undefined)) ||
+              (dto.documentMetadata !== undefined && JSON.stringify(existingTrx.documentMetadata || null) !== JSON.stringify(dto.documentMetadata || null)) ||
               (existingTrx.status || 'posted') !== (dto.status || 'posted')
             ) {
               throw new Error('الرقم المرجعي operationId مستخدم سابقاً مع بيانات عملية مختلفة');
@@ -716,14 +716,16 @@ export class FinancialTransactionEngine {
         const existing = await transaction.table('transactions').where('operationId').equals(operationId).first();
         if (existing) {
           const allSiblings = await transaction.table('transactions').where('operationId').equals(operationId).toArray();
+          const compareLegNotes = dto.note !== undefined || dto.entries.some((entry) => entry.note !== undefined);
+          const compareLegReceipts = dto.receiptNumber !== undefined || dto.entries.some((entry) => entry.receiptNumber !== undefined);
           const normalizeLeg = (leg: any) => ({
             accountId: leg.accountId,
             type: leg.type,
             amountMinor: leg.resolvedAmountMinor ?? leg.amountMinor,
-            currency: (leg.currency || currency) as CurrencyCode,
-            date: leg.date,
-            note: leg.note || undefined,
-            receiptNumber: leg.receiptNumber || undefined,
+            currency: dto.currency !== undefined ? (leg.currency || currency) as CurrencyCode : undefined,
+            date: dto.date !== undefined ? leg.date : undefined,
+            note: compareLegNotes ? (leg.note || undefined) : undefined,
+            receiptNumber: compareLegReceipts ? (leg.receiptNumber || undefined) : undefined,
             status: leg.status || 'posted',
           });
           const sortPayload = (items: any[]) => items
