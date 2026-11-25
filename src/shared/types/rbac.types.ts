@@ -18,6 +18,7 @@ export type Permission =
   | 'transactions:create'
   | 'transactions:update'
   | 'transactions:delete'
+  | 'transactions:reverse'
   // Smart Receipts & OCR
   | 'receipts:read'
   | 'receipts:create'
