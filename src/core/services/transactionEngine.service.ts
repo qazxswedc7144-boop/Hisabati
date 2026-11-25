@@ -94,6 +94,12 @@ export class FinancialTransactionEngine {
    */
   async postTransaction(id: string, actor?: AuditActor): Promise<Transaction> {
     const currentActor = actor || rbacGuard.getActiveActor();
+    await rbacGuard.assertPermission('transactions:update', {
+      actor: currentActor,
+      targetType: 'transaction',
+      targetId: id,
+      details: 'ترحيل مسودة إلى دفتر القيود',
+    });
     const existing = await db.transactions.get(id);
     if (!existing) throw new Error('العملية غير موجودة');
     if (existing.status === 'posted') return existing;
@@ -195,6 +201,159 @@ export class FinancialTransactionEngine {
   }
 
   /**
+   * Reverses a posted transaction or an entire multi-leg journal atomically.
+   * Original entries remain immutable and posted; opposite posted entries are appended
+   * and linked through reversalOfTransactionId / correctedByTransactionId.
+   */
+  async reverseTransaction(id: string, actor?: AuditActor): Promise<Transaction[]> {
+    const currentActor = actor || rbacGuard.getActiveActor();
+    await rbacGuard.assertPermission('transactions:reverse', {
+      actor: currentActor,
+      targetType: 'transaction',
+      targetId: id,
+      details: 'إنشاء قيد عكسي مرتبط بالقيد الأصلي',
+    });
+
+    const activeDb = getDb();
+    const reversedEntries = await activeDb.transaction(
+      'rw',
+      activeDb.transactions,
+      activeDb.accounts,
+      activeDb.financialAuditLogs,
+      activeDb.settings,
+      async (transaction) => {
+        const transactionsTable = transaction.table('transactions');
+        const original = await transactionsTable.get(id) as Transaction | undefined;
+        if (!original) throw new Error('القيد الأصلي غير موجود');
+
+        const allTransactions = await transactionsTable.toArray() as Transaction[];
+        const journalEntries = original.operationId
+          ? allTransactions.filter((entry) => entry.operationId === original.operationId && !entry.reversalOfTransactionId)
+          : [original];
+        if (!journalEntries.length || !journalEntries.some((entry) => entry.id === original.id)) {
+          throw new Error('تعذر تحديد مجموعة القيد الأصلي بصورة آمنة');
+        }
+
+        const sourceIds = new Set(journalEntries.map((entry) => entry.id));
+        const existingReversals = allTransactions.filter((entry) =>
+          !!entry.reversalOfTransactionId && sourceIds.has(entry.reversalOfTransactionId)
+        );
+        const alreadyCorrected = journalEntries.filter((entry) => !!entry.correctedByTransactionId);
+        if (alreadyCorrected.length === journalEntries.length && existingReversals.length === journalEntries.length) {
+          const reversalBySource = new Map(existingReversals.map((entry) => [entry.reversalOfTransactionId!, entry]));
+          const complete = journalEntries.every((entry) => {
+            const reversal = reversalBySource.get(entry.id);
+            return !!reversal && entry.correctedByTransactionId === reversal.id;
+          });
+          if (complete) return journalEntries.map((entry) => reversalBySource.get(entry.id)!);
+        }
+        if (alreadyCorrected.length > 0 || existingReversals.length > 0) {
+          throw new Error('حالة العكس غير مكتملة أو متعارضة؛ يلزم فحص النزاهة قبل إعادة المحاولة');
+        }
+
+        for (const entry of journalEntries) {
+          if ((entry.status || 'posted') !== 'posted') {
+            throw new Error('لا يمكن عكس قيد غير مرحّل أو معكوس');
+          }
+          if (!Number.isSafeInteger(entry.amountMinor) || (entry.amountMinor || 0) <= 0) {
+            throw new Error('لا يمكن عكس قيد لا يحتوي على مبلغ صحيح بالوحدات الصغرى');
+          }
+        }
+
+        const journalCurrencies = new Set(journalEntries.map((entry) => entry.currency).filter(Boolean));
+        if (journalCurrencies.size > 1) {
+          throw new Error('لا يمكن عكس مجموعة قيود تحتوي على عملات مختلطة');
+        }
+
+        const reverseOperationId = `reverse_${original.operationId || original.id}`;
+        const operationIdCollision = allTransactions.filter((entry) => entry.operationId === reverseOperationId);
+        if (operationIdCollision.length) {
+          throw new Error('معرف عملية العكس مستخدم مسبقاً ولا يطابق عكساً مكتملاً للقيد الأصلي');
+        }
+
+        const currencyEntry = await transaction.table('settings').get('currency');
+        const systemCurrency = currencyEntry?.value || 'YER';
+        const created: Transaction[] = [];
+        const now = new Date().toISOString();
+
+        for (const source of journalEntries) {
+          const account = await transaction.table('accounts').get(source.accountId) as Account | undefined;
+          if (!account) throw new Error(`الحساب المرتبط بالقيد الأصلي غير موجود: ${source.accountId}`);
+          const currency = resolveRequiredCurrency({
+            transactionCurrency: source.currency,
+            accountCurrency: account.currency,
+            systemCurrency,
+          });
+          const reversal: Transaction = {
+            id: `trx_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+            accountId: source.accountId,
+            type: source.type === 'debit' ? 'credit' : 'debit',
+            amount: source.amount,
+            amountMinor: source.amountMinor,
+            currency,
+            date: now.split('T')[0],
+            note: `عكس القيد ${source.id}${source.note ? `: ${source.note}` : ''}`,
+            receiptNumber: undefined,
+            operationId: reverseOperationId,
+            status: 'posted',
+            postedAt: now,
+            postedBy: currentActor.id,
+            reversalOfTransactionId: source.id,
+            createdAt: now,
+            updatedAt: now,
+          };
+
+          await transactionsTable.add(reversal);
+          await transactionsTable.update(source.id, {
+            correctedByTransactionId: reversal.id,
+            updatedAt: now,
+          });
+          await this.recalculateAccountBalanceIncremental(source.accountId, {
+            amountMinor: source.amountMinor!,
+            type: reversal.type,
+            action: 'add',
+            date: reversal.date,
+          }, currency, transaction);
+          await financialAuditService.logFinancialEvent({
+            eventType: 'TRANSACTION_REVERSE',
+            targetType: 'transaction',
+            targetId: reversal.id,
+            amountMinor: reversal.amountMinor,
+            currency,
+            operationId: reverseOperationId,
+            beforeState: {
+              amountMinor: source.amountMinor || 0,
+              accountId: source.accountId,
+              type: source.type,
+              revision: source.id,
+            },
+            afterState: {
+              amountMinor: reversal.amountMinor || 0,
+              accountId: reversal.accountId,
+              type: reversal.type,
+              revision: reversal.id,
+            },
+            metadata: { reversalOfTransactionId: source.id, originalOperationId: source.operationId },
+            tx: transaction,
+          });
+          created.push(reversal);
+        }
+        return created;
+      }
+    );
+
+    for (const reversal of reversedEntries) {
+      try {
+        const account = await db.accounts.get(reversal.accountId);
+        if (account) await this.postProcessTransaction(reversal, 'CREATE', currentActor, account);
+      } catch (error) {
+        console.warn('[reverseTransaction] Post-process failed safely:', error);
+      }
+    }
+    return reversedEntries;
+  }
+
+  /**
    * Creates a transaction with strict financial validation, precision rounding,
    * deduplication / idempotency check, atomic persistence, and derived balance recalculation.
    */
@@ -281,7 +440,10 @@ export class FinancialTransactionEngine {
               (existingTrx.currency || activeCurrency) !== activeCurrency ||
               existingTrx.date !== (dto.date || now.split('T')[0]) ||
               (existingTrx.note || undefined) !== (dto.note?.trim() || undefined) ||
-              (existingTrx.receiptNumber || undefined) !== (dto.receiptNumber?.trim() || undefined) ||
+              (dto.receiptNumber !== undefined && (existingTrx.receiptNumber || undefined) !== (dto.receiptNumber.trim() || undefined)) ||
+              (existingTrx.receiptId || undefined) !== (dto.receiptId?.trim() || undefined) ||
+              (existingTrx.documentRef || undefined) !== (dto.documentRef || undefined) ||
+              JSON.stringify(existingTrx.documentMetadata || null) !== JSON.stringify(dto.documentMetadata || null) ||
               (existingTrx.status || 'posted') !== (dto.status || 'posted')
             ) {
               throw new Error('الرقم المرجعي operationId مستخدم سابقاً مع بيانات عملية مختلفة');
@@ -984,7 +1146,10 @@ export class FinancialTransactionEngine {
       const batch = allAccounts.slice(i, i + batchSize);
       await Promise.all(
         batch.map(async (acc) => {
-          await this.recalculateAccountBalance(acc.id, activeCurrency);
+          const accountTransactions = await db.transactions.where('accountId').equals(acc.id).toArray();
+          const inferredTransactionCurrency = accountTransactions.find((trx) => trx.currency)?.currency as CurrencyCode | undefined;
+          const accountCurrency = (acc.currency || inferredTransactionCurrency || currency || systemCurrency) as CurrencyCode;
+          await this.recalculateAccountBalance(acc.id, accountCurrency);
         })
       );
       count += batch.length;
