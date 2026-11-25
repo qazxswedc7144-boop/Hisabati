@@ -387,6 +387,43 @@ export class DualRepresentationTestSuite {
       if (!changedPayloadRejected) throw new Error('تم قبول مبالغ مختلفة مع operationId نفسه');
     });
 
+    // Test 13: Retries remain idempotent when optional dates were defaulted at creation time.
+    await run('DUAL-13', 'إعادة operationId بعد مرور الوقت لا تتأثر بالتاريخ الافتراضي', async () => {
+      const account = await accountRepository.create({
+        name: 'حساب إعادة المحاولة دون تاريخ',
+        phone: '770000016',
+        category: 'customer',
+        currency: 'YER',
+      });
+      const operationId = 'single_retry_without_date_' + Date.now();
+      const payload = { accountId: account.id, type: 'debit' as const, amount: 15, operationId };
+      const first = await engine.createTransaction(payload);
+      await db.transactions.update(first.id, { date: '2026-01-01' });
+      const retry = await engine.createTransaction(payload);
+      if (retry.id !== first.id) throw new Error('رفض إعادة المحاولة لأن تاريخ الإنشاء الافتراضي تغيّر');
+
+      const other = await accountRepository.create({
+        name: 'حساب إعادة قيد يومية دون تاريخ',
+        phone: '770000017',
+        category: 'supplier',
+        currency: 'YER',
+      });
+      const journalOperationId = 'journal_retry_without_date_' + Date.now();
+      const journalPayload = {
+        operationId: journalOperationId,
+        entries: [
+          { accountId: account.id, type: 'debit' as const, amount: 5 },
+          { accountId: other.id, type: 'credit' as const, amount: 5 },
+        ],
+      };
+      const journalFirst = await engine.createDoubleEntry(journalPayload);
+      await db.transactions.where('operationId').equals(journalOperationId).modify({ date: '2026-01-02' });
+      const journalRetry = await engine.createDoubleEntry(journalPayload);
+      if (journalFirst.length !== journalRetry.length || journalFirst.some((entry) => !journalRetry.some((candidate) => candidate.id === entry.id))) {
+        throw new Error('رفض إعادة القيد المزدوج بسبب التاريخ الافتراضي');
+      }
+    });
+
     const passedCount = results.filter((r) => r.passed).length;
     const failedCount = results.filter((r) => !r.passed).length;
 
