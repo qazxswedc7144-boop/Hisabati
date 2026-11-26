@@ -40,11 +40,11 @@ jobs:
           java-version: '21'
       - uses: oven-sh/setup-bun@v2
       - name: Generate npm lockfile for the reviewed manifest
-        run: npm install --package-lock-only --ignore-scripts
+        run: npm install --package-lock-only --ignore-scripts --include=optional --os=linux --cpu=x64
       - name: Generate Bun lockfile for the reviewed manifest
         run: bun install --lockfile-only
       - name: Install from npm lockfile
-        run: npm ci
+        run: npm ci --include=optional
       - name: TypeScript validation
         run: npm run lint
       - name: Complete application test suite
