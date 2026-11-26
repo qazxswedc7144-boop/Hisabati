@@ -16,7 +16,7 @@ import {
   getFirestore,
   setDoc,
 } from 'firebase/firestore';
-import { initializeApp as initializeAdminApp } from 'firebase-admin/app';
+import { deleteApp as deleteAdminApp, initializeApp as initializeAdminApp } from 'firebase-admin/app';
 import { getAuth as getAdminAuth } from 'firebase-admin/auth';
 import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 
@@ -84,7 +84,7 @@ async function main(): Promise<void> {
       try { await deleteUser(user); } catch { /* emulator cleanup is best-effort */ }
     }
     try { await signOut(auth); } catch { /* already signed out */ }
-    await adminApp.delete();
+    await deleteAdminApp(adminApp);
     await deleteApp(clientApp);
   }
 }
