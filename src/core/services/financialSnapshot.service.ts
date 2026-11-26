@@ -58,7 +58,7 @@ export class FinancialSnapshotService {
     const integrityHash = await Dexie.waitFor(calculateSHA256(payloadToHash));
     
     const snapshot: FinancialSnapshot = {
-      id: `snap_${Date.now()}`,
+      id: `snap_${crypto.randomUUID()}`,
       organizationId: orgId,
       createdAt,
       ledgerRevision,
