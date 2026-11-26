@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - fix/security-dependency-remediation-2026-11
+    paths:
+      - package.json
+      - package-lock.json
+      - src/core/services/excelGenerator.service.ts
+      - src/core/services/export/export.service.ts
+      - src/core/tests/reports.test.ts
+      - vite.config.ts
   workflow_dispatch:
 
 permissions:
