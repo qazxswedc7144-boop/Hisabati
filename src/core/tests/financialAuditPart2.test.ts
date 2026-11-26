@@ -209,10 +209,15 @@ export class FinancialAuditPart2TestSuite {
       if (snap.transactionCount !== count) throw new Error('Transaction count mismatch');
     });
 
-    await test('15. Snapshot integrityHash verification', async () => {
+    await test('15. Snapshot integrityHash verification and unique IDs', async () => {
       const snap = await financialSnapshotService.createSnapshot();
-      const isValid = await financialSnapshotService.verifySnapshotIntegrity(snap);
-      if (!isValid) throw new Error('Internal integrity hash failed');
+      const secondSnap = await financialSnapshotService.createSnapshot();
+      if (snap.id === secondSnap.id) throw new Error('Snapshot IDs must be unique');
+      const [isValid, secondIsValid] = await Promise.all([
+        financialSnapshotService.verifySnapshotIntegrity(snap),
+        financialSnapshotService.verifySnapshotIntegrity(secondSnap),
+      ]);
+      if (!isValid || !secondIsValid) throw new Error('Internal integrity hash failed');
     });
 
     await test('16. Detect Drift: Deletion after snapshot', async () => {
