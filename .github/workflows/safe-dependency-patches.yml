@@ -2,14 +2,14 @@ name: Safe Dependency Patch Pass
 
 on:
   push:
-    branches: ['fix/security-nonbreaking-dependency-updates']
+    branches:
+      - fix/security-nonbreaking-dependency-updates
 
 permissions:
   contents: write
 
 jobs:
   safe-patch:
-    if: github.event.head_commit.message != 'chore(deps): apply npm audit compatible fixes'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -22,7 +22,8 @@ jobs:
           cache: 'npm'
       - name: Install current locked dependencies
         run: npm ci
-      - name: Apply only semver-compatible audit fixes
+      - name: Apply semver-compatible audit fixes
+        if: github.event.head_commit.message != 'chore(deps): apply npm audit compatible fixes'
         run: npm audit fix --package-lock-only || true
       - name: Install proposed lockfile
         run: npm ci
@@ -32,14 +33,17 @@ jobs:
         run: npm test
       - name: Verify production build
         run: npm run build
-      - name: Commit verified lockfile-only updates
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Detect lockfile changes
+        id: changes
         run: |
           if git diff --quiet -- package-lock.json; then
-            echo "No semver-compatible lockfile updates were available."
-            exit 0
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: Commit verified lockfile-only updates
+        if: steps.changes.outputs.changed == 'true'
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package-lock.json
