@@ -200,6 +200,39 @@ export class RBACTestSuite {
         title: 'Guarded Gate: Posting and Reversal Require Dedicated Permissions',
         description: 'منع المشاهد من ترحيل مسودة أو عكس قيد مرحّل',
         fn: async () => {
+          // Exercise the double-entry creation path directly: Accountant is allowed,
+          // while Viewer must be denied by the same guarded execution boundary.
+          const doubleDraft = await transactionEngine.createDoubleEntry({
+            status: 'draft',
+            entries: [
+              { accountId: testAccountId, type: 'debit', amount: 11 },
+              { accountId: testAccountId, type: 'credit', amount: 11 },
+            ],
+          }, accountantActor);
+          if (doubleDraft.length !== 2) {
+            throw new Error('Accountant was unable to create a balanced draft journal');
+          }
+
+          let viewerDoubleCreateDenied = false;
+          try {
+            await transactionEngine.createDoubleEntry({
+              status: 'draft',
+              entries: [
+                { accountId: testAccountId, type: 'debit', amount: 9 },
+                { accountId: testAccountId, type: 'credit', amount: 9 },
+              ],
+            }, viewerActor);
+          } catch {
+            viewerDoubleCreateDenied = true;
+          }
+          if (!viewerDoubleCreateDenied) {
+            throw new Error('Viewer was able to create a double-entry journal');
+          }
+
+          for (const entry of doubleDraft) {
+            await transactionEngine.deleteTransaction(entry.id, ownerActor);
+          }
+
           const draft = await transactionEngine.createTransaction({
             accountId: testAccountId,
             amount: 125,
