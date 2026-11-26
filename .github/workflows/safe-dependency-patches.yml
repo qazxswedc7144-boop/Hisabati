@@ -1,0 +1,47 @@
+name: Safe Dependency Patch Pass
+
+on:
+  push:
+    branches: ['fix/security-nonbreaking-dependency-updates']
+
+permissions:
+  contents: write
+
+jobs:
+  safe-patch:
+    if: github.event.head_commit.message != 'chore(deps): apply npm audit compatible fixes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install current locked dependencies
+        run: npm ci
+      - name: Apply only semver-compatible audit fixes
+        run: npm audit fix --package-lock-only || true
+      - name: Install proposed lockfile
+        run: npm ci
+      - name: Verify TypeScript
+        run: npm run lint
+      - name: Verify tests
+        run: npm test
+      - name: Verify production build
+        run: npm run build
+      - name: Commit verified lockfile-only updates
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            echo "No semver-compatible lockfile updates were available."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "chore(deps): apply npm audit compatible fixes"
+          git push origin HEAD
