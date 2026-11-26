@@ -1,4 +1,4 @@
-name: ExcelJS Migration Validation
+name: Security Dependency and Firebase Workbox Validation
 
 on:
   push:
@@ -7,18 +7,25 @@ on:
     paths:
       - package.json
       - package-lock.json
+      - bun.lock
       - src/core/services/excelGenerator.service.ts
       - src/core/services/export/export.service.ts
       - src/core/tests/reports.test.ts
+      - src/core/tests/firebaseIntegration.test.ts
+      - scripts/verify-pwa-build.mjs
+      - firebase.json
+      - firestore.rules
       - vite.config.ts
+      - .github/workflows/exceljs-migration.yml
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  validate-exceljs:
+  validate-security-dependencies:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,34 +34,45 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Generate lockfile for the reviewed manifest
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: oven-sh/setup-bun@v2
+      - name: Generate npm lockfile for the reviewed manifest
         run: npm install --package-lock-only --ignore-scripts
-      - name: Install from generated lockfile
+      - name: Generate Bun lockfile for the reviewed manifest
+        run: bun install --lockfile-only
+      - name: Install from npm lockfile
         run: npm ci
       - name: TypeScript validation
         run: npm run lint
-      - name: Test suite
+      - name: Complete application test suite
         run: npm test
+      - name: Firebase Auth and Firestore emulator integration
+        run: npx --yes firebase-tools@15.30.1 emulators:exec --project demo-hisabati --only auth,firestore "npm run test:firebase-integration"
       - name: Production build
         run: npm run build
+      - name: Validate offline PWA build artifacts
+        run: npm run test:pwa-build
       - name: Capture remaining audit findings
-        run: npm audit --json > npm-audit-after-exceljs.json || true
+        run: npm audit --json > npm-audit-after-firebase-workbox.json || true
       - name: Upload audit report
         uses: actions/upload-artifact@v4
         with:
-          name: npm-audit-after-exceljs
-          path: npm-audit-after-exceljs.json
+          name: npm-audit-after-firebase-workbox
+          path: npm-audit-after-firebase-workbox.json
           retention-days: 14
-      - name: Commit verified lockfile
+      - name: Commit verified lockfiles
         run: |
-          if ! git diff --quiet -- package-lock.json; then
+          if ! git diff --quiet -- package-lock.json bun.lock; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add package-lock.json
-            git commit -m "build(deps): lock ExcelJS migration"
+            git add package-lock.json bun.lock
+            git commit -m "build(deps): lock Firebase and Workbox security updates"
             git fetch origin fix/security-dependency-remediation-2026-11
             git rebase origin/fix/security-dependency-remediation-2026-11
             git push origin HEAD:fix/security-dependency-remediation-2026-11
           else
-            echo "Lockfile already matches package.json"
+            echo "Both lockfiles already match package.json"
           fi
