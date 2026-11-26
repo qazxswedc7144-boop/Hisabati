@@ -275,7 +275,52 @@ export const ImmutableLedgerTestSuite = {
         reverseAfterA === 0 && reverseAfterB === 0 && linksValid
       );
 
-      // P. Concurrent Posting
+      // P. A failure after the first reversal leg must roll back every write.
+      const atomicAccA = 'acc_reverse_atomic_a_' + Date.now();
+      const atomicAccB = 'acc_reverse_atomic_b_' + Date.now();
+      const atomicNow = new Date().toISOString();
+      const atomicAccountB = {
+        id: atomicAccB, name: 'حساب عكس ذري ب', currency: 'YER',
+        currentBalance: 0, currentBalanceMinor: 0, totalDebit: 0, totalDebitMinor: 0,
+        totalCredit: 0, totalCreditMinor: 0, transactionCount: 0, archived: 0,
+        createdAt: atomicNow, updatedAt: atomicNow,
+      };
+      await db.accounts.bulkAdd([
+        { ...atomicAccountB, id: atomicAccA, name: 'حساب عكس ذري أ' },
+        atomicAccountB,
+      ] as any);
+      const atomicOperationId = 'journal_reverse_rollback_' + Date.now();
+      const atomicJournal = await transactionEngine.createDoubleEntry({
+        operationId: atomicOperationId,
+        currency: 'YER',
+        entries: [
+          { accountId: atomicAccA, type: 'debit', amount: 31 },
+          { accountId: atomicAccB, type: 'credit', amount: 31 },
+        ],
+      });
+      const atomicBalanceBefore = (await db.accounts.get(atomicAccA))?.currentBalanceMinor;
+      await db.accounts.delete(atomicAccB);
+      let reversalFailureObserved = false;
+      try {
+        await transactionEngine.reverseTransaction(atomicJournal[0].id, 'اختبار التراجع الذري');
+      } catch {
+        reversalFailureObserved = true;
+      }
+      const atomicReversals = await db.transactions
+        .where('reversalOfTransactionId')
+        .anyOf(atomicJournal.map((entry) => entry.id))
+        .toArray();
+      const atomicBalanceAfter = (await db.accounts.get(atomicAccA))?.currentBalanceMinor;
+      await db.accounts.add(atomicAccountB as any);
+      addResult(20, 'فشل أحد أطراف العكس يتسبب في تراجع كامل دون قيود أو أرصدة جزئية',
+        reversalFailureObserved &&
+        atomicReversals.length === 0 &&
+        atomicBalanceBefore === atomicBalanceAfter
+      );
+      await db.transactions.where('operationId').equals(atomicOperationId).delete();
+      await db.accounts.bulkDelete([atomicAccA, atomicAccB]);
+
+      // Q. Concurrent Posting
       const concurrentTrx = await transactionEngine.createTransaction({
         accountId: testAccountId,
         type: 'debit',
