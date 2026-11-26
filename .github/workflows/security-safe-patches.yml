@@ -17,6 +17,8 @@ jobs:
         with:
           node-version: 24.12.0
           cache: npm
+      - name: Pin npm version
+        run: npm install --global npm@10.9.2
       - name: Install reviewed lockfile
         run: npm ci
       - name: Apply semver-compatible audit fixes only
