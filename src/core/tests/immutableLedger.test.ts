@@ -306,10 +306,9 @@ export const ImmutableLedgerTestSuite = {
       } catch {
         reversalFailureObserved = true;
       }
-      const atomicReversals = await db.transactions
-        .where('reversalOfTransactionId')
-        .anyOf(atomicJournal.map((entry) => entry.id))
-        .toArray();
+      const atomicReversals = (await db.transactions.toArray()).filter((entry) =>
+        atomicJournal.some((source) => entry.reversalOfTransactionId === source.id)
+      );
       const atomicBalanceAfter = (await db.accounts.get(atomicAccA))?.currentBalanceMinor;
       await db.accounts.add(atomicAccountB as any);
       addResult(20, 'فشل أحد أطراف العكس يتسبب في تراجع كامل دون قيود أو أرصدة جزئية',
