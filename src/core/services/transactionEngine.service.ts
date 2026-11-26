@@ -244,14 +244,28 @@ export class FinancialTransactionEngine {
         const existingReversals = allTransactions.filter((entry) =>
           !!entry.reversalOfTransactionId && sourceIds.has(entry.reversalOfTransactionId)
         );
+        const reversalsBySource = new Map<string, Transaction[]>();
+        for (const reversal of existingReversals) {
+          const sourceId = reversal.reversalOfTransactionId!;
+          const matches = reversalsBySource.get(sourceId) || [];
+          matches.push(reversal);
+          reversalsBySource.set(sourceId, matches);
+        }
         const alreadyCorrected = journalEntries.filter((entry) => !!entry.correctedByTransactionId);
-        if (alreadyCorrected.length === journalEntries.length && existingReversals.length === journalEntries.length) {
-          const reversalBySource = new Map(existingReversals.map((entry) => [entry.reversalOfTransactionId!, entry]));
-          const complete = journalEntries.every((entry) => {
-            const reversal = reversalBySource.get(entry.id);
-            return !!reversal && entry.correctedByTransactionId === reversal.id;
+        const complete = existingReversals.length === journalEntries.length &&
+          journalEntries.every((entry) => {
+            const matches = reversalsBySource.get(entry.id) || [];
+            return matches.length === 1 &&
+              (!entry.correctedByTransactionId || entry.correctedByTransactionId === matches[0].id);
           });
-          if (complete) return journalEntries.map((entry) => reversalBySource.get(entry.id)!);
+        if (complete) {
+          const orderedReversals = journalEntries.map((entry) => reversalsBySource.get(entry.id)![0]);
+          if (orderedReversals.some((reversal) =>
+            reversal.reversalReason !== undefined && reversal.reversalReason !== normalizedReason
+          )) {
+            throw new Error('سبب العكس لا يطابق سبب العملية العكسية المسجلة سابقاً');
+          }
+          return orderedReversals;
         }
         if (alreadyCorrected.length > 0 || existingReversals.length > 0) {
           throw new Error('حالة العكس غير مكتملة أو متعارضة؛ يلزم فحص النزاهة قبل إعادة المحاولة');
@@ -305,15 +319,13 @@ export class FinancialTransactionEngine {
             postedAt: now,
             postedBy: currentActor.id,
             reversalOfTransactionId: source.id,
+            reversalReason: normalizedReason,
             createdAt: now,
             updatedAt: now,
           };
 
           await transactionsTable.add(reversal);
-          await transactionsTable.update(source.id, {
-            correctedByTransactionId: reversal.id,
-            updatedAt: now,
-          });
+          // Append-only ledger: the original posted row is never mutated by reversal.
           await this.recalculateAccountBalanceIncremental(source.accountId, {
             amountMinor: source.amountMinor!,
             type: reversal.type,
@@ -366,6 +378,11 @@ export class FinancialTransactionEngine {
    */
   async createTransaction(dto: CreateTransactionDTO, actor?: AuditActor, options?: { isRemote?: boolean }): Promise<Transaction> {
     const currentActor = actor || rbacGuard.getActiveActor();
+
+    // REVERSED is produced only by the dedicated append-only reversal operation.
+    if (dto.status !== undefined && dto.status !== 'draft' && dto.status !== 'posted') {
+      throw new Error('حالة القيد عند الإنشاء يجب أن تكون مسودة أو مرحّلة؛ العكس له مسار مستقل');
+    }
 
     // 0. Strict RBAC Guard Assertion (Guarded Execution Gate)
     await rbacGuard.assertPermission('transactions:create', {
@@ -438,8 +455,12 @@ export class FinancialTransactionEngine {
 
         // Check if explicit operationId exists in DB
         if (explicitOpId) {
-          const existingTrx = await transaction.table('transactions').where('operationId').equals(explicitOpId).first();
+          const existingMatches = await transaction.table('transactions').where('operationId').equals(explicitOpId).toArray();
+          const existingTrx = existingMatches[0];
           if (existingTrx) {
+            if (existingMatches.length !== 1 || existingTrx.reversalOfTransactionId) {
+              throw new Error('الرقم المرجعي operationId مرتبط بقيد متعدد الأطراف أو عكسي ولا يمكن إعادة استخدامه كقيد مفرد');
+            }
             // Check for conflict: same operationId used for different transaction payload
             if (
               existingTrx.accountId !== dto.accountId ||
@@ -634,6 +655,10 @@ export class FinancialTransactionEngine {
    */
   async createDoubleEntry(dto: CreateDoubleEntryDTO, actor?: AuditActor): Promise<Transaction[]> {
     const currentActor = actor || rbacGuard.getActiveActor();
+    if (dto.status !== undefined && dto.status !== 'draft' && dto.status !== 'posted') {
+      throw new Error('حالة القيد عند الإنشاء يجب أن تكون مسودة أو مرحّلة؛ العكس له مسار مستقل');
+    }
+
     await rbacGuard.assertPermission('transactions:create', {
       actor: currentActor,
       targetType: 'transaction',
@@ -727,6 +752,9 @@ export class FinancialTransactionEngine {
         const existing = await transaction.table('transactions').where('operationId').equals(operationId).first();
         if (existing) {
           const allSiblings = await transaction.table('transactions').where('operationId').equals(operationId).toArray();
+          if (allSiblings.some((entry) => !!entry.reversalOfTransactionId)) {
+            throw new Error('الرقم المرجعي operationId مرتبط بقيود عكسية ولا يمكن إعادة استخدامه لإنشاء قيد يومية');
+          }
           const compareLegNotes = dto.note !== undefined || dto.entries.some((entry) => entry.note !== undefined);
           const compareLegReceipts = dto.receiptNumber !== undefined || dto.entries.some((entry) => entry.receiptNumber !== undefined);
           const normalizeLeg = (leg: any) => ({

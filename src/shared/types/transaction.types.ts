@@ -25,6 +25,9 @@ export interface Transaction {
   reversedAt?: string;
   reversedBy?: string;
   reversalOfTransactionId?: string;
+  /** Persisted reason on the appended reversal row; original ledger rows remain untouched. */
+  reversalReason?: string;
+  /** Legacy linkage retained for historical rows; new reversals do not mutate originals. */
   correctedByTransactionId?: string;
 
   // Optional populated fields for UI convenience

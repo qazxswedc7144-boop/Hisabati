@@ -417,6 +417,103 @@ export class DualRepresentationTestSuite {
       }
     });
 
+
+    // Test 14: operationId cannot cross the single-entry / journal boundary.
+    await run('DUAL-14', 'منع إعادة استخدام operationId بين القيد المفرد والمزدوج', async () => {
+      const debitAccount = await accountRepository.create({
+        name: 'حساب اختبار حد العملية المفردة',
+        phone: '770000018',
+        category: 'customer',
+        currency: 'YER',
+      });
+      const creditAccount = await accountRepository.create({
+        name: 'حساب اختبار حد العملية المزدوجة',
+        phone: '770000019',
+        category: 'supplier',
+        currency: 'YER',
+      });
+      const journalOperationId = 'cross_journal_single_' + Date.now();
+      const journal = await engine.createDoubleEntry({
+        operationId: journalOperationId,
+        entries: [
+          { accountId: debitAccount.id, type: 'debit', amount: 12 },
+          { accountId: creditAccount.id, type: 'credit', amount: 12 },
+        ],
+      });
+      let journalAsSingleRejected = false;
+      try {
+        await engine.createTransaction({
+          accountId: debitAccount.id,
+          type: 'debit',
+          amount: 12,
+          operationId: journalOperationId,
+          date: journal[0].date,
+        });
+      } catch {
+        journalAsSingleRejected = true;
+      }
+      if (!journalAsSingleRejected) throw new Error('أعاد المسار المفرد طرفاً واحداً من قيد يومية مزدوج');
+
+      const singleOperationId = 'cross_single_journal_' + Date.now();
+      await engine.createTransaction({
+        accountId: debitAccount.id,
+        type: 'debit',
+        amount: 7,
+        operationId: singleOperationId,
+        date: '2026-03-08',
+      });
+      let singleAsJournalRejected = false;
+      try {
+        await engine.createDoubleEntry({
+          operationId: singleOperationId,
+          entries: [
+            { accountId: debitAccount.id, type: 'debit', amount: 7 },
+            { accountId: creditAccount.id, type: 'credit', amount: 7 },
+          ],
+        });
+      } catch {
+        singleAsJournalRejected = true;
+      }
+      if (!singleAsJournalRejected) throw new Error('قُبل operationId الخاص بقيد مفرد في مسار القيد المزدوج');
+    });
+
+    // Test 15: reversed is an outcome of reverseTransaction, never a create status.
+    await run('DUAL-15', 'رفض إنشاء قيود بحالة reversed عبر مسارات الإنشاء', async () => {
+      const account = await accountRepository.create({
+        name: 'حساب اختبار حالة العكس',
+        phone: '770000020',
+        category: 'customer',
+        currency: 'YER',
+      });
+      let singleRejected = false;
+      try {
+        await engine.createTransaction({
+          accountId: account.id,
+          type: 'debit',
+          amount: 3,
+          status: 'reversed',
+          date: '2026-03-09',
+        });
+      } catch {
+        singleRejected = true;
+      }
+      let journalRejected = false;
+      try {
+        await engine.createDoubleEntry({
+          status: 'reversed',
+          entries: [
+            { accountId: account.id, type: 'debit', amount: 3 },
+            { accountId: account.id, type: 'credit', amount: 3 },
+          ],
+        });
+      } catch {
+        journalRejected = true;
+      }
+      if (!singleRejected || !journalRejected) {
+        throw new Error('تم قبول حالة reversed مباشرة في أحد مسارات الإنشاء');
+      }
+    });
+
     const passedCount = results.filter((r) => r.passed).length;
     const failedCount = results.filter((r) => !r.passed).length;
 

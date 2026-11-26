@@ -246,22 +246,32 @@ export const ImmutableLedgerTestSuite = {
       });
       const reverseBeforeA = (await db.accounts.get(reverseAccA))?.currentBalanceMinor;
       const reverseBeforeB = (await db.accounts.get(reverseAccB))?.currentBalanceMinor;
-      const reversalEntries = await transactionEngine.reverseTransaction(originalJournal[0].id, 'اختبار عكس قيد اليومية');
-      const reversalRetry = await transactionEngine.reverseTransaction(originalJournal[0].id, 'إعادة محاولة اختبار العكس');
+      const originalSnapshots = originalJournal.map((entry) => JSON.stringify(entry));
+      const reversalReason = 'اختبار عكس قيد اليومية';
+      const reversalEntries = await transactionEngine.reverseTransaction(originalJournal[0].id, reversalReason);
+      const reversalRetry = await transactionEngine.reverseTransaction(originalJournal[0].id, reversalReason);
+      let changedReasonRejected = false;
+      try {
+        await transactionEngine.reverseTransaction(originalJournal[0].id, 'سبب مختلف للعكس');
+      } catch {
+        changedReasonRejected = true;
+      }
       const reverseAfterA = (await db.accounts.get(reverseAccA))?.currentBalanceMinor;
       const reverseAfterB = (await db.accounts.get(reverseAccB))?.currentBalanceMinor;
       const originalsAfterReverse = await Promise.all(originalJournal.map((entry) => db.transactions.get(entry.id)));
-      const linksValid = originalsAfterReverse.every((entry) =>
-        !!entry?.correctedByTransactionId &&
-        reversalEntries.some((reversal) => reversal.id === entry.correctedByTransactionId)
-      ) && reversalEntries.every((reversal) =>
-        !!reversal.reversalOfTransactionId &&
-        originalJournal.some((entry) => entry.id === reversal.reversalOfTransactionId)
+      const originalsUnchanged = originalsAfterReverse.every((entry, index) =>
+        JSON.stringify(entry) === originalSnapshots[index]
       );
-      addResult(19, 'عكس القيد المزدوج ينشئ قيوداً مقابلة مرتبطة ويمنع تكرار العكس',
+      const linksValid = reversalEntries.every((reversal) =>
+        !!reversal.reversalOfTransactionId &&
+        originalJournal.some((entry) => entry.id === reversal.reversalOfTransactionId) &&
+        reversal.reversalReason === reversalReason
+      );
+      addResult(19, 'العكس إضافي دون تعديل الأصل، ويحفظ السبب ويرفض إعادة المحاولة المتعارضة',
         reversalEntries.length === 2 &&
         reversalRetry.length === 2 &&
         reversalEntries.every((entry) => reversalRetry.some((retry) => retry.id === entry.id)) &&
+        changedReasonRejected && originalsUnchanged &&
         reverseAfterA === 0 && reverseAfterB === 0 && linksValid
       );
 
