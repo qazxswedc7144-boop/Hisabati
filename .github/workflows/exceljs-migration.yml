@@ -1,6 +1,9 @@
 name: ExcelJS Migration Validation
 
 on:
+  push:
+    branches:
+      - fix/security-dependency-remediation-2026-11
   workflow_dispatch:
 
 permissions:
