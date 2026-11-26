@@ -252,11 +252,19 @@ export class FinancialTransactionEngine {
           reversalsBySource.set(sourceId, matches);
         }
         const alreadyCorrected = journalEntries.filter((entry) => !!entry.correctedByTransactionId);
+        const expectedReverseOperationId = `reverse_${original.operationId || original.id}`;
         const complete = existingReversals.length === journalEntries.length &&
           journalEntries.every((entry) => {
             const matches = reversalsBySource.get(entry.id) || [];
-            return matches.length === 1 &&
-              (!entry.correctedByTransactionId || entry.correctedByTransactionId === matches[0].id);
+            if (matches.length !== 1) return false;
+            const reversal = matches[0];
+            return (!entry.correctedByTransactionId || entry.correctedByTransactionId === reversal.id) &&
+              reversal.operationId === expectedReverseOperationId &&
+              (reversal.status || 'posted') === 'posted' &&
+              reversal.accountId === entry.accountId &&
+              reversal.type === (entry.type === 'debit' ? 'credit' : 'debit') &&
+              reversal.amountMinor === entry.amountMinor &&
+              (!entry.currency || reversal.currency === entry.currency);
           });
         if (complete) {
           const orderedReversals = journalEntries.map((entry) => reversalsBySource.get(entry.id)![0]);
@@ -280,9 +288,31 @@ export class FinancialTransactionEngine {
           }
         }
 
-        const journalCurrencies = new Set(journalEntries.map((entry) => entry.currency).filter(Boolean));
-        if (journalCurrencies.size > 1) {
+        const currencyEntry = await transaction.table('settings').get('currency');
+        const systemCurrency = currencyEntry?.value || 'YER';
+        const journalCurrencies = new Set<string>();
+        let totalDebitMinor = 0;
+        let totalCreditMinor = 0;
+        for (const entry of journalEntries) {
+          const account = await transaction.table('accounts').get(entry.accountId) as Account | undefined;
+          if (!account) throw new Error(`الحساب المرتبط بالقيد الأصلي غير موجود: ${entry.accountId}`);
+          const resolvedCurrency = resolveRequiredCurrency({
+            transactionCurrency: entry.currency,
+            accountCurrency: account.currency,
+            systemCurrency,
+          });
+          journalCurrencies.add(resolvedCurrency);
+          if (entry.type === 'debit') totalDebitMinor += entry.amountMinor!;
+          else totalCreditMinor += entry.amountMinor!;
+          if (!Number.isSafeInteger(totalDebitMinor) || !Number.isSafeInteger(totalCreditMinor)) {
+            throw new Error('إجمالي مجموعة القيود يتجاوز النطاق الآمن للحسابات المالية');
+          }
+        }
+        if (journalCurrencies.size !== 1) {
           throw new Error('لا يمكن عكس مجموعة قيود تحتوي على عملات مختلطة');
+        }
+        if (journalEntries.length > 1 && totalDebitMinor !== totalCreditMinor) {
+          throw new Error('لا يمكن عكس مجموعة قيود غير متوازنة؛ يلزم فحص النزاهة أولاً');
         }
 
         const reverseOperationId = `reverse_${original.operationId || original.id}`;
@@ -291,8 +321,6 @@ export class FinancialTransactionEngine {
           throw new Error('معرف عملية العكس مستخدم مسبقاً ولا يطابق عكساً مكتملاً للقيد الأصلي');
         }
 
-        const currencyEntry = await transaction.table('settings').get('currency');
-        const systemCurrency = currencyEntry?.value || 'YER';
         const created: Transaction[] = [];
         const now = new Date().toISOString();
 

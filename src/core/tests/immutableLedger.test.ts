@@ -256,6 +256,15 @@ export const ImmutableLedgerTestSuite = {
       } catch {
         changedReasonRejected = true;
       }
+      const tamperTarget = reversalEntries[0];
+      await db.transactions.update(tamperTarget.id, { amountMinor: (tamperTarget.amountMinor || 0) + 1 });
+      let tamperedRetryRejected = false;
+      try {
+        await transactionEngine.reverseTransaction(originalJournal[0].id, reversalReason);
+      } catch {
+        tamperedRetryRejected = true;
+      }
+      await db.transactions.put(tamperTarget);
       const reverseAfterA = (await db.accounts.get(reverseAccA))?.currentBalanceMinor;
       const reverseAfterB = (await db.accounts.get(reverseAccB))?.currentBalanceMinor;
       const originalsAfterReverse = await Promise.all(originalJournal.map((entry) => db.transactions.get(entry.id)));
@@ -271,7 +280,7 @@ export const ImmutableLedgerTestSuite = {
         reversalEntries.length === 2 &&
         reversalRetry.length === 2 &&
         reversalEntries.every((entry) => reversalRetry.some((retry) => retry.id === entry.id)) &&
-        changedReasonRejected && originalsUnchanged &&
+        changedReasonRejected && tamperedRetryRejected && originalsUnchanged &&
         reverseAfterA === 0 && reverseAfterB === 0 && linksValid
       );
 
@@ -299,19 +308,24 @@ export const ImmutableLedgerTestSuite = {
         ],
       });
       const atomicBalanceBefore = (await db.accounts.get(atomicAccA))?.currentBalanceMinor;
-      await db.accounts.delete(atomicAccB);
+      const originalRecalculate = (transactionEngine as any).recalculateAccountBalanceIncremental.bind(transactionEngine);
+      (transactionEngine as any).recalculateAccountBalanceIncremental = async (accountId: string, ...args: any[]) => {
+        if (accountId === atomicAccB) throw new Error('Injected failure after first reversal leg');
+        return originalRecalculate(accountId, ...args);
+      };
       let reversalFailureObserved = false;
       try {
         await transactionEngine.reverseTransaction(atomicJournal[0].id, 'اختبار التراجع الذري');
       } catch {
         reversalFailureObserved = true;
+      } finally {
+        (transactionEngine as any).recalculateAccountBalanceIncremental = originalRecalculate;
       }
       const atomicReversals = (await db.transactions.toArray()).filter((entry) =>
         atomicJournal.some((source) => entry.reversalOfTransactionId === source.id)
       );
       const atomicBalanceAfter = (await db.accounts.get(atomicAccA))?.currentBalanceMinor;
-      await db.accounts.add(atomicAccountB as any);
-      addResult(20, 'فشل أحد أطراف العكس يتسبب في تراجع كامل دون قيود أو أرصدة جزئية',
+      addResult(20, 'فشل الطرف الثاني بعد كتابة الأول يتسبب في تراجع ذري كامل',
         reversalFailureObserved &&
         atomicReversals.length === 0 &&
         atomicBalanceBefore === atomicBalanceAfter
