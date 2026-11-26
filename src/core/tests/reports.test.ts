@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 import { reportService } from '../services/report.service';
 import { excelGenerator } from '../services/excelGenerator.service';
+import { accountExportService } from '../services/export/export.service';
 import { pdfGenerator } from '../services/pdfGenerator.service';
 import { shareService } from '../services/share.service';
 import { transactionEngine } from '../services/transactionEngine.service';
@@ -91,6 +92,29 @@ export class ReportsTestSuite {
         const statementSheet = statementWorkbook.getWorksheet('كشف الحساب');
         if (statementSheet?.getCell('B2').value !== testAccountName) throw new Error('اسم الحساب العربي لم يُحفظ');
         if (statementSheet?.getCell('B12').value !== '2026-02-05') throw new Error('تاريخ الحركة لم يُحفظ');
+
+        let exportedBlob: Blob | undefined;
+        const originalDownload = accountExportService.downloadBlob;
+        accountExportService.downloadBlob = (blob: Blob) => { exportedBlob = blob; };
+        try {
+          const exportResult = await accountExportService.exportToExcel([statement.account], {
+            currency: 'SAR',
+            filterLabel: 'الكل',
+            sortLabel: 'الأحدث حركة',
+          });
+          if (!exportResult.success || !exportedBlob) throw new Error('فشل تصدير قائمة الحسابات إلى Excel');
+          const accountsWorkbook = new ExcelJS.Workbook();
+          await accountsWorkbook.xlsx.load(await exportedBlob.arrayBuffer());
+          const accountsSheet = accountsWorkbook.getWorksheet('قائمة الحسابات');
+          if (!accountsSheet) throw new Error('ورقة قائمة الحسابات غير موجودة');
+          if (accountsSheet.views[0]?.rightToLeft !== true) throw new Error('اتجاه RTL لقائمة الحسابات غير محفوظ');
+          if (accountsSheet.getCell('B11').value !== testAccountName) throw new Error('اسم الحساب لم يُحفظ في قائمة الحسابات');
+          if (Number(accountsSheet.getCell('F11').value) !== statement.account.currentBalance) {
+            throw new Error('رصيد الحساب لم يُحفظ في قائمة الحسابات');
+          }
+        } finally {
+          accountExportService.downloadBlob = originalDownload;
+        }
       });
 
       await this.runTest(results, 'REP-04', 'توليد قالب HTML / PDF بتنسيق عربي RTL وتضمين كافة البيانات', async () => {
