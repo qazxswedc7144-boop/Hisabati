@@ -27,6 +27,7 @@ jobs:
       - name: Install current lockfile
         run: npm ci
       - name: Apply semver-compatible audit fixes only
+        continue-on-error: true
         run: npm audit fix --package-lock-only --ignore-scripts
       - name: Reinstall from updated lockfile
         run: npm ci
