@@ -203,7 +203,7 @@ export class FinancialTransactionEngine {
   /**
    * Reverses a posted transaction or an entire multi-leg journal atomically.
    * Original entries remain immutable and posted; opposite posted entries are appended
-   * and linked through reversalOfTransactionId / correctedByTransactionId.
+   * and link back through reversalOfTransactionId (legacy correctedByTransactionId is read-only).
    */
   async reverseTransaction(id: string, reason: string, actor?: AuditActor): Promise<Transaction[]> {
     const currentActor = actor || rbacGuard.getActiveActor();
