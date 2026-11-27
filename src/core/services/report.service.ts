@@ -238,9 +238,10 @@ export class ReportService {
       accountId
     );
 
+    const postedTransactions = allTransactions.filter((trx) => (trx.status || 'posted') === 'posted');
     const { decimals } = await resolveReportDecimals({
       currency: account.currency,
-      transactions: allTransactions,
+      transactions: postedTransactions,
     });
 
     const getTrxAmountMinor = (trx: Transaction): number => {
@@ -391,8 +392,9 @@ export class ReportService {
     // Phase 2 Fix: Filter for POSTED transactions only for financial summary
     const periodTransactions = allPeriodTransactions.filter(trx => (trx.status || 'posted') === 'posted');
 
+    const postedLedgerTransactions = allTransactions.filter((trx) => (trx.status || 'posted') === 'posted');
     const { decimals } = await resolveReportDecimals({
-      transactions: allTransactions,
+      transactions: postedLedgerTransactions,
       accounts,
     });
 
@@ -506,7 +508,8 @@ export class ReportService {
       accountRepository.getAll(options.includeArchived ?? false),
       db.transactions.toArray(),
     ]);
-    const { decimals } = await resolveReportDecimals({ accounts, transactions });
+    const postedLedgerTransactions = transactions.filter((trx) => (trx.status || 'posted') === 'posted');
+    const { decimals } = await resolveReportDecimals({ accounts, transactions: postedLedgerTransactions });
 
     // All active/eligible receivable accounts (balance > 0)
     const allReceivableAccounts = accounts.filter(
