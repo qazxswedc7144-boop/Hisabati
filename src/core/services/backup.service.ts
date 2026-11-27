@@ -345,6 +345,10 @@ export class BackupService {
         return { isValid: false, error: `اسم الحساب مفقود أو غير صالح للحساب (ID: ${acc.id})` };
       }
 
+      if (acc.currency !== undefined && !isSupportedCurrency(acc.currency)) {
+        return { isValid: false, error: `عملة الحساب غير مدعومة (ID: ${acc.id})` };
+      }
+
       const bal = acc.currentBalance !== undefined ? acc.currentBalance : acc.balance;
       if (bal !== undefined && (typeof bal !== 'number' || isNaN(bal) || !isFinite(bal))) {
         return { isValid: false, error: `رصيد غير صالح للحساب (ID: ${acc.id}): ${bal}` };
@@ -370,6 +374,16 @@ export class BackupService {
       }
       if (!accountIds.has(trx.accountId)) {
         return { isValid: false, error: `توجد معاملة تشير إلى حساب غير موجود بالنسخة (ID: ${trx.accountId})` };
+      }
+      if (trx.currency !== undefined && !isSupportedCurrency(trx.currency)) {
+        return { isValid: false, error: `عملة المعاملة غير مدعومة (ID: ${trx.id})` };
+      }
+      const relatedAccount = accountsById.get(trx.accountId);
+      if (
+        trx.currency && relatedAccount?.currency &&
+        trx.currency.trim().toUpperCase() !== relatedAccount.currency.trim().toUpperCase()
+      ) {
+        return { isValid: false, error: `عملة المعاملة لا تطابق عملة الحساب (ID: ${trx.id})` };
       }
       if (typeof trx.amount !== 'number' || isNaN(trx.amount) || !isFinite(trx.amount) || trx.amount <= 0) {
         return { isValid: false, error: `مبلغ غير صالح في المعاملة (ID: ${trx.id}): ${trx.amount}` };
