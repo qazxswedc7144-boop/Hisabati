@@ -29,7 +29,7 @@ import {
   migrateBackupPayload,
 } from './backup/backup-migrator';
 import { decimalToMinor, minorToDecimal, isValidMinorUnit } from '../money/converter';
-import { isSupportedCurrency } from '../money/currency';
+import { isSupportedCurrency, resolveRequiredCurrency } from '../money/currency';
 
 const APP_VERSION = '2.0.0';
 
@@ -101,7 +101,11 @@ export class BackupService {
       if (status !== 'posted') continue;
 
       const accountCurrency = accountsById.get(trx.accountId)?.currency;
-      const trxCurrency = (trx.currency || accountCurrency || defaultCurrency) as string;
+      const trxCurrency = resolveRequiredCurrency({
+        transactionCurrency: trx.currency,
+        accountCurrency,
+        systemCurrency: defaultCurrency,
+      });
       const amountUnits = trx.amountMinor !== undefined && isValidMinorUnit(trx.amountMinor)
         ? Math.abs(trx.amountMinor)
         : Math.abs(decimalToMinor(trx.amount, trxCurrency));
