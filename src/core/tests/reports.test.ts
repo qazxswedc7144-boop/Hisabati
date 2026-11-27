@@ -28,6 +28,8 @@ export class ReportsTestSuite {
     // Setup clean isolated test fixtures
     const testAccountName = `حساب اختبار التقارير ${Date.now()}`;
     let testAccountId = '';
+    let kwdAccountId = '';
+    let omrAccountId = '';
     const payableAccountName = `حساب دائن اختبار ${Date.now()}`;
     let payableAccountId = '';
 
@@ -279,6 +281,69 @@ export class ReportsTestSuite {
         }
       );
 
+      // TEST 10: Three-decimal currencies retain their own precision in statements.
+      await this.runTest(
+        results,
+        'REP-10',
+        'احترام دقة KWD وOMR ذات ثلاث منازل عشرية في كشف الحساب',
+        async () => {
+          const kwdAccount = await accountRepository.create({
+            name: `حساب دينار كويتي ${Date.now()}`,
+            phone: '0501111111',
+            currency: 'KWD',
+          });
+          kwdAccountId = kwdAccount.id;
+          const omrAccount = await accountRepository.create({
+            name: `حساب ريال عماني ${Date.now()}`,
+            phone: '0502222222',
+            currency: 'OMR',
+          });
+          omrAccountId = omrAccount.id;
+
+          await transactionEngine.createTransaction({
+            accountId: kwdAccountId, type: 'debit', amount: 1.234,
+            date: '2026-02-15',
+          });
+          await transactionEngine.createTransaction({
+            accountId: omrAccountId, type: 'debit', amount: 2.345,
+            date: '2026-02-15',
+          });
+
+          const [kwdStatement, omrStatement] = await Promise.all([
+            reportService.getAccountStatement(kwdAccountId, {
+              preset: 'custom', startDate: '2026-02-01', endDate: '2026-02-28',
+            }),
+            reportService.getAccountStatement(omrAccountId, {
+              preset: 'custom', startDate: '2026-02-01', endDate: '2026-02-28',
+            }),
+          ]);
+          if (kwdStatement.closingBalance !== 1.234 || kwdStatement.transactions[0]?.debitAmount !== 1.234) {
+            throw new Error(`KWD precision lost: ${kwdStatement.closingBalance}`);
+          }
+          if (omrStatement.closingBalance !== 2.345 || omrStatement.transactions[0]?.debitAmount !== 2.345) {
+            throw new Error(`OMR precision lost: ${omrStatement.closingBalance}`);
+          }
+        }
+      );
+
+      // TEST 11: Reports must refuse to combine minor units from different currencies.
+      await this.runTest(
+        results,
+        'REP-11',
+        'رفض تجميع تقارير متعددة العملات دون فصل أو تحويل صرف',
+        async () => {
+          let summaryRejected = false;
+          let receivablesRejected = false;
+          let payablesRejected = false;
+          try { await reportService.getFinancialSummary({ preset: 'all' }); } catch { summaryRejected = true; }
+          try { await reportService.getReceivablesReport(); } catch { receivablesRejected = true; }
+          try { await reportService.getPayablesReport(); } catch { payablesRejected = true; }
+          if (!summaryRejected || !receivablesRejected || !payablesRejected) {
+            throw new Error('A report aggregated balances or transactions from multiple currencies');
+          }
+        }
+      );
+
       // TEST 9: Payables Separation & Balance Magnitude Invariant
       await this.runTest(
         results,
@@ -319,6 +384,12 @@ export class ReportsTestSuite {
         if (payableAccountId) {
           await db.transactions.where('accountId').equals(payableAccountId).delete();
           await db.accounts.delete(payableAccountId);
+        }
+        for (const accountId of [kwdAccountId, omrAccountId]) {
+          if (accountId) {
+            await db.transactions.where('accountId').equals(accountId).delete();
+            await db.accounts.delete(accountId);
+          }
         }
       } catch (err) {
         console.warn('Failed to cleanup reports test fixtures', err);
