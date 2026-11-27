@@ -332,7 +332,11 @@ export async function verifyBackupIntegrityHash(payload: any, version?: number):
   const isCurrentValid = await verifyCurrentBackupHash(payload);
   if (isCurrentValid) return true;
 
-  // 3. If payload was migrated and carries originalSchemaVersion
+  // V7 payloads have a freshly computed hash after migration. Never fall back
+  // to an older hash that does not cover currencyTotals.
+  if (ver >= 7) return false;
+
+  // Older migrated payloads may still require their original legacy hash format.
   if (payload.metadata.originalSchemaVersion !== undefined) {
     const isOriginalLegacyValid = await verifyLegacyBackupHash(payload, payload.metadata.originalSchemaVersion);
     if (isOriginalLegacyValid) return true;
