@@ -1,3 +1,4 @@
+import { db } from '../database/db';
 import { accountRepository } from '../repositories/account.repository';
 import { transactionRepository } from '../repositories/transaction.repository';
 import { settingsRepository } from '../repositories/settings.repository';
@@ -381,16 +382,17 @@ export class ReportService {
       endDate: options.endDate,
     });
 
-    const [accounts, allPeriodTransactions] = await Promise.all([
+    const [accounts, allPeriodTransactions, allTransactions] = await Promise.all([
       accountRepository.getAll(true),
       transactionRepository.getByDateRange(dateRange.startDate, dateRange.endDate),
+      db.transactions.toArray(),
     ]);
 
     // Phase 2 Fix: Filter for POSTED transactions only for financial summary
     const periodTransactions = allPeriodTransactions.filter(trx => (trx.status || 'posted') === 'posted');
 
     const { decimals } = await resolveReportDecimals({
-      transactions: periodTransactions,
+      transactions: allTransactions,
       accounts,
     });
 
@@ -500,10 +502,11 @@ export class ReportService {
   public async getReceivablesReport(
     options: AccountsReportFilterOptions = {}
   ): Promise<ReceivablesReport> {
-    const accounts = await accountRepository.getAll(
-      options.includeArchived ?? false
-    );
-    const { decimals } = await resolveReportDecimals({ accounts });
+    const [accounts, transactions] = await Promise.all([
+      accountRepository.getAll(options.includeArchived ?? false),
+      db.transactions.toArray(),
+    ]);
+    const { decimals } = await resolveReportDecimals({ accounts, transactions });
 
     // All active/eligible receivable accounts (balance > 0)
     const allReceivableAccounts = accounts.filter(
@@ -598,10 +601,11 @@ export class ReportService {
   public async getPayablesReport(
     options: AccountsReportFilterOptions = {}
   ): Promise<PayablesReport> {
-    const accounts = await accountRepository.getAll(
-      options.includeArchived ?? false
-    );
-    const { decimals } = await resolveReportDecimals({ accounts });
+    const [accounts, transactions] = await Promise.all([
+      accountRepository.getAll(options.includeArchived ?? false),
+      db.transactions.toArray(),
+    ]);
+    const { decimals } = await resolveReportDecimals({ accounts, transactions });
 
     // All active/eligible payable accounts (balance < 0)
     const allPayableAccounts = accounts.filter(
