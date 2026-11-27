@@ -215,6 +215,9 @@ export class FinancialSnapshotService {
    * Re-calculates and verifies the snapshot internal integrity.
    */
   async verifySnapshotIntegrity(snapshot: FinancialSnapshot): Promise<boolean> {
+    if (snapshot.snapshotVersion !== undefined && snapshot.snapshotVersion !== 2) {
+      return false;
+    }
     // Sort balances keys for deterministic hashing
     const sortedBalances: Record<string, number> = {};
     Object.keys(snapshot.balances).sort().forEach(key => {
