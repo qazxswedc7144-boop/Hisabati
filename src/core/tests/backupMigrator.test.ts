@@ -164,6 +164,7 @@ export class BackupMigratorTestSuite {
         p5.metadata.totalCreditSum = 500;
         p5.metadata.totalDebitMinor = 100000;
         p5.metadata.totalCreditMinor = 50000;
+        p5.metadata.integrityHash = await calculateBackupPayloadHash(p5);
         const migrated = await migrateBackupPayload(p5);
 
         if (migrated.metadata.backupSchemaVersion !== BACKUP_SCHEMA_VERSION) {
