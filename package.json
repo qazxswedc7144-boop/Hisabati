@@ -12,7 +12,8 @@
     "lint": "tsc --noEmit",
     "test": "tsx src/core/tests/runAllSuites.ts",
     "test:firebase:emulator": "tsx server/tests/firebaseEmulator.integration.test.ts",
-    "test:pwa:offline": "node scripts/pwa-offline.integration.mjs"
+    "test:pwa:offline": "node scripts/pwa-offline.integration.mjs",
+    "test:tenant:http": "tsx server/tests/tenantHttp.integration.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
