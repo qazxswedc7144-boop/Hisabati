@@ -66,14 +66,38 @@ type AccountFinancial = Account & {
  * If an account has fractional transactions, enforces 2 decimal places to prevent truncation.
  */
 const resolveReportDecimals = async (
-  options?: { transactions?: Transaction[]; hasFractions?: boolean }
+  options?: {
+    transactions?: Transaction[];
+    accounts?: Account[];
+    currency?: CurrencyCode;
+    hasFractions?: boolean;
+  }
 ): Promise<{ currency: CurrencyCode; decimals: number }> => {
-  const activeCurrency = (await settingsRepository.get<CurrencyCode>('currency', 'YER')) || 'YER';
+  const systemCurrency = (await settingsRepository.get<CurrencyCode>('currency', 'YER')) || 'YER';
+  const currencies = new Set<string>();
+
+  if (options?.currency) currencies.add(options.currency.trim().toUpperCase());
+  for (const account of options?.accounts || []) {
+    if (account.currency) currencies.add(account.currency.trim().toUpperCase());
+  }
+  for (const transaction of options?.transactions || []) {
+    if (transaction.currency) currencies.add(transaction.currency.trim().toUpperCase());
+  }
+
+  if (currencies.size > 1) {
+    throw new Error(
+      `[Financial Safety] This report cannot aggregate multiple currencies (${Array.from(currencies).sort().join(', ')}) without separate per-currency totals or an explicit FX conversion.`
+    );
+  }
+
+  const activeCurrency = (Array.from(currencies)[0] || systemCurrency) as CurrencyCode;
   const currencyDecimals = getCurrencyDecimals(activeCurrency);
   const hasFractions = Boolean(
     options?.hasFractions ||
     options?.transactions?.some((t) => t.amount % 1 !== 0)
   );
+  // Preserve the legacy fractional-decimal compatibility rule while respecting
+  // currencies whose canonical precision is greater than two digits (KWD/OMR).
   const decimals = hasFractions ? Math.max(currencyDecimals, 2) : currencyDecimals;
   return { currency: activeCurrency, decimals };
 };
@@ -213,7 +237,10 @@ export class ReportService {
       accountId
     );
 
-    const { decimals } = await resolveReportDecimals({ transactions: allTransactions });
+    const { decimals } = await resolveReportDecimals({
+      currency: account.currency,
+      transactions: allTransactions,
+    });
 
     const getTrxAmountMinor = (trx: Transaction): number => {
       const factor = Math.pow(10, decimals);
@@ -362,7 +389,10 @@ export class ReportService {
     // Phase 2 Fix: Filter for POSTED transactions only for financial summary
     const periodTransactions = allPeriodTransactions.filter(trx => (trx.status || 'posted') === 'posted');
 
-    const { decimals } = await resolveReportDecimals({ transactions: periodTransactions });
+    const { decimals } = await resolveReportDecimals({
+      transactions: periodTransactions,
+      accounts,
+    });
 
     let periodDebitMinor = 0;
     let periodCreditMinor = 0;
@@ -470,11 +500,10 @@ export class ReportService {
   public async getReceivablesReport(
     options: AccountsReportFilterOptions = {}
   ): Promise<ReceivablesReport> {
-    const { decimals } = await resolveReportDecimals();
-
     const accounts = await accountRepository.getAll(
       options.includeArchived ?? false
     );
+    const { decimals } = await resolveReportDecimals({ accounts });
 
     // All active/eligible receivable accounts (balance > 0)
     const allReceivableAccounts = accounts.filter(
