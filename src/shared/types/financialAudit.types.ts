@@ -53,8 +53,15 @@ export interface FinancialAuditEntry {
   metadata?: Record<string, any>;
 }
 
+export interface FinancialSnapshotCurrencyTotals {
+  totalDebitMinor: number;
+  totalCreditMinor: number;
+}
+
 export interface FinancialSnapshot {
-  id: string;                 // snap_{timestamp}
+  id: string;
+  /** Version 2 adds currency-separated totals and hashes all summary fields. */
+  snapshotVersion?: 2;                 // snap_{timestamp}
   organizationId: string;
   createdAt: string;
   ledgerRevision: number;     // Last sequenceNumber from FinancialAuditEntry
@@ -62,11 +69,13 @@ export interface FinancialSnapshot {
   // Summary Data
   transactionCount: number;
   accountCount: number;
-  totalDebitMinor: number;
-  totalCreditMinor: number;
-  
-  // Detailed Balances (Mapping accountId -> amountMinor)
+  totalDebitMinor?: number;
+  totalCreditMinor?: number;
+  currencyTotals?: Partial<Record<CurrencyCode, FinancialSnapshotCurrencyTotals>>;
+
+  // Detailed Balances (Mapping accountId -> amountMinor) plus the unit for each account.
   balances: Record<string, number>;
+  balanceCurrencies?: Record<string, CurrencyCode>;
   
   // Integrity
   integrityHash: string;      // SHA256 of all balances + ledgerRevision
