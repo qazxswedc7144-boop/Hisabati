@@ -10,21 +10,24 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx src/core/tests/runAllSuites.ts"
+    "test": "tsx src/core/tests/runAllSuites.ts",
+    "test:firebase:emulator": "tsx server/tests/firebaseEmulator.integration.test.ts",
+    "test:pwa:offline": "node scripts/pwa-offline.integration.mjs",
+    "test:tenant:http": "tsx server/tests/tenantHttp.integration.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
     "dexie": "^4.4.5",
     "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
     "express": "^4.22.3",
     "firebase": "^12.19.0",
-    "firebase-admin": "^14.5.0",
+    "firebase-admin": "^14.5.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "react-router-dom": "^7.18.3",
-    "xlsx": "^0.18.5",
     "zod": "^4.6.6",
     "zustand": "^5.0.15"
   },
@@ -45,5 +48,10 @@
     "vite": "^6.2.3",
     "vite-plugin-pwa": "^1.3.0",
     "vitest": "^5.0.1"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
   }
 }

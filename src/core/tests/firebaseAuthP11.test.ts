@@ -70,18 +70,46 @@ export class FirebaseAuthP11TestSuite {
         title: 'localStorage Isolation',
         description: 'التأكد من عدم الاعتماد على localStorage لتحديد الهوية الصالحة',
         fn: async () => {
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('auth_user_id', 'hacked_user');
-            localStorage.setItem('auth_role', 'admin');
-            
+          // Exercise the browser-storage attack path in Node CI as well as in a browser.
+          const storage = new Map<string, string>();
+          const fakeLocalStorage = {
+            setItem: (key: string, value: string) => storage.set(key, value),
+            getItem: (key: string) => storage.get(key) ?? null,
+            removeItem: (key: string) => { storage.delete(key); },
+            clear: () => storage.clear(),
+            key: (index: number) => Array.from(storage.keys())[index] ?? null,
+            get length() { return storage.size; },
+          };
+          const globalWithStorage = globalThis as typeof globalThis & {
+            localStorage?: Storage;
+            window?: { localStorage: Storage };
+          };
+          const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+          const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+          const actorBefore = authService.getActiveActor();
+
+          try {
+            Object.defineProperty(globalThis, 'localStorage', {
+              configurable: true,
+              value: fakeLocalStorage,
+            });
+            Object.defineProperty(globalThis, 'window', {
+              configurable: true,
+              value: { localStorage: fakeLocalStorage },
+            });
+
+            globalWithStorage.localStorage?.setItem('auth_user_id', 'hacked_user');
+            globalWithStorage.localStorage?.setItem('auth_role', 'admin');
+
             const activeActor = authService.getActiveActor();
-            if (activeActor.id === 'hacked_user' || activeActor.role === 'admin') {
-              // This is a simplified check, assuming the real actor shouldn't be affected by random localStorage keys
-              // unless we explicitly built a bridge (which we shouldn't for security).
-              // Note: If we use localStorage for *cache* (UI only), it's okay, but not for *authority*.
+            if (activeActor.id !== actorBefore.id || activeActor.role !== actorBefore.role) {
+              throw new Error('هوية المستخدم أو صلاحياته تأثرت بقيم localStorage غير الموثوقة');
             }
-            localStorage.removeItem('auth_user_id');
-            localStorage.removeItem('auth_role');
+          } finally {
+            if (originalLocalStorage) Object.defineProperty(globalThis, 'localStorage', originalLocalStorage);
+            else Reflect.deleteProperty(globalThis, 'localStorage');
+            if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
+            else Reflect.deleteProperty(globalThis, 'window');
           }
         },
       },

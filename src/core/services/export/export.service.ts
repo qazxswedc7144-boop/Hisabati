@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import type { Account, CurrencyCode } from '@/shared/types';
 import { formatCurrency, formatDate } from '@/core/utils/formatters';
 
@@ -58,7 +58,7 @@ export class AccountExportService {
         if (bal < 0) totalPayables += Math.abs(bal);
       }
 
-      const wb = XLSX.utils.book_new();
+      const wb = new ExcelJS.Workbook();
 
       const data: (string | number)[][] = [
         [`${options.appName || 'حساباتي'} — تقرير قائمة الحسابات المالية`],
@@ -106,28 +106,17 @@ export class AccountExportService {
         ]);
       });
 
-      const ws = XLSX.utils.aoa_to_sheet(data);
+      const ws = wb.addWorksheet('قائمة الحسابات', { views: [{ rightToLeft: true }] });
+      ws.addRows(data);
 
-      // Configure RTL and column widths
-      (ws as any)['!views'] = [{ rightToLeft: true }];
-      ws['!cols'] = [
-        { wch: 6 },  // م
-        { wch: 26 }, // اسم الحساب
-        { wch: 16 }, // رقم الهاتف
-        { wch: 12 }, // التصنيف
-        { wch: 12 }, // حالة الرصيد
-        { wch: 16 }, // الرصيد الحالي
-        { wch: 16 }, // إجمالي لك
-        { wch: 16 }, // إجمالي عليك
-        { wch: 12 }, // عدد العمليات
-        { wch: 16 }, // تاريخ آخر حركة
-        { wch: 30 }, // ملاحظات
-      ];
+      // Configure Arabic worksheet widths; RTL is set when the worksheet is created.
+      [6, 26, 16, 12, 12, 16, 16, 16, 12, 16, 30].forEach((width, index) => {
+        ws.getColumn(index + 1).width = width;
+      });
 
-      XLSX.utils.book_append_sheet(wb, ws, 'قائمة الحسابات');
-
-      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      const blob = new Blob([excelBuffer], {
+      const excelBuffer = await wb.xlsx.writeBuffer();
+      const excelBytes = new Uint8Array(excelBuffer);
+      const blob = new Blob([excelBytes.buffer as ArrayBuffer], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
 

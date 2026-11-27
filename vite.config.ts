@@ -4,115 +4,75 @@ import path from 'path';
 import {defineConfig} from 'vite';
 import {VitePWA} from 'vite-plugin-pwa';
 
-export default defineConfig(() => {
-  return {
-    plugins: [
-      react(),
-      tailwindcss(),
-      VitePWA({
-        registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
-        manifest: {
-          id: '/',
-          name: 'حساباتي | Hisabati',
-          short_name: 'حساباتي',
-          description: 'تطبيق حديث وذكي لإدارة الحسابات والديون والمعاملات المالية للأفراد والمحلات',
-          theme_color: '#0f766e',
-          background_color: '#f8fafc',
-          display: 'standalone',
-          start_url: '/',
-          scope: '/',
-          dir: 'rtl',
-          lang: 'ar',
-          icons: [
-            {
-              src: '/pwa-192x192.png',
-              sizes: '192x192',
-              type: 'image/png',
-              purpose: 'any',
+export default defineConfig(() => ({
+  plugins: [
+    react(),
+    tailwindcss(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
+      manifest: {
+        id: '/',
+        name: 'حساباتي | Hisabati',
+        short_name: 'حساباتي',
+        description: 'تطبيق حديث وذكي لإدارة الحسابات والديون والمعاملات المالية للأفراد والمحلات',
+        theme_color: '#0f766e',
+        background_color: '#f8fafc',
+        display: 'standalone',
+        start_url: '/',
+        scope: '/',
+        dir: 'rtl',
+        lang: 'ar',
+        icons: [
+          { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/pwa-maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'google-fonts-cache',
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
             },
-            {
-              src: '/pwa-512x512.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'any',
-            },
-            {
-              src: '/pwa-maskable-512x512.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'maskable',
-            },
-          ],
-        },
-        workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-          maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-          runtimeCaching: [
-            {
-              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'google-fonts-cache',
-                expiration: {
-                  maxEntries: 10,
-                  maxAgeSeconds: 60 * 60 * 24 * 365,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-            {
-              urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'gstatic-fonts-cache',
-                expiration: {
-                  maxEntries: 10,
-                  maxAgeSeconds: 60 * 60 * 24 * 365,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-          ],
-        },
-        devOptions: {
-          enabled: false,
-        },
-      }),
-    ],
-    build: {
-      outDir: 'dist',
-      emptyOutDir: true,
-      rollupOptions: {
-        output: {
-          manualChunks: {
-            'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-            'vendor-firebase': [
-              'firebase/app',
-              'firebase/auth',
-              'firebase/firestore',
-            ],
-            'vendor-ui': ['lucide-react'],
-            'vendor-dexie': ['dexie'],
-            'vendor-ai': ['@google/genai'],
-            'vendor-xlsx': ['xlsx'],
-            'vendor-utils': ['zustand', 'motion'],
           },
+          {
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'gstatic-fonts-cache',
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
+      },
+      devOptions: { enabled: false },
+    }),
+  ],
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+          'vendor-ui': ['lucide-react'],
+          'vendor-dexie': ['dexie'],
+          'vendor-ai': ['@google/genai'],
+          'vendor-exceljs': ['exceljs'],
+          'vendor-utils': ['zustand', 'motion'],
         },
       },
     },
-    resolve: {
-      alias: {
-        '@': path.resolve(process.cwd(), './src'),
-      },
-    },
-    server: {
-      hmr: false,
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
-    },
-  };
-});
+  },
+  resolve: { alias: { '@': path.resolve(process.cwd(), './src') } },
+  server: { hmr: false, watch: process.env.DISABLE_HMR === 'true' ? null : {} },
+}));
