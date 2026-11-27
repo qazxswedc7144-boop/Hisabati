@@ -509,10 +509,20 @@ export class ReportService {
       db.transactions.toArray(),
     ]);
     const postedLedgerTransactions = transactions.filter((trx) => (trx.status || 'posted') === 'posted');
-    const { decimals } = await resolveReportDecimals({ accounts, transactions: postedLedgerTransactions });
+    // A searched report is scoped to the matching accounts. Never let unrelated
+    // currencies elsewhere in the ledger change its precision or invalidate it.
+    const scopedAccounts = options.search?.trim()
+      ? accounts.filter((account) =>
+          account.name.toLowerCase().includes(options.search!.trim().toLowerCase()) ||
+          account.phone?.includes(options.search!.trim())
+        )
+      : accounts;
+    const scopedAccountIds = new Set(scopedAccounts.map((account) => account.id));
+    const scopedTransactions = postedLedgerTransactions.filter((trx) => scopedAccountIds.has(trx.accountId));
+    const { decimals } = await resolveReportDecimals({ accounts: scopedAccounts, transactions: scopedTransactions });
 
-    // All active/eligible receivable accounts (balance > 0)
-    const allReceivableAccounts = accounts.filter(
+    // All eligible receivable accounts in the selected scope (balance > 0).
+    const allReceivableAccounts = scopedAccounts.filter(
       (account) => getAccountCurrentBalanceMinor(account, decimals) > 0
     );
 
@@ -609,10 +619,20 @@ export class ReportService {
       db.transactions.toArray(),
     ]);
     const postedLedgerTransactions = transactions.filter((trx) => (trx.status || 'posted') === 'posted');
-    const { decimals } = await resolveReportDecimals({ accounts, transactions: postedLedgerTransactions });
+    // Keep filtered reports currency-local: unrelated accounts must not force a
+    // precision mismatch, and their balances must not enter this report's totals.
+    const scopedAccounts = options.search?.trim()
+      ? accounts.filter((account) =>
+          account.name.toLowerCase().includes(options.search!.trim().toLowerCase()) ||
+          account.phone?.includes(options.search!.trim())
+        )
+      : accounts;
+    const scopedAccountIds = new Set(scopedAccounts.map((account) => account.id));
+    const scopedTransactions = postedLedgerTransactions.filter((trx) => scopedAccountIds.has(trx.accountId));
+    const { decimals } = await resolveReportDecimals({ accounts: scopedAccounts, transactions: scopedTransactions });
 
-    // All active/eligible payable accounts (balance < 0)
-    const allPayableAccounts = accounts.filter(
+    // All eligible payable accounts in the selected scope (balance < 0).
+    const allPayableAccounts = scopedAccounts.filter(
       (account) => getAccountCurrentBalanceMinor(account, decimals) < 0
     );
 
