@@ -176,12 +176,16 @@ export class FinancialSnapshotService {
           continue;
         }
         const inferredCurrency = Array.from(currencies)[0] as CurrencyCode | undefined;
-        const currentCurrency = resolveRequiredCurrency({
-          transactionCurrency: inferredCurrency,
-          accountCurrency: currentAcc.currency,
-          systemCurrency,
-        });
-        if (snapshot.balanceCurrencies[accountId] !== currentCurrency) {
+        try {
+          const currentCurrency = resolveRequiredCurrency({
+            transactionCurrency: inferredCurrency,
+            accountCurrency: currentAcc.currency,
+            systemCurrency,
+          });
+          if (snapshot.balanceCurrencies[accountId] !== currentCurrency) {
+            mismatchedAccounts.push(accountId);
+          }
+        } catch {
           mismatchedAccounts.push(accountId);
         }
       }
