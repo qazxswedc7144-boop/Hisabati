@@ -506,7 +506,7 @@ export class FinancialTransactionEngine {
               existingTrx.accountId !== dto.accountId ||
               existingTrx.type !== dto.type ||
               existingTrx.amountMinor !== safeAmountMinor ||
-              (dto.currency !== undefined && (existingTrx.currency || activeCurrency) !== activeCurrency) ||
+              (existingTrx.currency || activeCurrency) !== activeCurrency ||
               (dto.date !== undefined && existingTrx.date !== dto.date) ||
               (dto.note !== undefined && (existingTrx.note || undefined) !== (dto.note.trim() || undefined)) ||
               (dto.receiptNumber !== undefined && (existingTrx.receiptNumber || undefined) !== (dto.receiptNumber.trim() || undefined)) ||
@@ -801,7 +801,8 @@ export class FinancialTransactionEngine {
             accountId: leg.accountId,
             type: leg.type,
             amountMinor: leg.resolvedAmountMinor ?? leg.amountMinor,
-            currency: dto.currency !== undefined ? (leg.currency || currency) as CurrencyCode : undefined,
+            // Currency is part of the normalized payload even when inferred from account settings.
+            currency: (leg.currency || currency) as CurrencyCode,
             date: dto.date !== undefined ? leg.date : undefined,
             note: compareLegNotes ? (leg.note || undefined) : undefined,
             receiptNumber: compareLegReceipts ? (leg.receiptNumber || undefined) : undefined,
