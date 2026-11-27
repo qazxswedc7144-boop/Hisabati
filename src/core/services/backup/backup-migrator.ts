@@ -12,6 +12,7 @@ import {
 import { BackupPayload, BackupMetadata } from '@/shared/types';
 import { Account, Transaction, SettingsEntry, CurrencyCode } from '@/shared/types';
 import { decimalToMinor, minorToDecimal } from '../../money/converter';
+import { calculateBackupPayloadHash } from '../../utils/crypto';
 
 /**
  * Extracts and resolves the backup schema version from metadata.
@@ -447,5 +448,8 @@ export async function migrateBackupPayload(payload: unknown): Promise<BackupPayl
     throw new Error('فشل ترحيل النسخة الاحتياطية إلى الإصدار المطلوب (Backup Migration Incomplete)');
   }
 
+  // The caller verifies the original hash before migration. Re-sign the normalized
+  // in-memory V7 payload so subsequent validation protects the new currency buckets.
+  migrated.metadata.integrityHash = await calculateBackupPayloadHash(migrated);
   return migrated;
 }
