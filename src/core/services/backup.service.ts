@@ -74,32 +74,62 @@ export class BackupService {
     const auditTrail = await db.auditTrail.toArray(); // 1.6
     const debts = await db.debts.toArray(); // [1.6 T-A]
 
-    // 1.4: Compute sums with currency-aware minor units precision & status filtering
-    let totalDebitUnits = 0;
-    let totalCreditUnits = 0;
-    const defaultCurrency = settings.find(s => s.key === 'currency')?.value || 'YER';
+    // 1.4: Compute totals independently per currency; minor units are never cross-added.
+    const defaultCurrency = (settings.find(s => s.key === 'currency')?.value || 'YER') as string;
+    const accountsById = new Map(accounts.map(account => [account.id, account]));
+    const currencyTotals: Record<string, {
+      totalDebitMinor: number;
+      totalCreditMinor: number;
+      totalDebit: number;
+      totalCredit: number;
+    }> = {};
+
+    const ensureCurrencyTotals = (currency: string) => {
+      if (!currencyTotals[currency]) {
+        currencyTotals[currency] = {
+          totalDebitMinor: 0,
+          totalCreditMinor: 0,
+          totalDebit: 0,
+          totalCredit: 0,
+        };
+      }
+      return currencyTotals[currency];
+    };
+    ensureCurrencyTotals(defaultCurrency);
 
     for (const trx of transactions) {
       const status = trx.status || 'posted';
       if (status !== 'posted') continue;
 
-      const trxCurrency = (trx.currency as any) || defaultCurrency;
+      const accountCurrency = accountsById.get(trx.accountId)?.currency;
+      const trxCurrency = (trx.currency || accountCurrency || defaultCurrency) as string;
       const amountUnits = trx.amountMinor !== undefined && isValidMinorUnit(trx.amountMinor)
         ? Math.abs(trx.amountMinor)
         : Math.abs(decimalToMinor(trx.amount, trxCurrency));
+      const totals = ensureCurrencyTotals(trxCurrency);
 
       if (trx.type === 'debit') {
-        totalDebitUnits += amountUnits;
+        totals.totalDebitMinor += amountUnits;
       } else if (trx.type === 'credit') {
-        totalCreditUnits += amountUnits;
+        totals.totalCreditMinor += amountUnits;
+      }
+      if (
+        !Number.isSafeInteger(totals.totalDebitMinor) ||
+        !Number.isSafeInteger(totals.totalCreditMinor)
+      ) {
+        throw new Error(`[Financial Safety] Backup totals exceed the safe integer range for ${trxCurrency}`);
       }
     }
 
-    const totalDebitSum = minorToDecimal(totalDebitUnits, defaultCurrency as any);
-    const totalCreditSum = minorToDecimal(totalCreditUnits, defaultCurrency as any);
+    for (const [currency, totals] of Object.entries(currencyTotals)) {
+      totals.totalDebit = minorToDecimal(totals.totalDebitMinor, currency);
+      totals.totalCredit = minorToDecimal(totals.totalCreditMinor, currency);
+    }
 
-    const totalDebitMinor = totalDebitUnits;
-    const totalCreditMinor = totalCreditUnits;
+    // Keep legacy scalar totals only when they have one unambiguous currency.
+    const singleCurrencyTotals = Object.keys(currencyTotals).length === 1
+      ? currencyTotals[Object.keys(currencyTotals)[0]]
+      : undefined;
 
     const backupId = 'bck_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const createdAt = new Date().toISOString();
@@ -119,10 +149,13 @@ export class BackupService {
       createdAt,
       accountCount: accounts.length,
       transactionCount: transactions.length,
-      totalDebitSum,
-      totalCreditSum,
-      totalDebitMinor,
-      totalCreditMinor,
+      ...(singleCurrencyTotals ? {
+        totalDebitSum: singleCurrencyTotals.totalDebit,
+        totalCreditSum: singleCurrencyTotals.totalCredit,
+        totalDebitMinor: singleCurrencyTotals.totalDebitMinor,
+        totalCreditMinor: singleCurrencyTotals.totalCreditMinor,
+      } : {}),
+      currencyTotals,
       keyFingerprint,
     };
 
