@@ -7,6 +7,8 @@ import {
 import { calculateSHA256 } from '../utils/crypto';
 import { useTenantStore } from '@/shared/stores/tenantStore';
 import { financialAuditService } from './financialAudit.service';
+import { resolveRequiredCurrency } from '../money/currency';
+import { CurrencyCode, Transaction } from '@/shared/types';
 
 export class FinancialSnapshotService {
   private static instance: FinancialSnapshotService;
@@ -25,62 +27,105 @@ export class FinancialSnapshotService {
     const orgId = useTenantStore.getState().activeOrganization?.id || 'local';
     const lastAudit = await db.financialAuditLogs.orderBy('sequenceNumber').last();
     const ledgerRevision = lastAudit?.sequenceNumber || 0;
-    
     const accounts = await db.accounts.toArray();
+    const transactions = await db.transactions.toArray();
+    const systemCurrency = (await db.settings.get('currency'))?.value || 'YER';
+    const transactionsByAccount = new Map<string, Set<string>>();
+
+    for (const trx of transactions) {
+      if (!trx.currency) continue;
+      const currencies = transactionsByAccount.get(trx.accountId) || new Set<string>();
+      currencies.add(trx.currency);
+      transactionsByAccount.set(trx.accountId, currencies);
+    }
+
     const balances: Record<string, number> = {};
-    let totalDebitMinor = 0;
-    let totalCreditMinor = 0;
-    
-    accounts.forEach(acc => {
+    const balanceCurrencies: Record<string, CurrencyCode> = {};
+    const currencyTotals: Partial<Record<CurrencyCode, {
+      totalDebitMinor: number;
+      totalCreditMinor: number;
+    }>> = {};
+
+    for (const acc of accounts) {
+      const transactionCurrencies = transactionsByAccount.get(acc.id) || new Set<string>();
+      if (transactionCurrencies.size > 1) {
+        throw new Error(`[Financial Safety] Cannot snapshot account ${acc.id} with mixed transaction currencies.`);
+      }
+      const inferredCurrency = Array.from(transactionCurrencies)[0] as CurrencyCode | undefined;
+      const currency = resolveRequiredCurrency({
+        transactionCurrency: inferredCurrency,
+        accountCurrency: acc.currency,
+        systemCurrency,
+      });
+      balanceCurrencies[acc.id] = currency;
       balances[acc.id] = acc.currentBalanceMinor || 0;
-      totalDebitMinor += (acc.totalDebitMinor || 0);
-      totalCreditMinor += (acc.totalCreditMinor || 0);
-    });
-    
-    const transactionCount = await db.transactions.count();
-    const createdAt = new Date().toISOString();
-    
-    // Sort balances for deterministic hashing
+
+      const totals = currencyTotals[currency] || { totalDebitMinor: 0, totalCreditMinor: 0 };
+      totals.totalDebitMinor += acc.totalDebitMinor || 0;
+      totals.totalCreditMinor += acc.totalCreditMinor || 0;
+      if (!Number.isSafeInteger(totals.totalDebitMinor) || !Number.isSafeInteger(totals.totalCreditMinor)) {
+        throw new Error(`[Financial Safety] Snapshot totals exceed the safe integer range for ${currency}`);
+      }
+      currencyTotals[currency] = totals;
+    }
+
+    if (Object.keys(currencyTotals).length === 0) {
+      currencyTotals[systemCurrency as CurrencyCode] = { totalDebitMinor: 0, totalCreditMinor: 0 };
+    }
+
     const sortedBalances: Record<string, number> = {};
-    Object.keys(balances).sort().forEach(key => {
-      sortedBalances[key] = balances[key];
+    Object.keys(balances).sort().forEach(key => { sortedBalances[key] = balances[key]; });
+    const sortedBalanceCurrencies: Record<string, CurrencyCode> = {};
+    Object.keys(balanceCurrencies).sort().forEach(key => { sortedBalanceCurrencies[key] = balanceCurrencies[key]; });
+    const sortedCurrencyTotals: typeof currencyTotals = {};
+    Object.keys(currencyTotals).sort().forEach(key => {
+      sortedCurrencyTotals[key as CurrencyCode] = currencyTotals[key as CurrencyCode]!;
     });
 
+    const currencyCodes = Object.keys(sortedCurrencyTotals);
+    const singleCurrencyTotals = currencyCodes.length === 1
+      ? sortedCurrencyTotals[currencyCodes[0] as CurrencyCode]
+      : undefined;
+    const transactionCount = transactions.length;
+    const createdAt = new Date().toISOString();
     const payloadToHash = JSON.stringify({
+      snapshotVersion: 2,
       orgId,
       ledgerRevision,
       transactionCount,
       accountCount: accounts.length,
+      totalDebitMinor: singleCurrencyTotals?.totalDebitMinor,
+      totalCreditMinor: singleCurrencyTotals?.totalCreditMinor,
+      currencyTotals: sortedCurrencyTotals,
       balances: sortedBalances,
+      balanceCurrencies: sortedBalanceCurrencies,
     });
-    
-    // Use Dexie.waitFor to preserve transaction context if called inside one
+
     const integrityHash = await Dexie.waitFor(calculateSHA256(payloadToHash));
-    
     const snapshot: FinancialSnapshot = {
       id: `snap_${crypto.randomUUID()}`,
+      snapshotVersion: 2,
       organizationId: orgId,
       createdAt,
       ledgerRevision,
       transactionCount,
       accountCount: accounts.length,
-      totalDebitMinor,
-      totalCreditMinor,
+      totalDebitMinor: singleCurrencyTotals?.totalDebitMinor,
+      totalCreditMinor: singleCurrencyTotals?.totalCreditMinor,
+      currencyTotals: sortedCurrencyTotals,
       balances: sortedBalances,
+      balanceCurrencies: sortedBalanceCurrencies,
       integrityHash,
-      isValid: true
+      isValid: true,
     };
-    
+
     await db.financialSnapshots.add(snapshot);
-    
-    // Log snapshot creation in audit trail
     await financialAuditService.logFinancialEvent({
       eventType: 'SNAPSHOT_CREATE',
       targetType: 'snapshot',
       targetId: snapshot.id,
-      metadata: { ledgerRevision, transactionCount }
+      metadata: { ledgerRevision, transactionCount, currencyCount: currencyCodes.length },
     });
-    
     return snapshot;
   }
 
@@ -95,8 +140,17 @@ export class FinancialSnapshotService {
     }
     
     const accounts = await db.accounts.toArray();
-    const currentTransactionCount = await db.transactions.count();
+    const transactions = await db.transactions.toArray();
+    const currentTransactionCount = transactions.length;
     const mismatchedAccounts: string[] = [];
+    const systemCurrency = (await db.settings.get('currency'))?.value || 'YER';
+    const transactionCurrenciesByAccount = new Map<string, Set<string>>();
+    for (const trx of transactions) {
+      if (!trx.currency) continue;
+      const currencies = transactionCurrenciesByAccount.get(trx.accountId) || new Set<string>();
+      currencies.add(trx.currency);
+      transactionCurrenciesByAccount.set(trx.accountId, currencies);
+    }
     
     // Check account count
     if (accounts.length !== snapshot.accountCount) {
@@ -113,6 +167,23 @@ export class FinancialSnapshotService {
       
       if ((currentAcc.currentBalanceMinor || 0) !== snapBalance) {
         mismatchedAccounts.push(accountId);
+        continue;
+      }
+      if (snapshot.balanceCurrencies) {
+        const currencies = transactionCurrenciesByAccount.get(accountId) || new Set<string>();
+        if (currencies.size > 1) {
+          mismatchedAccounts.push(accountId);
+          continue;
+        }
+        const inferredCurrency = Array.from(currencies)[0] as CurrencyCode | undefined;
+        const currentCurrency = resolveRequiredCurrency({
+          transactionCurrency: inferredCurrency,
+          accountCurrency: currentAcc.currency,
+          systemCurrency,
+        });
+        if (snapshot.balanceCurrencies[accountId] !== currentCurrency) {
+          mismatchedAccounts.push(accountId);
+        }
       }
     }
     
@@ -146,14 +217,39 @@ export class FinancialSnapshotService {
       sortedBalances[key] = snapshot.balances[key];
     });
 
-    const payloadToHash = JSON.stringify({
-      orgId: snapshot.organizationId,
-      ledgerRevision: snapshot.ledgerRevision,
-      transactionCount: snapshot.transactionCount,
-      accountCount: snapshot.accountCount,
-      balances: sortedBalances,
-    });
-    
+    let payloadToHash: string;
+    if (snapshot.snapshotVersion === 2) {
+      const sortedBalanceCurrencies: Record<string, CurrencyCode> = {};
+      Object.keys(snapshot.balanceCurrencies || {}).sort().forEach(key => {
+        sortedBalanceCurrencies[key] = snapshot.balanceCurrencies![key];
+      });
+      const sortedCurrencyTotals: Record<string, { totalDebitMinor: number; totalCreditMinor: number }> = {};
+      Object.keys(snapshot.currencyTotals || {}).sort().forEach(key => {
+        sortedCurrencyTotals[key] = snapshot.currencyTotals![key as CurrencyCode]!;
+      });
+      payloadToHash = JSON.stringify({
+        snapshotVersion: 2,
+        orgId: snapshot.organizationId,
+        ledgerRevision: snapshot.ledgerRevision,
+        transactionCount: snapshot.transactionCount,
+        accountCount: snapshot.accountCount,
+        totalDebitMinor: snapshot.totalDebitMinor,
+        totalCreditMinor: snapshot.totalCreditMinor,
+        currencyTotals: sortedCurrencyTotals,
+        balances: sortedBalances,
+        balanceCurrencies: sortedBalanceCurrencies,
+      });
+    } else {
+      // Legacy v1 snapshots retain their original hash payload for backward verification.
+      payloadToHash = JSON.stringify({
+        orgId: snapshot.organizationId,
+        ledgerRevision: snapshot.ledgerRevision,
+        transactionCount: snapshot.transactionCount,
+        accountCount: snapshot.accountCount,
+        balances: sortedBalances,
+      });
+    }
+
     const recomputedHash = await calculateSHA256(payloadToHash);
     return recomputedHash === snapshot.integrityHash;
   }
