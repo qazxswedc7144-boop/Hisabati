@@ -207,6 +207,35 @@ export class FinancialCoreHardeningTestSuite {
       if (acc2?.currentBalanceMinor !== 100000) throw new Error('Acc 2 balance incorrect');
     });
 
+    // 9A. Double-entry retry with an explicit journal date must be idempotent.
+    await test('9A. Double-entry idempotency preserves explicit journal date', async () => {
+      const opId = 'op_double_retry_' + Date.now();
+      const dto = {
+        operationId: opId,
+        date: '2026-02-15',
+        currency: 'USD' as const,
+        entries: [
+          { accountId: acc1Id, type: 'debit' as const, amountMinor: 2500 },
+          { accountId: acc2Id, type: 'credit' as const, amountMinor: 2500 },
+        ],
+      };
+
+      const first = await transactionEngine.createDoubleEntry(dto);
+      const balanceAfterFirst = (await db.accounts.get(acc1Id))?.currentBalanceMinor;
+      const retry = await transactionEngine.createDoubleEntry(dto);
+      const balanceAfterRetry = (await db.accounts.get(acc1Id))?.currentBalanceMinor;
+
+      if (first.length !== 2 || retry.length !== 2) {
+        throw new Error('Expected the original and retried journal to contain two legs');
+      }
+      if (first.map((entry) => entry.id).sort().join('|') !== retry.map((entry) => entry.id).sort().join('|')) {
+        throw new Error('Idempotent retry returned different journal leg IDs');
+      }
+      if (balanceAfterRetry !== balanceAfterFirst) {
+        throw new Error('Idempotent retry applied the journal balance delta more than once');
+      }
+    });
+
     // 10. Unbalanced double-entry
     await test('10. Unbalanced double-entry rejection', async () => {
       try {
