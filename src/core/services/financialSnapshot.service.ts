@@ -143,7 +143,7 @@ export class FinancialSnapshotService {
     const transactions = await db.transactions.toArray();
     const currentTransactionCount = transactions.length;
     const mismatchedAccounts: string[] = [];
-    const systemCurrency = (await db.settings.get('currency'))?.value || 'YER';
+    const systemCurrency = ((await db.settings.get('currency'))?.value || 'YER') as CurrencyCode;
     const transactionCurrenciesByAccount = new Map<string, Set<string>>();
     for (const trx of transactions) {
       if (!trx.currency) continue;
