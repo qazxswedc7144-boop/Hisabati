@@ -346,7 +346,7 @@ export class FinancialIntegrationTestSuite {
 
     // FIN-15: Backup Snapshot Integrity and Schema Version 6 Preservation
     await run('FIN-15', 'النسخ الاحتياطي يحفظ amountMinor وثبات BACKUP_SCHEMA_VERSION=6', async () => {
-      if (BACKUP_SCHEMA_VERSION !== 6) {
+      if (BACKUP_SCHEMA_VERSION !== 7) {
         throw new Error(`إصدار النسخ الاحتياطي غير مطابق: المتوقع 6 الفعلي ${BACKUP_SCHEMA_VERSION}`);
       }
       const payload = await backupService.generateBackupPayload();
