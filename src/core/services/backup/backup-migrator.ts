@@ -448,8 +448,10 @@ export async function migrateBackupPayload(payload: unknown): Promise<BackupPayl
     throw new Error('فشل ترحيل النسخة الاحتياطية إلى الإصدار المطلوب (Backup Migration Incomplete)');
   }
 
-  // The caller verifies the original hash before migration. Re-sign the normalized
-  // in-memory V7 payload so subsequent validation protects the new currency buckets.
-  migrated.metadata.integrityHash = await calculateBackupPayloadHash(migrated);
+  // The caller verifies the original hash before migration. Re-sign only payloads
+  // actually migrated from an older version; never bless a malformed current V7 hash.
+  if (migrated.metadata.originalSchemaVersion !== undefined) {
+    migrated.metadata.integrityHash = await calculateBackupPayloadHash(migrated);
+  }
   return migrated;
 }
