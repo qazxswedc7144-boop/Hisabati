@@ -123,6 +123,21 @@ export const ImmutableLedgerTestSuite = {
         usdAccountAfterRejectedPost?.currentBalanceMinor === 125
       );
 
+      // D3. An explicit wrong currency must not relabel an account during full rebuild.
+      let wrongCurrencyRebuildRejected = false;
+      try {
+        await transactionEngine.recalculateAccountBalance(usdAccountId, 'YER');
+      } catch {
+        wrongCurrencyRebuildRejected = true;
+      }
+      const usdAccountAfterWrongRebuild = await db.accounts.get(usdAccountId);
+      addResult(23, 'رفض إعادة احتساب حساب بالدولار على أساس الريال دون تغيير الرصيد',
+        wrongCurrencyRebuildRejected &&
+        usdAccountAfterWrongRebuild?.currency === 'USD' &&
+        usdAccountAfterWrongRebuild?.currentBalanceMinor === 125 &&
+        usdAccountAfterWrongRebuild?.currentBalance === 1.25
+      );
+
       // E. POSTED -> update -> Rejected
       let editError = '';
       try {
