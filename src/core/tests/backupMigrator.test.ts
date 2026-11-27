@@ -10,6 +10,7 @@ import {
   FINANCIAL_FORMAT_VERSION,
 } from '../database/schemaVersion';
 import { backupService } from '../services/backup.service';
+import { calculateBackupPayloadHash, verifyBackupIntegrityHash } from '../utils/crypto';
 
 export interface TestResult {
   id: string;
@@ -153,6 +154,40 @@ export class BackupMigratorTestSuite {
 
         if (migrated.metadata.backupSchemaVersion !== BACKUP_SCHEMA_VERSION) {
           throw new Error(`Expected backupSchemaVersion=${BACKUP_SCHEMA_VERSION}, got ${migrated.metadata.backupSchemaVersion}`);
+        }
+      }
+    );
+
+    // 5A. V5 legacy hashes survive migration while multi-currency totals are separated.
+    await this.runTest(
+      results,
+      'MIG-05A',
+      'ترحيل V5 متعددة العملات مع الحفاظ على بصمة V5 وفصل الإجماليات',
+      async () => {
+        const legacy = createMockPayload({
+          backupSchemaVersion: 5,
+          schemaVersion: 5,
+          totalDebitSum: 1000,
+          totalCreditSum: 500,
+        });
+        legacy.accounts[0].currency = 'YER';
+        legacy.accounts[1].currency = 'KWD';
+        legacy.transactions[0].amount = 1000;
+        legacy.transactions[1].amount = 500;
+        legacy.metadata.integrityHash = await calculateBackupPayloadHash(legacy);
+
+        const migrated = await migrateBackupPayload(legacy);
+        if (migrated.metadata.currencyTotals?.YER?.totalDebitMinor !== 1000) {
+          throw new Error('YER totals were not retained independently');
+        }
+        if (migrated.metadata.currencyTotals?.KWD?.totalCreditMinor !== 500000) {
+          throw new Error('KWD totals were not scaled using three decimal places');
+        }
+        if (migrated.metadata.totalDebitMinor !== undefined || migrated.metadata.totalCreditMinor !== undefined) {
+          throw new Error('Migration retained ambiguous scalar totals for mixed currencies');
+        }
+        if (!(await verifyBackupIntegrityHash(migrated, 6))) {
+          throw new Error('Migrated V5 backup no longer validates its original integrity hash');
         }
       }
     );
