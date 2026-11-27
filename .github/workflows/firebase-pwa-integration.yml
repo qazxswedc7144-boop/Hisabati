@@ -1,0 +1,52 @@
+name: Firebase and PWA Integration
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/security-dependency-remediation-2026-11
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebase-pwa-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      FIREBASE_PROJECT_ID: demo-hisabati
+      VITE_FIREBASE_API_KEY: demo-api-key
+      VITE_FIREBASE_AUTH_DOMAIN: demo-hisabati.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID: demo-hisabati
+      VITE_FIREBASE_DATABASE_ID: (default)
+      VITE_FIREBASE_USE_EMULATORS: 'true'
+      VITE_FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+      VITE_FIREBASE_FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
+      HISABATI_TEST_TOOLS_DIR: ${{ github.workspace }}/.test-tools/node_modules
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install application dependencies
+        run: npm ci --include=optional
+      - name: Install pinned integration-only tools outside the application lockfile
+        run: npm install --prefix .test-tools --no-save --package-lock=false firebase-tools@15.37.0 playwright@1.65.1
+      - name: Install Chromium for PWA runtime tests
+        run: ./.test-tools/node_modules/.bin/playwright install --with-deps chromium
+      - name: Run Firebase Auth, Firestore, build, and PWA offline integration tests
+        run: >-
+          ./.test-tools/node_modules/.bin/firebase emulators:exec
+          --project demo-hisabati
+          --only auth,firestore
+          --non-interactive
+          "npm run test:firebase:emulator && npm run build && npm run test:pwa:offline"
