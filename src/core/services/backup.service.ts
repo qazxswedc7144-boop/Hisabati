@@ -355,6 +355,8 @@ export class BackupService {
       }
     }
 
+    const validatedAccountsById = new Map<string, any>(accounts.map((account: any) => [account.id, account]));
+
     // Validate transactions: unique IDs, valid accounts, valid amounts, types, dates
     const transactionIds = new Set<string>();
     for (const trx of transactions) {
@@ -378,7 +380,7 @@ export class BackupService {
       if (trx.currency !== undefined && !isSupportedCurrency(trx.currency)) {
         return { isValid: false, error: `عملة المعاملة غير مدعومة (ID: ${trx.id})` };
       }
-      const relatedAccount = accountsById.get(trx.accountId);
+      const relatedAccount = validatedAccountsById.get(trx.accountId);
       if (
         trx.currency && relatedAccount?.currency &&
         trx.currency.trim().toUpperCase() !== relatedAccount.currency.trim().toUpperCase()
