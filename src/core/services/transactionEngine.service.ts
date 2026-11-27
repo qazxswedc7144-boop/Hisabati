@@ -501,6 +501,18 @@ export class FinancialTransactionEngine {
         const freshSettingsInside: any = { ...DEFAULT_SETTINGS };
         for (const e of settingsEntries) freshSettingsInside[e.key] = e.value;
 
+        // Revalidate the account currency inside the same transaction as the ledger write.
+        const freshAccountInside = await transaction.table('accounts').get(dto.accountId) as Account | undefined;
+        if (!freshAccountInside) throw new Error('الحساب المحدد لم يعد موجوداً');
+        const currencyInside = resolveRequiredCurrency({
+          transactionCurrency: dto.currency,
+          accountCurrency: freshAccountInside.currency,
+          systemCurrency: freshSettingsInside.currency,
+        });
+        if (currencyInside !== activeCurrency) {
+          throw new Error('عملة الحساب أو إعداد العملة تغيرت أثناء إنشاء العملية؛ أعد المحاولة');
+        }
+
         // Check if explicit operationId exists in DB
         if (explicitOpId) {
           const existingMatches = await transaction.table('transactions').where('operationId').equals(explicitOpId).toArray();
@@ -989,10 +1001,12 @@ export class FinancialTransactionEngine {
       const account = await transaction.table('accounts').get(targetAccountId) as Account | undefined;
       if (!account) throw new Error('الحساب المرتبط غير موجود');
 
+      const currencyEntry = await transaction.table('settings').get('currency');
+      const systemCurrency = currencyEntry?.value || freshSettings.currency;
       const activeCurrency = resolveRequiredCurrency({
         transactionCurrency: dto.currency,
         accountCurrency: account.currency,
-        systemCurrency: freshSettings.currency,
+        systemCurrency,
       });
 
       let financial;
