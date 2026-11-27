@@ -61,10 +61,10 @@ function buildCanonicalContent(payload: {
     accountsLength: payload.accountsLength,
     transactionsLength: payload.transactionsLength,
     totalDebitSum: payload.schemaVersion < 6
-      ? (payload.totalDebitSum ?? payload.legacyTotalDebitSum)
+      ? (payload.legacyTotalDebitSum ?? payload.totalDebitSum)
       : payload.totalDebitSum,
     totalCreditSum: payload.schemaVersion < 6
-      ? (payload.totalCreditSum ?? payload.legacyTotalCreditSum)
+      ? (payload.legacyTotalCreditSum ?? payload.totalCreditSum)
       : payload.totalCreditSum,
     accounts: (payload.accounts || []).map((a) => ({
       id: a.id,
