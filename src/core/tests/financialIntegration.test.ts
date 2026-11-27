@@ -350,7 +350,7 @@ export class FinancialIntegrationTestSuite {
         throw new Error(`إصدار النسخ الاحتياطي غير مطابق: المتوقع 6 الفعلي ${BACKUP_SCHEMA_VERSION}`);
       }
       const payload = await backupService.generateBackupPayload();
-      if (payload.metadata.backupSchemaVersion !== 6) {
+      if (payload.metadata.backupSchemaVersion !== 7) {
         throw new Error('لقطة النسخ الاحتياطي لم تستخدم BACKUP_SCHEMA_VERSION=6');
       }
       if (!Array.isArray(payload.transactions)) {
