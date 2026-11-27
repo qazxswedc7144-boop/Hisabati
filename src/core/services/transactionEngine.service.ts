@@ -825,7 +825,7 @@ export class FinancialTransactionEngine {
             amountMinor: leg.resolvedAmountMinor ?? leg.amountMinor,
             // Currency is part of the normalized payload even when inferred from account settings.
             currency: (leg.currency || currency) as CurrencyCode,
-            date: dto.date !== undefined ? leg.date : undefined,
+            date: dto.date !== undefined ? date : undefined,
             note: compareLegNotes ? (leg.note || undefined) : undefined,
             receiptNumber: compareLegReceipts ? (leg.receiptNumber || undefined) : undefined,
             status: leg.status || 'posted',
