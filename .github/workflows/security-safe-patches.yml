@@ -26,6 +26,8 @@ jobs:
           cache: npm
       - name: Regenerate lockfile for reviewed package manifest
         run: npm install --package-lock-only --ignore-scripts
+      - name: Refresh compatible Google Cloud Firestore dependency chain
+        run: npm update --package-lock-only @google-cloud/firestore google-gax
       - name: Install current lockfile
         run: npm ci
       - name: Apply semver-compatible audit fixes only
