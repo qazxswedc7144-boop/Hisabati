@@ -45,7 +45,7 @@ jobs:
         run: ./.test-tools/node_modules/.bin/playwright install --with-deps chromium
       - name: Run Firebase Auth, Firestore, build, and PWA offline integration tests
         run: >-
-          ./.test-tools/node_modules/.bin/firebase emulators:exec
+          ./.test-tools/node_modules/.bin/firebase --config firebase.emulator.json emulators:exec
           --project demo-hisabati
           --only auth,firestore
           --non-interactive
