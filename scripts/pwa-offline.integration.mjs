@@ -59,7 +59,7 @@ try {
   await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller), undefined, { timeout: 30_000 });
 
   const manifestState = await page.evaluate(async () => {
-    const manifestLink = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    const manifestLink = document.querySelector('link[rel="manifest"]');
     if (!manifestLink) {
       throw new Error('The PWA manifest link is missing.');
     }
