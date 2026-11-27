@@ -220,6 +220,56 @@ export class FinancialAuditPart2TestSuite {
       if (!isValid || !secondIsValid) throw new Error('Internal integrity hash failed');
     });
 
+    await test('15A. Snapshot currency totals are separate and protected by the hash', async () => {
+      const kwdAccountId = 'acc_audit_kwd_' + Date.now();
+      await db.accounts.add({
+        id: kwdAccountId,
+        name: 'KWD Snapshot Test Account',
+        currency: 'KWD',
+        currentBalance: 0,
+        currentBalanceMinor: 0,
+        totalDebit: 0,
+        totalDebitMinor: 0,
+        totalCredit: 0,
+        totalCreditMinor: 0,
+        transactionCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        archived: 0,
+      });
+      await transactionEngine.createTransaction({
+        accountId: kwdAccountId,
+        type: 'debit',
+        amount: 1.234,
+        date: '2026-01-05',
+      });
+
+      const snapshot = await financialSnapshotService.createSnapshot();
+      if (snapshot.currencyTotals?.KWD?.totalDebitMinor !== 1234) {
+        throw new Error('KWD snapshot total was not retained in its own minor-unit scale');
+      }
+      if (snapshot.totalDebitMinor !== undefined) {
+        throw new Error('Mixed-currency snapshot exposed an ambiguous scalar total');
+      }
+      if (!(await financialSnapshotService.verifySnapshotIntegrity(snapshot))) {
+        throw new Error('Snapshot v2 currency totals failed integrity verification');
+      }
+
+      const tampered = structuredClone(snapshot);
+      tampered.currencyTotals!.KWD!.totalDebitMinor += 1;
+      if (await financialSnapshotService.verifySnapshotIntegrity(tampered)) {
+        throw new Error('Tampering with per-currency totals was not detected');
+      }
+
+      await db.accounts.update(kwdAccountId, { currency: 'OMR' });
+      const drift = await financialSnapshotService.verifySnapshot(snapshot.id);
+      if (!drift.mismatchedAccounts.includes(kwdAccountId)) {
+        throw new Error('Changing account currency was not detected as snapshot drift');
+      }
+      await db.transactions.where('accountId').equals(kwdAccountId).delete();
+      await db.accounts.delete(kwdAccountId);
+    });
+
     await test('16. Detect Drift: Deletion after snapshot', async () => {
       const trx = await transactionEngine.createTransaction({ accountId: acc1Id, type: 'debit', amountMinor: 100, status: 'draft', date: '2026-01-01' });
       const snap = await financialSnapshotService.createSnapshot();
