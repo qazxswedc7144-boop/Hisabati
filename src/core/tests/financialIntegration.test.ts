@@ -383,6 +383,10 @@ export class FinancialIntegrationTestSuite {
       if (!(await verifyCurrentBackupHash(multiCurrencyPayload))) {
         throw new Error('بصمة النسخة الاحتياطية لا تشمل إجماليات العملات المنفصلة');
       }
+      const payloadValidation = await backupService.validateBackupPayload(multiCurrencyPayload);
+      if (!payloadValidation.isValid) {
+        throw new Error(`النسخة متعددة العملات لم تجتز التحقق: ${payloadValidation.error}`);
+      }
 
       const tamperedPayload = structuredClone(multiCurrencyPayload);
       tamperedPayload.metadata.currencyTotals!.KWD!.totalDebitMinor += 1;
