@@ -29,7 +29,7 @@ export class FinancialSnapshotService {
     const ledgerRevision = lastAudit?.sequenceNumber || 0;
     const accounts = await db.accounts.toArray();
     const transactions = await db.transactions.toArray();
-    const systemCurrency = (await db.settings.get('currency'))?.value || 'YER';
+    const systemCurrency = ((await db.settings.get('currency'))?.value || 'YER') as CurrencyCode;
     const transactionsByAccount = new Map<string, Set<string>>();
 
     for (const trx of transactions) {
