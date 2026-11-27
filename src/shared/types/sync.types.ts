@@ -92,6 +92,9 @@ export interface BackupMetadata {
   totalCreditSum?: number;
   totalDebitMinor?: number;
   totalCreditMinor?: number;
+  /** Original scalar totals retained only to verify pre-v6 legacy hashes after migration. */
+  legacyTotalDebitSum?: number;
+  legacyTotalCreditSum?: number;
   /**
    * Canonical totals grouped by currency. Included in the integrity hash when present.
    */
