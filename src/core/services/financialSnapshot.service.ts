@@ -8,7 +8,7 @@ import { calculateSHA256 } from '../utils/crypto';
 import { useTenantStore } from '@/shared/stores/tenantStore';
 import { financialAuditService } from './financialAudit.service';
 import { resolveRequiredCurrency } from '../money/currency';
-import { CurrencyCode, Transaction } from '@/shared/types';
+import { CurrencyCode } from '@/shared/types';
 
 export class FinancialSnapshotService {
   private static instance: FinancialSnapshotService;
