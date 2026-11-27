@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Hisabati resolves organization membership through the trusted server
+    // Admin SDK. Client access to authoritative organization data is denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
