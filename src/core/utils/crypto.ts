@@ -32,8 +32,8 @@ function buildCanonicalContent(payload: {
   createdAt: string;
   accountsLength: number;
   transactionsLength: number;
-  totalDebitSum: number;
-  totalCreditSum: number;
+  totalDebitSum?: number;
+  totalCreditSum?: number;
   totalDebitMinor?: number;
   totalCreditMinor?: number;
   accounts: any[];
@@ -42,6 +42,12 @@ function buildCanonicalContent(payload: {
   trash?: any[];
   auditTrail?: any[];
   debts?: any[];
+  currencyTotals?: Record<string, {
+    totalDebitMinor: number;
+    totalCreditMinor: number;
+    totalDebit: number;
+    totalCredit: number;
+  }>;
 }): string {
   // V1-V5: canonical content WITHOUT minor units (preserve legacy hashes)
   const base: any = {
@@ -129,6 +135,12 @@ function buildCanonicalContent(payload: {
       postedAt: t.postedAt,
       updatedAt: t.updatedAt,
     }));
+    if (payload.currencyTotals) {
+      base.currencyTotals = Object.keys(payload.currencyTotals).sort().reduce((totals, code) => {
+        totals[code] = payload.currencyTotals![code];
+        return totals;
+      }, {} as Record<string, unknown>);
+    }
   }
 
   return JSON.stringify(base);
@@ -154,6 +166,12 @@ export async function calculateBackupPayloadHash(payloadWithoutHash: {
     totalCreditSum: number;
     totalDebitMinor?: number;
     totalCreditMinor?: number;
+    currencyTotals?: Record<string, {
+      totalDebitMinor: number;
+      totalCreditMinor: number;
+      totalDebit: number;
+      totalCredit: number;
+    }>;
     isEncrypted?: boolean;
   };
   accounts: any[];
@@ -180,6 +198,7 @@ export async function calculateBackupPayloadHash(payloadWithoutHash: {
     totalCreditSum: payloadWithoutHash.metadata.totalCreditSum,
     totalDebitMinor: payloadWithoutHash.metadata.totalDebitMinor,
     totalCreditMinor: payloadWithoutHash.metadata.totalCreditMinor,
+    currencyTotals: payloadWithoutHash.metadata.currencyTotals,
     accounts: payloadWithoutHash.accounts,
     transactions: payloadWithoutHash.transactions,
     settings: payloadWithoutHash.settings,
