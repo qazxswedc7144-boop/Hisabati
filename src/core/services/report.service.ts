@@ -598,11 +598,10 @@ export class ReportService {
   public async getPayablesReport(
     options: AccountsReportFilterOptions = {}
   ): Promise<PayablesReport> {
-    const { decimals } = await resolveReportDecimals();
-
     const accounts = await accountRepository.getAll(
       options.includeArchived ?? false
     );
+    const { decimals } = await resolveReportDecimals({ accounts });
 
     // All active/eligible payable accounts (balance < 0)
     const allPayableAccounts = accounts.filter(
