@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - 'fix/security-dependency-remediation-2026-11'
+      - 'security/focused-remediation-2026-11'
     paths:
       - '.github/workflows/security-safe-patches.yml'
       - 'package.json'
@@ -19,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: fix/security-dependency-remediation-2026-11
+          ref: ${{ github.ref_name }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -60,6 +61,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package-lock.json
           git commit -m "fix(security): apply verified compatible dependency patches"
-          git fetch origin fix/security-dependency-remediation-2026-11
-          git rebase origin/fix/security-dependency-remediation-2026-11
-          git push origin HEAD:fix/security-dependency-remediation-2026-11
+          git fetch origin "${GITHUB_REF_NAME}"
+          git rebase "origin/${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
