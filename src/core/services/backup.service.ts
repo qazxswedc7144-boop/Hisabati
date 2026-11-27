@@ -29,6 +29,7 @@ import {
   migrateBackupPayload,
 } from './backup/backup-migrator';
 import { decimalToMinor, minorToDecimal, isValidMinorUnit } from '../money/converter';
+import { isSupportedCurrency } from '../money/currency';
 
 const APP_VERSION = '2.0.0';
 
@@ -281,6 +282,41 @@ export class BackupService {
           isValid: false,
           error: 'فشل التحقق من صحة التشفير والتجزئة (Integrity Hash Mismatch): قد يكون الملف تالفاً أو تم التعديل عليه يدوياً',
         };
+      }
+    }
+
+    if (metadata.currencyTotals !== undefined) {
+      if (!metadata.currencyTotals || typeof metadata.currencyTotals !== 'object' || Array.isArray(metadata.currencyTotals)) {
+        return { isValid: false, error: 'إجماليات العملات في النسخة الاحتياطية غير صالحة' };
+      }
+      const currencyCodes = Object.keys(metadata.currencyTotals);
+      if (currencyCodes.length > 1 && (
+        metadata.totalDebitSum !== undefined ||
+        metadata.totalCreditSum !== undefined ||
+        metadata.totalDebitMinor !== undefined ||
+        metadata.totalCreditMinor !== undefined
+      )) {
+        return { isValid: false, error: 'لا يجوز تضمين إجمالي موحد مع وجود أكثر من عملة' };
+      }
+      for (const currency of currencyCodes) {
+        const totals = metadata.currencyTotals[currency];
+        if (!isSupportedCurrency(currency) || !totals || typeof totals !== 'object') {
+          return { isValid: false, error: `بيانات إجماليات العملة غير صالحة: ${currency}` };
+        }
+        if (
+          !Number.isSafeInteger(totals.totalDebitMinor) || totals.totalDebitMinor < 0 ||
+          !Number.isSafeInteger(totals.totalCreditMinor) || totals.totalCreditMinor < 0
+        ) {
+          return { isValid: false, error: `الوحدات الصغرى لإجماليات ${currency} غير صالحة` };
+        }
+        const expectedDebit = minorToDecimal(totals.totalDebitMinor, currency);
+        const expectedCredit = minorToDecimal(totals.totalCreditMinor, currency);
+        if (
+          typeof totals.totalDebit !== 'number' || Math.abs(totals.totalDebit - expectedDebit) > 1e-9 ||
+          typeof totals.totalCredit !== 'number' || Math.abs(totals.totalCredit - expectedCredit) > 1e-9
+        ) {
+          return { isValid: false, error: `القيم العشرية لإجماليات ${currency} لا تطابق الوحدات الصغرى` };
+        }
       }
     }
 
