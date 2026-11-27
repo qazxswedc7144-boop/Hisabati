@@ -189,6 +189,9 @@ export function migrateBackupV5ToV6(payload: unknown): BackupPayload {
   }
 
   const migrated = structuredClone(payload) as BackupPayload;
+  // Preserve V5 scalar totals solely for validating the original V5 integrity hash.
+  migrated.metadata.legacyTotalDebitSum = migrated.metadata.totalDebitSum;
+  migrated.metadata.legacyTotalCreditSum = migrated.metadata.totalCreditSum;
 
   // 1. Resolve currencies and fill missing amountMinor/currentBalanceMinor
   const settings = Array.isArray(migrated.settings) ? migrated.settings : [];
