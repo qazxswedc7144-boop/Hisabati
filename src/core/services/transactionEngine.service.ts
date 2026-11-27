@@ -1158,7 +1158,15 @@ export class FinancialTransactionEngine {
       .equals(accountId)
       .toArray();
 
-    const metrics = computeAccountMetricsFromTransactions(transactions, currency);
+    const currencyEntry = await database.table('settings').get('currency');
+    const systemCurrency = currencyEntry?.value || 'YER';
+    const inferredTransactionCurrency = transactions.find((trx: Transaction) => trx.currency)?.currency;
+    const activeCurrency = resolveRequiredCurrency({
+      transactionCurrency: currency || inferredTransactionCurrency,
+      accountCurrency: account.currency,
+      systemCurrency,
+    });
+    const metrics = computeAccountMetricsFromTransactions(transactions, activeCurrency);
     const now = new Date().toISOString();
 
     const updatedFields = {
