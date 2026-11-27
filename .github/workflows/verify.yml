@@ -3,8 +3,10 @@ on:
   workflow_dispatch:
   push:
     branches: ['fix/**', 'feat/**', 'main', 'chore/**', 'security/**']
+    paths-ignore: ['package.json']
   pull_request:
     branches: [main]
+    paths-ignore: ['package.json']
 
 jobs:
   verify:

@@ -7,6 +7,8 @@ on:
     branches:
       - fix/security-dependency-remediation-2026-11
       - security/focused-remediation-2026-11
+    paths-ignore:
+      - package.json
 
 permissions:
   contents: read
