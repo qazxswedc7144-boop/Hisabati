@@ -289,6 +289,9 @@ export class BackupService {
       }
     }
 
+    if (schemaVer >= 7 && metadata.currencyTotals === undefined) {
+      return { isValid: false, error: 'النسخ الاحتياطية V7 تتطلب إجماليات مالية منفصلة لكل عملة' };
+    }
     if (metadata.currencyTotals !== undefined) {
       if (!metadata.currencyTotals || typeof metadata.currencyTotals !== 'object' || Array.isArray(metadata.currencyTotals)) {
         return { isValid: false, error: 'إجماليات العملات في النسخة الاحتياطية غير صالحة' };
@@ -414,6 +417,39 @@ export class BackupService {
       }
       if (!trx.date || typeof trx.date !== 'string' || isNaN(Date.parse(trx.date))) {
         return { isValid: false, error: `تاريخ المعاملة غير صالح (ID: ${trx.id}): ${trx.date}` };
+      }
+    }
+
+    if (schemaVer >= 7) {
+      const defaultCurrency = (settings || []).find((setting: any) => setting.key === 'currency')?.value || 'YER';
+      const expectedTotals: Record<string, { totalDebitMinor: number; totalCreditMinor: number }> = {};
+      const ensureExpected = (currency: string) => {
+        if (!expectedTotals[currency]) expectedTotals[currency] = { totalDebitMinor: 0, totalCreditMinor: 0 };
+        return expectedTotals[currency];
+      };
+      for (const trx of transactions) {
+        if ((trx.status || 'posted') !== 'posted') continue;
+        const relatedAccount = accountsById.get(trx.accountId);
+        const currency = (trx.currency || relatedAccount?.currency || defaultCurrency) as string;
+        const totals = ensureExpected(currency);
+        if (trx.type === 'debit') totals.totalDebitMinor += Math.abs(trx.amountMinor);
+        else totals.totalCreditMinor += Math.abs(trx.amountMinor);
+      }
+      if (Object.keys(expectedTotals).length === 0) ensureExpected(defaultCurrency);
+      const expectedCodes = Object.keys(expectedTotals).sort();
+      const actualCodes = Object.keys(metadata.currencyTotals || {}).sort();
+      if (JSON.stringify(expectedCodes) !== JSON.stringify(actualCodes)) {
+        return { isValid: false, error: 'إجماليات العملات لا تطابق العملات الموجودة في المعاملات المرحّلة' };
+      }
+      for (const currency of expectedCodes) {
+        const expected = expectedTotals[currency];
+        const actual = metadata.currencyTotals[currency];
+        if (
+          actual.totalDebitMinor !== expected.totalDebitMinor ||
+          actual.totalCreditMinor !== expected.totalCreditMinor
+        ) {
+          return { isValid: false, error: `إجماليات ${currency} لا تطابق المعاملات المرحّلة` };
+        }
       }
     }
 
