@@ -257,6 +257,8 @@ export async function calculateLegacyBackupPayloadHash(
     totalCreditSum: payloadWithoutHash.metadata.totalCreditSum,
     legacyTotalDebitSum: payloadWithoutHash.metadata.legacyTotalDebitSum,
     legacyTotalCreditSum: payloadWithoutHash.metadata.legacyTotalCreditSum,
+    legacyTotalDebitMinor: payloadWithoutHash.metadata.legacyTotalDebitMinor,
+    legacyTotalCreditMinor: payloadWithoutHash.metadata.legacyTotalCreditMinor,
     totalDebitMinor: payloadWithoutHash.metadata.totalDebitMinor,
     totalCreditMinor: payloadWithoutHash.metadata.totalCreditMinor,
     accounts: payloadWithoutHash.accounts,
