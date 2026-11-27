@@ -122,6 +122,8 @@ export const ImmutableLedgerTestSuite = {
         rejectedCurrencyDraft?.status === 'draft' &&
         usdAccountAfterRejectedPost?.currentBalanceMinor === 125
       );
+      // Keep the deliberately invalid draft fixture out of the later integrity scan.
+      await db.transactions.delete(mismatchedDraftId);
 
       // D3. An explicit wrong currency must not relabel an account during full rebuild.
       let wrongCurrencyRebuildRejected = false;
