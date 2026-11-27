@@ -121,7 +121,7 @@ export class BackupMigratorTestSuite {
     await this.runTest(
       results,
       'MIG-04',
-      'ترحيل نسخة V2 إلى V5 بنجاح وتعيين القيم الافتراضية',
+      'ترحيل نسخة V2 إلى V7 بنجاح وتعيين القيم الافتراضية',
       async () => {
         const p2 = createMockPayload({ schemaVersion: 2 });
         const migrated = await migrateBackupPayload(p2);
@@ -142,7 +142,7 @@ export class BackupMigratorTestSuite {
     await this.runTest(
       results,
       'MIG-05',
-      'توافق النسخة الحالية V5 مع نفسها دون تشويه أي حقول',
+      'توافق النسخة الحالية V7 مع نفسها دون تشويه أي حقول',
       async () => {
         const p5 = createMockPayload({
           backupSchemaVersion: BACKUP_SCHEMA_VERSION,
@@ -245,11 +245,11 @@ export class BackupMigratorTestSuite {
       }
     );
 
-    // 6. Future V6 and V99 Rejection
+    // 6. Future V8 and V99 Rejection
     await this.runTest(
       results,
       'MIG-06',
-      'رفض النسخ المستقبلية V6 أو V99 فورياً وحماية البيانات من الرجوع للخلف',
+      'رفض النسخ المستقبلية V8 أو V99 فورياً وحماية البيانات من الرجوع للخلف',
       async () => {
         const futurePayload6 = createMockPayload({ backupSchemaVersion: BACKUP_SCHEMA_VERSION + 1 });
         let rejected6 = false;
