@@ -28,7 +28,7 @@ const firebaseConfig = {
 };
 
 const parseEmulatorAddress = (address: string, defaultPort: number): { host: string; port: number } => {
-  const normalized = address.replace(/^https?:\\/\\//, '');
+  const normalized = address.replace('http://', '').replace('https://', '');
   const separator = normalized.lastIndexOf(':');
   if (separator <= 0) {
     return { host: normalized, port: defaultPort };
@@ -61,7 +61,7 @@ if (firebaseConfig.apiKey && firebaseConfig.apiKey !== 'UNDEFINED') {
         throw new Error('Firebase emulator mode requires explicit Auth and Firestore emulator hosts.');
       }
 
-      const authUrl = /^https?:\\/\\//.test(authHost) ? authHost : `http://${authHost}`;
+      const authUrl = (authHost.startsWith('http://') || authHost.startsWith('https://')) ? authHost : `http://${authHost}`;
       const firestoreAddress = parseEmulatorAddress(firestoreHost, 8080);
       connectAuthEmulator(auth, authUrl, { disableWarnings: true });
       connectFirestoreEmulator(db, firestoreAddress.host, firestoreAddress.port);
