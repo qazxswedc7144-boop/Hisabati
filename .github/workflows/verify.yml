@@ -1,4 +1,5 @@
 name: Verify
+# package.json-only changes are validated after the safe-patches workflow refreshes the lockfile.
 on:
   workflow_dispatch:
   push:
