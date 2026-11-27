@@ -162,8 +162,8 @@ export async function calculateBackupPayloadHash(payloadWithoutHash: {
     createdAt: string;
     accountCount: number;
     transactionCount: number;
-    totalDebitSum: number;
-    totalCreditSum: number;
+    totalDebitSum?: number;
+    totalCreditSum?: number;
     totalDebitMinor?: number;
     totalCreditMinor?: number;
     currencyTotals?: Record<string, {
