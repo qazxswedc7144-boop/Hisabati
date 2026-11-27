@@ -69,6 +69,12 @@ if (firebaseConfig.apiKey && firebaseConfig.apiKey !== 'UNDEFINED') {
 
     console.log('Firebase initialized successfully');
   } catch (err) {
+    if (getEnv('VITE_FIREBASE_USE_EMULATORS') === 'true') {
+      // Fail closed: a broken emulator connection must never fall back to a real project.
+      app = undefined;
+      auth = undefined;
+      db = undefined;
+    }
     console.error('Firebase initialization failed:', err);
   }
 } else {
