@@ -229,8 +229,6 @@ export function migrateBackupV5ToV6(payload: unknown): BackupPayload {
     }
     return currencyTotals[currency];
   };
-  ensureCurrencyTotals(systemCurrency);
-
   if (Array.isArray(migrated.transactions)) {
     migrated.transactions = migrated.transactions.map(t => {
       const acc = accountsMap.get(t.accountId);
@@ -255,6 +253,8 @@ export function migrateBackupV5ToV6(payload: unknown): BackupPayload {
       } as Transaction;
     });
   }
+
+  if (Object.keys(currencyTotals).length === 0) ensureCurrencyTotals(systemCurrency);
 
   for (const [currency, totals] of Object.entries(currencyTotals)) {
     totals.totalDebit = minorToDecimal(totals.totalDebitMinor, currency);
