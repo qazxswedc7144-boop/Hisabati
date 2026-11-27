@@ -75,9 +75,13 @@ export function computeAccountMetricsFromTransactions(
   let postedCount = 0;
   let lastDate: string | undefined = undefined;
 
-  const activeCurrency = (currency as CurrencyCode) || 'YER';
+  const inferredCurrency = transactions.find((trx) => trx.currency)?.currency as CurrencyCode | undefined;
+  const activeCurrency = (currency as CurrencyCode) || inferredCurrency || 'YER';
 
   for (const trx of transactions) {
+    if (trx.currency && trx.currency.trim().toUpperCase() !== activeCurrency.trim().toUpperCase()) {
+      throw new Error(`[Financial Safety] Cannot aggregate ${trx.currency} transaction into ${activeCurrency} account balance without an explicit FX conversion.`);
+    }
     // Phase 2 Fix: Only POSTED transactions (and legacy without status) affect the balance.
     // DRAFT and REVERSED are excluded from financial totals.
     const status = trx.status || 'posted'; 
@@ -141,7 +145,8 @@ export function computeStatementRunningBalances(
 ): StatementItem[] {
   if (transactions.length === 0) return [];
 
-  const activeCurrency = (currency as CurrencyCode) || 'YER';
+  const inferredCurrency = transactions.find((trx) => trx.currency)?.currency as CurrencyCode | undefined;
+  const activeCurrency = (currency as CurrencyCode) || inferredCurrency || 'YER';
 
   // Sort chronological (oldest first)
   const chronological = [...transactions].sort((a, b) => {
@@ -154,6 +159,9 @@ export function computeStatementRunningBalances(
   const itemMap = new Map<string, { decimal: number; minor: number }>();
 
   for (const trx of chronological) {
+    if (trx.currency && trx.currency.trim().toUpperCase() !== activeCurrency.trim().toUpperCase()) {
+      throw new Error(`[Financial Safety] Cannot calculate a ${activeCurrency} running balance for a ${trx.currency} transaction without an explicit FX conversion.`);
+    }
     // Phase 2 Fix: Only POSTED transactions affect the running balance.
     const status = trx.status || 'posted';
     if (status !== 'posted') {
@@ -217,10 +225,21 @@ export function applyTransactionDelta(
   },
   currency?: CurrencyCode
 ): Partial<Account> & { isInconsistent?: boolean } {
-  const activeCurrency = (currency || account.currency || 'YER') as CurrencyCode;
+  const accountCurrency = account.currency;
+  const requestedCurrency = currency;
+  if (
+    accountCurrency &&
+    requestedCurrency &&
+    accountCurrency.trim().toUpperCase() !== requestedCurrency.trim().toUpperCase()
+  ) {
+    throw new Error(
+      `[Financial Safety] Cannot apply a ${requestedCurrency} balance delta to a ${accountCurrency} account without an explicit FX conversion.`
+    );
+  }
+  const activeCurrency = (requestedCurrency || accountCurrency || 'YER') as CurrencyCode;
   
-  // Integrity check: amountMinor must be a valid integer
-  if (typeof delta.amountMinor !== 'number' || !Number.isInteger(delta.amountMinor)) {
+  // Integrity check: amountMinor must be a valid safe integer
+  if (typeof delta.amountMinor !== 'number' || !Number.isSafeInteger(delta.amountMinor)) {
     return { isInconsistent: true };
   }
 

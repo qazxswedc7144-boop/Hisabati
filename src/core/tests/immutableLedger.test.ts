@@ -77,6 +77,69 @@ export const ImmutableLedgerTestSuite = {
         afterPostAcc?.currentBalanceMinor === 1500 && afterPostTrx?.status === 'posted'
       );
 
+      // D1. A legacy draft without currency inherits its account currency when posted.
+      const usdAccountId = 'acc_post_usd_' + Date.now();
+      const usdNow = new Date().toISOString();
+      await db.accounts.add({
+        id: usdAccountId, name: 'حساب اختبار ترحيل بالدولار', currency: 'USD',
+        currentBalance: 0, currentBalanceMinor: 0, totalDebit: 0, totalDebitMinor: 0,
+        totalCredit: 0, totalCreditMinor: 0, transactionCount: 0, archived: 0,
+        createdAt: usdNow, updatedAt: usdNow,
+      } as any);
+      const legacyUsdDraftId = 'trx_legacy_usd_draft_' + Date.now();
+      await db.transactions.add({
+        id: legacyUsdDraftId, accountId: usdAccountId, type: 'debit',
+        amount: 1.25, amountMinor: 125, date: '2026-02-01', status: 'draft',
+        createdAt: usdNow, updatedAt: usdNow,
+      } as any);
+      await transactionEngine.postTransaction(legacyUsdDraftId);
+      const postedUsdDraft = await db.transactions.get(legacyUsdDraftId);
+      const postedUsdAccount = await db.accounts.get(usdAccountId);
+      addResult(21, 'ترحيل مسودة قديمة بلا عملة يرث عملة الحساب بدلاً من عملة النظام',
+        postedUsdDraft?.currency === 'USD' &&
+        postedUsdDraft?.amountMinor === 125 &&
+        postedUsdAccount?.currentBalanceMinor === 125 &&
+        postedUsdAccount?.currentBalance === 1.25
+      );
+
+      // D2. An explicitly mismatched draft currency must fail atomically.
+      const mismatchedDraftId = 'trx_mismatched_currency_' + Date.now();
+      await db.transactions.add({
+        id: mismatchedDraftId, accountId: usdAccountId, type: 'debit',
+        amount: 2, amountMinor: 2, currency: 'YER', date: '2026-02-02',
+        status: 'draft', createdAt: usdNow, updatedAt: usdNow,
+      } as any);
+      let mismatchedCurrencyRejected = false;
+      try {
+        await transactionEngine.postTransaction(mismatchedDraftId);
+      } catch {
+        mismatchedCurrencyRejected = true;
+      }
+      const rejectedCurrencyDraft = await db.transactions.get(mismatchedDraftId);
+      const usdAccountAfterRejectedPost = await db.accounts.get(usdAccountId);
+      addResult(22, 'رفض ترحيل عملة مخالفة لعملة الحساب دون تغيير المسودة أو الرصيد',
+        mismatchedCurrencyRejected &&
+        rejectedCurrencyDraft?.status === 'draft' &&
+        usdAccountAfterRejectedPost?.currentBalanceMinor === 125
+      );
+      // Keep the deliberately invalid draft fixture out of the later integrity scan.
+      await db.transactions.delete(mismatchedDraftId);
+
+      // D3. An explicit wrong currency must not relabel an account during full rebuild.
+      let wrongCurrencyRebuildRejected = false;
+      try {
+        await transactionEngine.recalculateAccountBalance(usdAccountId, 'YER');
+      } catch {
+        wrongCurrencyRebuildRejected = true;
+      }
+      const usdAccountAfterWrongRebuild = await db.accounts.get(usdAccountId);
+      addResult(23, 'رفض إعادة احتساب حساب بالدولار على أساس الريال دون تغيير الرصيد',
+        wrongCurrencyRebuildRejected &&
+        usdAccountAfterWrongRebuild?.currency === 'USD' &&
+        usdAccountAfterWrongRebuild?.currentBalanceMinor === 125 &&
+        usdAccountAfterWrongRebuild?.currentBalance === 1.25
+      );
+
       // E. POSTED -> update -> Rejected
       let editError = '';
       try {
@@ -226,7 +289,122 @@ export const ImmutableLedgerTestSuite = {
       // acc1: 1900 - 500 = 1400. acc2: 0 + 500 = 500.
       addResult(14, 'القيد المزدوج المرحل يؤثر على الأرصدة بشكل متوازن', acc1N?.currentBalanceMinor === 1400 && acc2N?.currentBalanceMinor === 500);
 
-      // O. Concurrent Posting
+      // O. Reverse an entire posted journal atomically and reject a second reversal.
+      const reverseAccA = 'acc_reverse_a_' + Date.now();
+      const reverseAccB = 'acc_reverse_b_' + Date.now();
+      const reverseNow = new Date().toISOString();
+      await db.accounts.bulkAdd([
+        { id: reverseAccA, name: 'حساب عكس أ', currency: 'YER', currentBalance: 0, currentBalanceMinor: 0, totalDebit: 0, totalDebitMinor: 0, totalCredit: 0, totalCreditMinor: 0, transactionCount: 0, archived: 0, createdAt: reverseNow, updatedAt: reverseNow },
+        { id: reverseAccB, name: 'حساب عكس ب', currency: 'YER', currentBalance: 0, currentBalanceMinor: 0, totalDebit: 0, totalDebitMinor: 0, totalCredit: 0, totalCreditMinor: 0, transactionCount: 0, archived: 0, createdAt: reverseNow, updatedAt: reverseNow },
+      ] as any);
+      const journalOperationId = 'journal_to_reverse_' + Date.now();
+      const originalJournal = await transactionEngine.createDoubleEntry({
+        operationId: journalOperationId,
+        date: '2026-01-02',
+        currency: 'YER',
+        entries: [
+          { accountId: reverseAccA, type: 'debit', amount: 125 },
+          { accountId: reverseAccB, type: 'credit', amount: 125 },
+        ],
+      });
+      const reverseBeforeA = (await db.accounts.get(reverseAccA))?.currentBalanceMinor;
+      const reverseBeforeB = (await db.accounts.get(reverseAccB))?.currentBalanceMinor;
+      const originalSnapshots = originalJournal.map((entry) => JSON.stringify(entry));
+      const reversalReason = 'اختبار عكس قيد اليومية';
+      const reversalEntries = await transactionEngine.reverseTransaction(originalJournal[0].id, reversalReason);
+      const reversalRetry = await transactionEngine.reverseTransaction(originalJournal[0].id, reversalReason);
+      let changedReasonRejected = false;
+      try {
+        await transactionEngine.reverseTransaction(originalJournal[0].id, 'سبب مختلف للعكس');
+      } catch {
+        changedReasonRejected = true;
+      }
+      const tamperTarget = reversalEntries[0];
+      await db.transactions.update(tamperTarget.id, { amountMinor: (tamperTarget.amountMinor || 0) + 1 });
+      let tamperedRetryRejected = false;
+      try {
+        await transactionEngine.reverseTransaction(originalJournal[0].id, reversalReason);
+      } catch {
+        tamperedRetryRejected = true;
+      }
+      await db.transactions.put(tamperTarget);
+      await db.transactions.update(tamperTarget.id, { reversalReason: undefined });
+      let missingReasonRetryRejected = false;
+      try {
+        await transactionEngine.reverseTransaction(originalJournal[0].id, reversalReason);
+      } catch {
+        missingReasonRetryRejected = true;
+      }
+      await db.transactions.update(tamperTarget.id, { reversalReason });
+      const reverseAfterA = (await db.accounts.get(reverseAccA))?.currentBalanceMinor;
+      const reverseAfterB = (await db.accounts.get(reverseAccB))?.currentBalanceMinor;
+      const originalsAfterReverse = await Promise.all(originalJournal.map((entry) => db.transactions.get(entry.id)));
+      const originalsUnchanged = originalsAfterReverse.every((entry, index) =>
+        JSON.stringify(entry) === originalSnapshots[index]
+      );
+      const linksValid = reversalEntries.every((reversal) =>
+        !!reversal.reversalOfTransactionId &&
+        originalJournal.some((entry) => entry.id === reversal.reversalOfTransactionId) &&
+        reversal.reversalReason === reversalReason
+      );
+      addResult(19, 'العكس إضافي دون تعديل الأصل، ويحفظ السبب ويرفض إعادة المحاولة المتعارضة',
+        reversalEntries.length === 2 &&
+        reversalRetry.length === 2 &&
+        reversalEntries.every((entry) => reversalRetry.some((retry) => retry.id === entry.id)) &&
+        changedReasonRejected && tamperedRetryRejected && missingReasonRetryRejected && originalsUnchanged &&
+        reverseAfterA === 0 && reverseAfterB === 0 && linksValid
+      );
+
+      // P. A failure after the first reversal leg must roll back every write.
+      const atomicAccA = 'acc_reverse_atomic_a_' + Date.now();
+      const atomicAccB = 'acc_reverse_atomic_b_' + Date.now();
+      const atomicNow = new Date().toISOString();
+      const atomicAccountB = {
+        id: atomicAccB, name: 'حساب عكس ذري ب', currency: 'YER',
+        currentBalance: 0, currentBalanceMinor: 0, totalDebit: 0, totalDebitMinor: 0,
+        totalCredit: 0, totalCreditMinor: 0, transactionCount: 0, archived: 0,
+        createdAt: atomicNow, updatedAt: atomicNow,
+      };
+      await db.accounts.bulkAdd([
+        { ...atomicAccountB, id: atomicAccA, name: 'حساب عكس ذري أ' },
+        atomicAccountB,
+      ] as any);
+      const atomicOperationId = 'journal_reverse_rollback_' + Date.now();
+      const atomicJournal = await transactionEngine.createDoubleEntry({
+        operationId: atomicOperationId,
+        currency: 'YER',
+        entries: [
+          { accountId: atomicAccA, type: 'debit', amount: 31 },
+          { accountId: atomicAccB, type: 'credit', amount: 31 },
+        ],
+      });
+      const atomicBalanceBefore = (await db.accounts.get(atomicAccA))?.currentBalanceMinor;
+      const originalRecalculate = (transactionEngine as any).recalculateAccountBalanceIncremental.bind(transactionEngine);
+      (transactionEngine as any).recalculateAccountBalanceIncremental = async (accountId: string, ...args: any[]) => {
+        if (accountId === atomicAccB) throw new Error('Injected failure after first reversal leg');
+        return originalRecalculate(accountId, ...args);
+      };
+      let reversalFailureObserved = false;
+      try {
+        await transactionEngine.reverseTransaction(atomicJournal[0].id, 'اختبار التراجع الذري');
+      } catch {
+        reversalFailureObserved = true;
+      } finally {
+        (transactionEngine as any).recalculateAccountBalanceIncremental = originalRecalculate;
+      }
+      const atomicReversals = (await db.transactions.toArray()).filter((entry) =>
+        atomicJournal.some((source) => entry.reversalOfTransactionId === source.id)
+      );
+      const atomicBalanceAfter = (await db.accounts.get(atomicAccA))?.currentBalanceMinor;
+      addResult(20, 'فشل الطرف الثاني بعد كتابة الأول يتسبب في تراجع ذري كامل',
+        reversalFailureObserved &&
+        atomicReversals.length === 0 &&
+        atomicBalanceBefore === atomicBalanceAfter
+      );
+      await db.transactions.where('operationId').equals(atomicOperationId).delete();
+      await db.accounts.bulkDelete([atomicAccA, atomicAccB]);
+
+      // Q. Concurrent Posting
       const concurrentTrx = await transactionEngine.createTransaction({
         accountId: testAccountId,
         type: 'debit',
@@ -304,8 +482,8 @@ export const ImmutableLedgerTestSuite = {
 
       // Cleanup
       await Promise.all([
-        db.transactions.where('accountId').anyOf([testAccountId, testAcc2]).delete(),
-        db.accounts.where('id').anyOf([testAccountId, testAcc2]).delete()
+        db.transactions.where('accountId').anyOf([testAccountId, testAcc2, reverseAccA, reverseAccB, usdAccountId]).delete(),
+        db.accounts.where('id').anyOf([testAccountId, testAcc2, reverseAccA, reverseAccB, usdAccountId]).delete()
       ]);
 
     } catch (err: any) {

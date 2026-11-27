@@ -109,17 +109,33 @@ export function resolveRequiredCurrency(params: {
 }): CurrencyCode {
   const { transactionCurrency, accountCurrency, systemCurrency } = params;
 
-  // 1. Explicit transaction currency
-  if (transactionCurrency && isSupportedCurrency(transactionCurrency)) {
-    return transactionCurrency.trim().toUpperCase() as CurrencyCode;
+  // An explicitly supplied currency is authoritative; never silently replace it.
+  if (transactionCurrency !== undefined && transactionCurrency !== null) {
+    if (!isSupportedCurrency(transactionCurrency)) {
+      throw new Error(`[Financial Safety] Unsupported transaction currency: "${String(transactionCurrency)}"`);
+    }
+    const normalizedTransactionCurrency = transactionCurrency.trim().toUpperCase() as CurrencyCode;
+    if (accountCurrency !== undefined && accountCurrency !== null) {
+      if (!isSupportedCurrency(accountCurrency)) {
+        throw new Error(`[Financial Safety] Unsupported account currency: "${String(accountCurrency)}"`);
+      }
+      const normalizedAccountCurrency = accountCurrency.trim().toUpperCase() as CurrencyCode;
+      if (normalizedTransactionCurrency !== normalizedAccountCurrency) {
+        throw new Error(`[Financial Safety] Currency mismatch: transaction currency ${normalizedTransactionCurrency} does not match account currency ${normalizedAccountCurrency}. FX conversion is required before posting.`);
+      }
+    }
+    return normalizedTransactionCurrency;
   }
 
-  // 2. Account currency
-  if (accountCurrency && isSupportedCurrency(accountCurrency)) {
+  // Account currency is the source of truth when no transaction currency is supplied.
+  if (accountCurrency !== undefined && accountCurrency !== null) {
+    if (!isSupportedCurrency(accountCurrency)) {
+      throw new Error(`[Financial Safety] Unsupported account currency: "${String(accountCurrency)}"`);
+    }
     return accountCurrency.trim().toUpperCase() as CurrencyCode;
   }
 
-  // 3. Valid system currency
+  // Fall back to a valid system currency only when neither transaction nor account currency exists.
   if (systemCurrency && isSupportedCurrency(systemCurrency)) {
     return systemCurrency.trim().toUpperCase() as CurrencyCode;
   }

@@ -29,6 +29,7 @@ import {
   migrateBackupPayload,
 } from './backup/backup-migrator';
 import { decimalToMinor, minorToDecimal, isValidMinorUnit } from '../money/converter';
+import { isSupportedCurrency, resolveRequiredCurrency } from '../money/currency';
 
 const APP_VERSION = '2.0.0';
 
@@ -74,32 +75,66 @@ export class BackupService {
     const auditTrail = await db.auditTrail.toArray(); // 1.6
     const debts = await db.debts.toArray(); // [1.6 T-A]
 
-    // 1.4: Compute sums with currency-aware minor units precision & status filtering
-    let totalDebitUnits = 0;
-    let totalCreditUnits = 0;
-    const defaultCurrency = settings.find(s => s.key === 'currency')?.value || 'YER';
+    // 1.4: Compute totals independently per currency; minor units are never cross-added.
+    const defaultCurrency = (settings.find(s => s.key === 'currency')?.value || 'YER') as string;
+    const accountsById = new Map(accounts.map(account => [account.id, account]));
+    const currencyTotals: Record<string, {
+      totalDebitMinor: number;
+      totalCreditMinor: number;
+      totalDebit: number;
+      totalCredit: number;
+    }> = {};
 
+    const ensureCurrencyTotals = (currency: string) => {
+      if (!currencyTotals[currency]) {
+        currencyTotals[currency] = {
+          totalDebitMinor: 0,
+          totalCreditMinor: 0,
+          totalDebit: 0,
+          totalCredit: 0,
+        };
+      }
+      return currencyTotals[currency];
+    };
     for (const trx of transactions) {
       const status = trx.status || 'posted';
       if (status !== 'posted') continue;
 
-      const trxCurrency = (trx.currency as any) || defaultCurrency;
+      const accountCurrency = accountsById.get(trx.accountId)?.currency;
+      const trxCurrency = resolveRequiredCurrency({
+        transactionCurrency: trx.currency,
+        accountCurrency,
+        systemCurrency: defaultCurrency,
+      });
       const amountUnits = trx.amountMinor !== undefined && isValidMinorUnit(trx.amountMinor)
         ? Math.abs(trx.amountMinor)
         : Math.abs(decimalToMinor(trx.amount, trxCurrency));
+      const totals = ensureCurrencyTotals(trxCurrency);
 
       if (trx.type === 'debit') {
-        totalDebitUnits += amountUnits;
+        totals.totalDebitMinor += amountUnits;
       } else if (trx.type === 'credit') {
-        totalCreditUnits += amountUnits;
+        totals.totalCreditMinor += amountUnits;
+      }
+      if (
+        !Number.isSafeInteger(totals.totalDebitMinor) ||
+        !Number.isSafeInteger(totals.totalCreditMinor)
+      ) {
+        throw new Error(`[Financial Safety] Backup totals exceed the safe integer range for ${trxCurrency}`);
       }
     }
 
-    const totalDebitSum = minorToDecimal(totalDebitUnits, defaultCurrency as any);
-    const totalCreditSum = minorToDecimal(totalCreditUnits, defaultCurrency as any);
+    if (Object.keys(currencyTotals).length === 0) ensureCurrencyTotals(defaultCurrency);
 
-    const totalDebitMinor = totalDebitUnits;
-    const totalCreditMinor = totalCreditUnits;
+    for (const [currency, totals] of Object.entries(currencyTotals)) {
+      totals.totalDebit = minorToDecimal(totals.totalDebitMinor, currency);
+      totals.totalCredit = minorToDecimal(totals.totalCreditMinor, currency);
+    }
+
+    // Keep legacy scalar totals only when they have one unambiguous currency.
+    const singleCurrencyTotals = Object.keys(currencyTotals).length === 1
+      ? currencyTotals[Object.keys(currencyTotals)[0]]
+      : undefined;
 
     const backupId = 'bck_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const createdAt = new Date().toISOString();
@@ -119,10 +154,13 @@ export class BackupService {
       createdAt,
       accountCount: accounts.length,
       transactionCount: transactions.length,
-      totalDebitSum,
-      totalCreditSum,
-      totalDebitMinor,
-      totalCreditMinor,
+      ...(singleCurrencyTotals ? {
+        totalDebitSum: singleCurrencyTotals.totalDebit,
+        totalCreditSum: singleCurrencyTotals.totalCredit,
+        totalDebitMinor: singleCurrencyTotals.totalDebitMinor,
+        totalCreditMinor: singleCurrencyTotals.totalCreditMinor,
+      } : {}),
+      currencyTotals,
       keyFingerprint,
     };
 
@@ -251,6 +289,44 @@ export class BackupService {
       }
     }
 
+    if (schemaVer >= 7 && metadata.currencyTotals === undefined) {
+      return { isValid: false, error: 'النسخ الاحتياطية V7 تتطلب إجماليات مالية منفصلة لكل عملة' };
+    }
+    if (metadata.currencyTotals !== undefined) {
+      if (!metadata.currencyTotals || typeof metadata.currencyTotals !== 'object' || Array.isArray(metadata.currencyTotals)) {
+        return { isValid: false, error: 'إجماليات العملات في النسخة الاحتياطية غير صالحة' };
+      }
+      const currencyCodes = Object.keys(metadata.currencyTotals);
+      if (currencyCodes.length > 1 && (
+        metadata.totalDebitSum !== undefined ||
+        metadata.totalCreditSum !== undefined ||
+        metadata.totalDebitMinor !== undefined ||
+        metadata.totalCreditMinor !== undefined
+      )) {
+        return { isValid: false, error: 'لا يجوز تضمين إجمالي موحد مع وجود أكثر من عملة' };
+      }
+      for (const currency of currencyCodes) {
+        const totals = metadata.currencyTotals[currency];
+        if (!isSupportedCurrency(currency) || !totals || typeof totals !== 'object') {
+          return { isValid: false, error: `بيانات إجماليات العملة غير صالحة: ${currency}` };
+        }
+        if (
+          !Number.isSafeInteger(totals.totalDebitMinor) || totals.totalDebitMinor < 0 ||
+          !Number.isSafeInteger(totals.totalCreditMinor) || totals.totalCreditMinor < 0
+        ) {
+          return { isValid: false, error: `الوحدات الصغرى لإجماليات ${currency} غير صالحة` };
+        }
+        const expectedDebit = minorToDecimal(totals.totalDebitMinor, currency);
+        const expectedCredit = minorToDecimal(totals.totalCreditMinor, currency);
+        if (
+          typeof totals.totalDebit !== 'number' || Math.abs(totals.totalDebit - expectedDebit) > 1e-9 ||
+          typeof totals.totalCredit !== 'number' || Math.abs(totals.totalCredit - expectedCredit) > 1e-9
+        ) {
+          return { isValid: false, error: `القيم العشرية لإجماليات ${currency} لا تطابق الوحدات الصغرى` };
+        }
+      }
+    }
+
     // Validate accounts: unique IDs, valid names, valid balances
     const accountIds = new Set<string>();
     for (const acc of accounts) {
@@ -272,11 +348,17 @@ export class BackupService {
         return { isValid: false, error: `اسم الحساب مفقود أو غير صالح للحساب (ID: ${acc.id})` };
       }
 
+      if (acc.currency !== undefined && !isSupportedCurrency(acc.currency)) {
+        return { isValid: false, error: `عملة الحساب غير مدعومة (ID: ${acc.id})` };
+      }
+
       const bal = acc.currentBalance !== undefined ? acc.currentBalance : acc.balance;
       if (bal !== undefined && (typeof bal !== 'number' || isNaN(bal) || !isFinite(bal))) {
         return { isValid: false, error: `رصيد غير صالح للحساب (ID: ${acc.id}): ${bal}` };
       }
     }
+
+    const validatedAccountsById = new Map<string, any>(accounts.map((account: any) => [account.id, account]));
 
     // Validate transactions: unique IDs, valid accounts, valid amounts, types, dates
     const transactionIds = new Set<string>();
@@ -298,6 +380,18 @@ export class BackupService {
       if (!accountIds.has(trx.accountId)) {
         return { isValid: false, error: `توجد معاملة تشير إلى حساب غير موجود بالنسخة (ID: ${trx.accountId})` };
       }
+      if (trx.currency !== undefined && !isSupportedCurrency(trx.currency)) {
+        return { isValid: false, error: `عملة المعاملة غير مدعومة (ID: ${trx.id})` };
+      }
+      const relatedAccount = validatedAccountsById.get(trx.accountId);
+      if (
+        trx.currency && relatedAccount?.currency &&
+        trx.currency.trim().toUpperCase() !== relatedAccount.currency.trim().toUpperCase()
+      ) {
+        return { isValid: false, error: `عملة المعاملة لا تطابق عملة الحساب (ID: ${trx.id})` };
+      }
+      const systemCurrency = (settings || []).find((setting: any) => setting.key === 'currency')?.value || 'YER';
+      const transactionCurrency = trx.currency || relatedAccount?.currency || systemCurrency;
       if (typeof trx.amount !== 'number' || isNaN(trx.amount) || !isFinite(trx.amount) || trx.amount <= 0) {
         return { isValid: false, error: `مبلغ غير صالح في المعاملة (ID: ${trx.id}): ${trx.amount}` };
       }
@@ -309,12 +403,12 @@ export class BackupService {
         }
       } else {
         if (trx.amountMinor === undefined || !isValidMinorUnit(trx.amountMinor)) {
-          trx.amountMinor = decimalToMinor(trx.amount, trx.currency || 'YER');
+          trx.amountMinor = decimalToMinor(trx.amount, transactionCurrency);
         }
       }
 
       if (trx.amountMinor !== undefined && trx.amount !== undefined) {
-        const expectedMinor = decimalToMinor(trx.amount, trx.currency || 'YER');
+        const expectedMinor = decimalToMinor(trx.amount, transactionCurrency);
         if (Math.abs(expectedMinor - trx.amountMinor) > 1) {
           return { isValid: false, error: `تعارض حسابي بين المبلغ (amount) والوحدات الصغرى (amountMinor) في المعاملة (ID: ${trx.id})` };
         }
@@ -325,6 +419,39 @@ export class BackupService {
       }
       if (!trx.date || typeof trx.date !== 'string' || isNaN(Date.parse(trx.date))) {
         return { isValid: false, error: `تاريخ المعاملة غير صالح (ID: ${trx.id}): ${trx.date}` };
+      }
+    }
+
+    if (schemaVer >= 7) {
+      const defaultCurrency = (settings || []).find((setting: any) => setting.key === 'currency')?.value || 'YER';
+      const expectedTotals: Record<string, { totalDebitMinor: number; totalCreditMinor: number }> = {};
+      const ensureExpected = (currency: string) => {
+        if (!expectedTotals[currency]) expectedTotals[currency] = { totalDebitMinor: 0, totalCreditMinor: 0 };
+        return expectedTotals[currency];
+      };
+      for (const trx of transactions) {
+        if ((trx.status || 'posted') !== 'posted') continue;
+        const relatedAccount = validatedAccountsById.get(trx.accountId);
+        const currency = (trx.currency || relatedAccount?.currency || defaultCurrency) as string;
+        const totals = ensureExpected(currency);
+        if (trx.type === 'debit') totals.totalDebitMinor += Math.abs(trx.amountMinor);
+        else totals.totalCreditMinor += Math.abs(trx.amountMinor);
+      }
+      if (Object.keys(expectedTotals).length === 0) ensureExpected(defaultCurrency);
+      const expectedCodes = Object.keys(expectedTotals).sort();
+      const actualCodes = Object.keys(metadata.currencyTotals || {}).sort();
+      if (JSON.stringify(expectedCodes) !== JSON.stringify(actualCodes)) {
+        return { isValid: false, error: 'إجماليات العملات لا تطابق العملات الموجودة في المعاملات المرحّلة' };
+      }
+      for (const currency of expectedCodes) {
+        const expected = expectedTotals[currency];
+        const actual = metadata.currencyTotals[currency];
+        if (
+          actual.totalDebitMinor !== expected.totalDebitMinor ||
+          actual.totalCreditMinor !== expected.totalCreditMinor
+        ) {
+          return { isValid: false, error: `إجماليات ${currency} لا تطابق المعاملات المرحّلة` };
+        }
       }
     }
 

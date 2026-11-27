@@ -94,13 +94,16 @@ export class RBACTestSuite {
           // Owner has full power
           if (!rbacGuard.hasPermission(ownerActor, 'team:manage_roles')) throw new Error('Owner must have team:manage_roles');
           if (!rbacGuard.hasPermission(ownerActor, 'transactions:delete')) throw new Error('Owner must have transactions:delete');
+          if (!rbacGuard.hasPermission(ownerActor, 'transactions:reverse')) throw new Error('Owner must have transactions:reverse');
 
           // Admin
           if (!rbacGuard.hasPermission(adminActor, 'team:manage_members')) throw new Error('Admin must have team:manage_members');
           if (!rbacGuard.hasPermission(adminActor, 'accounts:create')) throw new Error('Admin must have accounts:create');
+          if (!rbacGuard.hasPermission(adminActor, 'transactions:reverse')) throw new Error('Admin must have transactions:reverse');
 
           // Accountant
           if (!rbacGuard.hasPermission(accountantActor, 'transactions:create')) throw new Error('Accountant must have transactions:create');
+          if (rbacGuard.hasPermission(accountantActor, 'transactions:reverse')) throw new Error('Accountant MUST NOT have transactions:reverse');
           if (!rbacGuard.hasPermission(accountantActor, 'receipts:convert')) throw new Error('Accountant must have receipts:convert');
           if (rbacGuard.hasPermission(accountantActor, 'team:manage_members')) throw new Error('Accountant MUST NOT have team:manage_members');
           if (rbacGuard.hasPermission(accountantActor, 'team:manage_roles')) throw new Error('Accountant MUST NOT have team:manage_roles');
@@ -108,6 +111,7 @@ export class RBACTestSuite {
           // Employee
           if (!rbacGuard.hasPermission(employeeActor, 'transactions:create')) throw new Error('Employee should be allowed to create transaction');
           if (rbacGuard.hasPermission(employeeActor, 'transactions:delete')) throw new Error('Employee MUST NOT be allowed to delete transactions');
+          if (rbacGuard.hasPermission(employeeActor, 'transactions:reverse')) throw new Error('Employee MUST NOT be allowed to reverse transactions');
           if (rbacGuard.hasPermission(employeeActor, 'transactions:update')) throw new Error('Employee MUST NOT be allowed to update transactions');
           if (rbacGuard.hasPermission(employeeActor, 'receipts:convert')) throw new Error('Employee MUST NOT be allowed to convert receipts');
 
@@ -116,6 +120,7 @@ export class RBACTestSuite {
           if (rbacGuard.hasPermission(viewerActor, 'transactions:create')) throw new Error('Viewer MUST NOT have transactions:create');
           if (rbacGuard.hasPermission(viewerActor, 'transactions:update')) throw new Error('Viewer MUST NOT have transactions:update');
           if (rbacGuard.hasPermission(viewerActor, 'transactions:delete')) throw new Error('Viewer MUST NOT have transactions:delete');
+          if (rbacGuard.hasPermission(viewerActor, 'transactions:reverse')) throw new Error('Viewer MUST NOT have transactions:reverse');
         },
       },
 
@@ -186,6 +191,107 @@ export class RBACTestSuite {
 
           // Clean up as owner
           await transactionEngine.deleteTransaction(trx.id, ownerActor);
+        },
+      },
+
+      // Test 3.1: Posting and reversal are guarded independently from creation.
+      {
+        id: 'RBAC-03.1',
+        title: 'Guarded Gate: Posting and Reversal Require Dedicated Permissions',
+        description: 'منع المشاهد من ترحيل مسودة أو عكس قيد مرحّل',
+        fn: async () => {
+          // Exercise the double-entry creation path directly: Accountant is allowed,
+          // while Viewer must be denied by the same guarded execution boundary.
+          const doubleDraft = await transactionEngine.createDoubleEntry({
+            status: 'draft',
+            entries: [
+              { accountId: testAccountId, type: 'debit', amount: 11 },
+              { accountId: testAccountId, type: 'credit', amount: 11 },
+            ],
+          }, accountantActor);
+          if (doubleDraft.length !== 2) {
+            throw new Error('Accountant was unable to create a balanced draft journal');
+          }
+
+          let viewerDoubleCreateDenied = false;
+          try {
+            await transactionEngine.createDoubleEntry({
+              status: 'draft',
+              entries: [
+                { accountId: testAccountId, type: 'debit', amount: 9 },
+                { accountId: testAccountId, type: 'credit', amount: 9 },
+              ],
+            }, viewerActor);
+          } catch {
+            viewerDoubleCreateDenied = true;
+          }
+          if (!viewerDoubleCreateDenied) {
+            throw new Error('Viewer was able to create a double-entry journal');
+          }
+
+          for (const entry of doubleDraft) {
+            await transactionEngine.deleteTransaction(entry.id, ownerActor);
+          }
+
+          const draft = await transactionEngine.createTransaction({
+            accountId: testAccountId,
+            amount: 125,
+            type: 'debit',
+            date: new Date().toISOString().split('T')[0],
+            status: 'draft',
+          }, accountantActor);
+
+          let postDenied = false;
+          try {
+            await transactionEngine.postTransaction(draft.id, viewerActor);
+          } catch {
+            postDenied = true;
+          }
+          if (!postDenied) throw new Error('Viewer was able to post a draft');
+
+          const posted = await transactionEngine.createTransaction({
+            accountId: testAccountId,
+            amount: 75,
+            type: 'debit',
+            date: new Date().toISOString().split('T')[0],
+          }, accountantActor);
+          let viewerReverseDenied = false;
+          try {
+            await transactionEngine.reverseTransaction(posted.id, 'محاولة عكس غير مصرح بها', viewerActor);
+          } catch {
+            viewerReverseDenied = true;
+          }
+          if (!viewerReverseDenied) throw new Error('Viewer was able to reverse a posted transaction');
+
+          let accountantReverseDenied = false;
+          try {
+            await transactionEngine.reverseTransaction(posted.id, 'تصحيح خطأ محاسبي', accountantActor);
+          } catch {
+            accountantReverseDenied = true;
+          }
+          if (!accountantReverseDenied) throw new Error('Accountant was able to reverse a posted transaction');
+
+          let blankReasonDenied = false;
+          try {
+            await transactionEngine.reverseTransaction(posted.id, '   ', adminActor);
+          } catch (error: any) {
+            blankReasonDenied = error.message.includes('سبب العكس');
+          }
+          if (!blankReasonDenied) throw new Error('Reversal without a meaningful reason was accepted');
+
+          const adminReversal = await transactionEngine.reverseTransaction(posted.id, 'تصحيح خطأ محاسبي', adminActor);
+          if (adminReversal.length !== 1) throw new Error('Admin was unable to reverse a posted transaction');
+
+          const ownerPosted = await transactionEngine.createTransaction({
+            accountId: testAccountId,
+            amount: 50,
+            type: 'credit',
+            date: new Date().toISOString().split('T')[0],
+          }, accountantActor);
+          const ownerReversal = await transactionEngine.reverseTransaction(ownerPosted.id, 'إلغاء تسجيل مكرر', ownerActor);
+          if (ownerReversal.length !== 1) throw new Error('Owner was unable to reverse a posted transaction');
+
+          await transactionEngine.deleteTransaction(draft.id, ownerActor);
         },
       },
 

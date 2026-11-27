@@ -1,5 +1,6 @@
 /**
  * CHANGELOG
+ * - 1.9: Updated BACKUP_SCHEMA_VERSION to 7 (currency-separated financial totals).
  * - 1.8: Updated DATABASE_SCHEMA_VERSION to 13 (durable AI command state machine).
  * - 1.7: Updated DATABASE_SCHEMA_VERSION to 11 (pendingSideEffects table for hardened sync).
  * - 1.6: Updated DATABASE_SCHEMA_VERSION to 9 and BACKUP_SCHEMA_VERSION to 5 (debts table & idempotency).
@@ -7,7 +8,7 @@
  */
 
 export const DATABASE_SCHEMA_VERSION: number = 13;
-export const BACKUP_SCHEMA_VERSION = 6;
+export const BACKUP_SCHEMA_VERSION = 7;
 export const FINANCIAL_FORMAT_VERSION = 1;
 
 export const MIN_SUPPORTED_BACKUP_VERSION = 1;

@@ -1,0 +1,55 @@
+name: Dependency Security Audit
+
+on:
+  push:
+    branches: ['fix/phase1-ledger-currency-hardening']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  npm-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Generate npm audit report
+        run: npm audit --json > npm-audit.json || true
+      - name: Summarize advisories
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'));
+          const counts = report.metadata?.vulnerabilities || {};
+          const lines = [
+            '## Dependency security audit',
+            '',
+            '| Severity | Count |',
+            '|---|---:|',
+            ...['critical', 'high', 'moderate', 'low', 'info'].map(level => `| ${level} | ${counts[level] || 0} |`),
+            '',
+            `Total advisories: ${Object.keys(report.vulnerabilities || {}).length}`,
+            '',
+            '| Package | Severity | Direct | Installed range | Fix available |',
+            '|---|---|---:|---|---|',
+          ];
+          for (const [name, item] of Object.entries(report.vulnerabilities || {})) {
+            const fix = item.fixAvailable === true ? 'yes' : item.fixAvailable === false ? 'no' : item.fixAvailable ? JSON.stringify(item.fixAvailable) : 'unknown';
+            lines.push(`| ${name} | ${item.severity} | ${item.isDirect ? 'yes' : 'no'} | ${item.range || '—'} | ${fix} |`);
+          }
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
+          console.log(lines.join('\n'));
+          NODE
+      - name: Upload full audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: npm-audit.json
+          retention-days: 14

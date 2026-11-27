@@ -1,3 +1,4 @@
+import { db } from '../database/db';
 import { accountRepository } from '../repositories/account.repository';
 import { transactionRepository } from '../repositories/transaction.repository';
 import { settingsRepository } from '../repositories/settings.repository';
@@ -66,14 +67,38 @@ type AccountFinancial = Account & {
  * If an account has fractional transactions, enforces 2 decimal places to prevent truncation.
  */
 const resolveReportDecimals = async (
-  options?: { transactions?: Transaction[]; hasFractions?: boolean }
+  options?: {
+    transactions?: Transaction[];
+    accounts?: Account[];
+    currency?: CurrencyCode;
+    hasFractions?: boolean;
+  }
 ): Promise<{ currency: CurrencyCode; decimals: number }> => {
-  const activeCurrency = (await settingsRepository.get<CurrencyCode>('currency', 'YER')) || 'YER';
+  const systemCurrency = (await settingsRepository.get<CurrencyCode>('currency', 'YER')) || 'YER';
+  const currencies = new Set<string>();
+
+  if (options?.currency) currencies.add(options.currency.trim().toUpperCase());
+  for (const account of options?.accounts || []) {
+    if (account.currency) currencies.add(account.currency.trim().toUpperCase());
+  }
+  for (const transaction of options?.transactions || []) {
+    if (transaction.currency) currencies.add(transaction.currency.trim().toUpperCase());
+  }
+
+  if (currencies.size > 1) {
+    throw new Error(
+      `[Financial Safety] This report cannot aggregate multiple currencies (${Array.from(currencies).sort().join(', ')}) without separate per-currency totals or an explicit FX conversion.`
+    );
+  }
+
+  const activeCurrency = (Array.from(currencies)[0] || systemCurrency) as CurrencyCode;
   const currencyDecimals = getCurrencyDecimals(activeCurrency);
   const hasFractions = Boolean(
     options?.hasFractions ||
     options?.transactions?.some((t) => t.amount % 1 !== 0)
   );
+  // Preserve the legacy fractional-decimal compatibility rule while respecting
+  // currencies whose canonical precision is greater than two digits (KWD/OMR).
   const decimals = hasFractions ? Math.max(currencyDecimals, 2) : currencyDecimals;
   return { currency: activeCurrency, decimals };
 };
@@ -213,7 +238,11 @@ export class ReportService {
       accountId
     );
 
-    const { decimals } = await resolveReportDecimals({ transactions: allTransactions });
+    const postedTransactions = allTransactions.filter((trx) => (trx.status || 'posted') === 'posted');
+    const { decimals } = await resolveReportDecimals({
+      currency: account.currency,
+      transactions: postedTransactions,
+    });
 
     const getTrxAmountMinor = (trx: Transaction): number => {
       const factor = Math.pow(10, decimals);
@@ -354,15 +383,20 @@ export class ReportService {
       endDate: options.endDate,
     });
 
-    const [accounts, allPeriodTransactions] = await Promise.all([
+    const [accounts, allPeriodTransactions, allTransactions] = await Promise.all([
       accountRepository.getAll(true),
       transactionRepository.getByDateRange(dateRange.startDate, dateRange.endDate),
+      db.transactions.toArray(),
     ]);
 
     // Phase 2 Fix: Filter for POSTED transactions only for financial summary
     const periodTransactions = allPeriodTransactions.filter(trx => (trx.status || 'posted') === 'posted');
 
-    const { decimals } = await resolveReportDecimals({ transactions: periodTransactions });
+    const postedLedgerTransactions = allTransactions.filter((trx) => (trx.status || 'posted') === 'posted');
+    const { decimals } = await resolveReportDecimals({
+      transactions: postedLedgerTransactions,
+      accounts,
+    });
 
     let periodDebitMinor = 0;
     let periodCreditMinor = 0;
@@ -470,14 +504,25 @@ export class ReportService {
   public async getReceivablesReport(
     options: AccountsReportFilterOptions = {}
   ): Promise<ReceivablesReport> {
-    const { decimals } = await resolveReportDecimals();
+    const [accounts, transactions] = await Promise.all([
+      accountRepository.getAll(options.includeArchived ?? false),
+      db.transactions.toArray(),
+    ]);
+    const postedLedgerTransactions = transactions.filter((trx) => (trx.status || 'posted') === 'posted');
+    // A searched report is scoped to the matching accounts. Never let unrelated
+    // currencies elsewhere in the ledger change its precision or invalidate it.
+    const scopedAccounts = options.search?.trim()
+      ? accounts.filter((account) =>
+          account.name.toLowerCase().includes(options.search!.trim().toLowerCase()) ||
+          account.phone?.includes(options.search!.trim())
+        )
+      : accounts;
+    const scopedAccountIds = new Set(scopedAccounts.map((account) => account.id));
+    const scopedTransactions = postedLedgerTransactions.filter((trx) => scopedAccountIds.has(trx.accountId));
+    const { decimals } = await resolveReportDecimals({ accounts: scopedAccounts, transactions: scopedTransactions });
 
-    const accounts = await accountRepository.getAll(
-      options.includeArchived ?? false
-    );
-
-    // All active/eligible receivable accounts (balance > 0)
-    const allReceivableAccounts = accounts.filter(
+    // All eligible receivable accounts in the selected scope (balance > 0).
+    const allReceivableAccounts = scopedAccounts.filter(
       (account) => getAccountCurrentBalanceMinor(account, decimals) > 0
     );
 
@@ -569,14 +614,25 @@ export class ReportService {
   public async getPayablesReport(
     options: AccountsReportFilterOptions = {}
   ): Promise<PayablesReport> {
-    const { decimals } = await resolveReportDecimals();
+    const [accounts, transactions] = await Promise.all([
+      accountRepository.getAll(options.includeArchived ?? false),
+      db.transactions.toArray(),
+    ]);
+    const postedLedgerTransactions = transactions.filter((trx) => (trx.status || 'posted') === 'posted');
+    // Keep filtered reports currency-local: unrelated accounts must not force a
+    // precision mismatch, and their balances must not enter this report's totals.
+    const scopedAccounts = options.search?.trim()
+      ? accounts.filter((account) =>
+          account.name.toLowerCase().includes(options.search!.trim().toLowerCase()) ||
+          account.phone?.includes(options.search!.trim())
+        )
+      : accounts;
+    const scopedAccountIds = new Set(scopedAccounts.map((account) => account.id));
+    const scopedTransactions = postedLedgerTransactions.filter((trx) => scopedAccountIds.has(trx.accountId));
+    const { decimals } = await resolveReportDecimals({ accounts: scopedAccounts, transactions: scopedTransactions });
 
-    const accounts = await accountRepository.getAll(
-      options.includeArchived ?? false
-    );
-
-    // All active/eligible payable accounts (balance < 0)
-    const allPayableAccounts = accounts.filter(
+    // All eligible payable accounts in the selected scope (balance < 0).
+    const allPayableAccounts = scopedAccounts.filter(
       (account) => getAccountCurrentBalanceMinor(account, decimals) < 0
     );
 

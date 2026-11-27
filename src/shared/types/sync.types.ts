@@ -10,6 +10,7 @@ import { Transaction } from './transaction.types';
 import { SettingsEntry } from './settings.types';
 import { TrashItem } from './trash.types';
 import { AuditTrailEntry } from './rbac.types';
+import { CurrencyCode } from './common.types';
 
 export type SyncStatusType = 'idle' | 'syncing' | 'synced' | 'pending' | 'error' | 'offline' | 'retrying' | 'conflict';
 
@@ -34,6 +35,13 @@ export interface SyncQueueItem {
   retryCount: number;
   lastError?: string;
   status: 'pending' | 'processing' | 'prepared' | 'uploaded' | 'acknowledged' | 'failed' | 'completed';
+}
+
+export interface BackupCurrencyTotals {
+  totalDebitMinor: number;
+  totalCreditMinor: number;
+  totalDebit: number;
+  totalCredit: number;
 }
 
 export interface BackupMetadata {
@@ -77,10 +85,22 @@ export interface BackupMetadata {
   accountCount: number;
   transactionCount: number;
 
-  totalDebitSum: number;
-  totalCreditSum: number;
+  /**
+   * Legacy single-currency totals. Omitted when the backup contains multiple currencies.
+   */
+  totalDebitSum?: number;
+  totalCreditSum?: number;
   totalDebitMinor?: number;
   totalCreditMinor?: number;
+  /** Original scalar totals retained only to verify pre-v6 legacy hashes after migration. */
+  legacyTotalDebitSum?: number;
+  legacyTotalCreditSum?: number;
+  legacyTotalDebitMinor?: number;
+  legacyTotalCreditMinor?: number;
+  /**
+   * Canonical totals grouped by currency. Included in the integrity hash when present.
+   */
+  currencyTotals?: Partial<Record<CurrencyCode, BackupCurrencyTotals>>;
 
   integrityHash: string;
   keyFingerprint?: string; // 2.1: SHA-256 fingerprint of the encryption key

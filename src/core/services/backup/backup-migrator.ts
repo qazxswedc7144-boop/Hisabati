@@ -11,7 +11,8 @@ import {
 } from '../../database/schemaVersion';
 import { BackupPayload, BackupMetadata } from '@/shared/types';
 import { Account, Transaction, SettingsEntry, CurrencyCode } from '@/shared/types';
-import { decimalToMinor } from '../../money/converter';
+import { decimalToMinor, minorToDecimal } from '../../money/converter';
+import { calculateBackupPayloadHash } from '../../utils/crypto';
 
 /**
  * Extracts and resolves the backup schema version from metadata.
@@ -189,6 +190,9 @@ export function migrateBackupV5ToV6(payload: unknown): BackupPayload {
   }
 
   const migrated = structuredClone(payload) as BackupPayload;
+  // Preserve V5 scalar totals solely for validating the original V5 integrity hash.
+  migrated.metadata.legacyTotalDebitSum = migrated.metadata.totalDebitSum;
+  migrated.metadata.legacyTotalCreditSum = migrated.metadata.totalCreditSum;
 
   // 1. Resolve currencies and fill missing amountMinor/currentBalanceMinor
   const settings = Array.isArray(migrated.settings) ? migrated.settings : [];
@@ -212,23 +216,37 @@ export function migrateBackupV5ToV6(payload: unknown): BackupPayload {
 
   const accountsMap = new Map((migrated.accounts || []).map(a => [a.id, a]));
 
-  let totalDebitMinor = 0;
-  let totalCreditMinor = 0;
-  const txs = Array.isArray(migrated.transactions) ? migrated.transactions : [];
-  
+  const currencyTotals: Record<string, {
+    totalDebitMinor: number;
+    totalCreditMinor: number;
+    totalDebit: number;
+    totalCredit: number;
+  }> = {};
+  const ensureCurrencyTotals = (currency: string) => {
+    if (!currencyTotals[currency]) {
+      currencyTotals[currency] = {
+        totalDebitMinor: 0,
+        totalCreditMinor: 0,
+        totalDebit: 0,
+        totalCredit: 0,
+      };
+    }
+    return currencyTotals[currency];
+  };
   if (Array.isArray(migrated.transactions)) {
     migrated.transactions = migrated.transactions.map(t => {
       const acc = accountsMap.get(t.accountId);
       const currency = (t.currency as CurrencyCode) || (acc?.currency as CurrencyCode) || systemCurrency;
-      
+
       const minor = (typeof t.amountMinor === 'number' && isFinite(t.amountMinor))
         ? t.amountMinor
         : decimalToMinor(t.amount || 0, currency as string);
-      
+
       const status = t.status || 'posted';
       if (status === 'posted') {
-        if (t.type === 'debit') totalDebitMinor += minor;
-        else if (t.type === 'credit') totalCreditMinor += minor;
+        const totals = ensureCurrencyTotals(currency);
+        if (t.type === 'debit') totals.totalDebitMinor += minor;
+        else if (t.type === 'credit') totals.totalCreditMinor += minor;
       }
 
       return {
@@ -240,12 +258,119 @@ export function migrateBackupV5ToV6(payload: unknown): BackupPayload {
     });
   }
 
-  migrated.metadata.totalDebitMinor = totalDebitMinor;
-  migrated.metadata.totalCreditMinor = totalCreditMinor;
+  if (Object.keys(currencyTotals).length === 0) ensureCurrencyTotals(systemCurrency);
+
+  for (const [currency, totals] of Object.entries(currencyTotals)) {
+    totals.totalDebit = minorToDecimal(totals.totalDebitMinor, currency);
+    totals.totalCredit = minorToDecimal(totals.totalCreditMinor, currency);
+  }
+  migrated.metadata.currencyTotals = currencyTotals;
+  const singleCurrencyTotals = Object.keys(currencyTotals).length === 1
+    ? currencyTotals[Object.keys(currencyTotals)[0]]
+    : undefined;
+  if (singleCurrencyTotals) {
+    migrated.metadata.totalDebitMinor = singleCurrencyTotals.totalDebitMinor;
+    migrated.metadata.totalCreditMinor = singleCurrencyTotals.totalCreditMinor;
+    migrated.metadata.totalDebitSum = singleCurrencyTotals.totalDebit;
+    migrated.metadata.totalCreditSum = singleCurrencyTotals.totalCredit;
+  } else {
+    delete migrated.metadata.totalDebitMinor;
+    delete migrated.metadata.totalCreditMinor;
+    delete migrated.metadata.totalDebitSum;
+    delete migrated.metadata.totalCreditSum;
+  }
   migrated.metadata.backupSchemaVersion = 6;
   migrated.metadata.schemaVersion = 6;
   migrated.metadata.databaseSchemaVersion = DATABASE_SCHEMA_VERSION;
 
+  return migrated;
+}
+
+/**
+ * V6 -> V7: preserve old V6 hash inputs, then replace ambiguous scalar totals
+ * with integrity-hashed currency-specific totals.
+ */
+export function migrateBackupV6ToV7(payload: unknown): BackupPayload {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('هيكل ملف النسخة الاحتياطية غير صالح (Invalid Payload)');
+  }
+  const p = payload as Record<string, unknown>;
+  if (!p.metadata || typeof p.metadata !== 'object') {
+    throw new Error('بيانات النسخة الاحتياطية الوصفية غير موجودة (Metadata Missing)');
+  }
+
+  const migrated = structuredClone(payload) as BackupPayload;
+  const originalVersion = migrated.metadata.originalSchemaVersion;
+  if (originalVersion === 6) {
+    migrated.metadata.legacyTotalDebitSum = migrated.metadata.totalDebitSum;
+    migrated.metadata.legacyTotalCreditSum = migrated.metadata.totalCreditSum;
+    migrated.metadata.legacyTotalDebitMinor = migrated.metadata.totalDebitMinor;
+    migrated.metadata.legacyTotalCreditMinor = migrated.metadata.totalCreditMinor;
+  }
+
+  const settings = Array.isArray(migrated.settings) ? migrated.settings : [];
+  const systemCurrency = (settings.find(setting => setting.key === 'currency')?.value as CurrencyCode) || 'YER';
+  const accountsMap = new Map((migrated.accounts || []).map(account => [account.id, account]));
+  const currencyTotals: Record<string, {
+    totalDebitMinor: number;
+    totalCreditMinor: number;
+    totalDebit: number;
+    totalCredit: number;
+  }> = {};
+
+  const ensureCurrencyTotals = (currency: string) => {
+    if (!currencyTotals[currency]) {
+      currencyTotals[currency] = {
+        totalDebitMinor: 0,
+        totalCreditMinor: 0,
+        totalDebit: 0,
+        totalCredit: 0,
+      };
+    }
+    return currencyTotals[currency];
+  };
+
+  for (const trx of migrated.transactions || []) {
+    const status = trx.status || 'posted';
+    if (status !== 'posted') continue;
+    const account = accountsMap.get(trx.accountId);
+    const currency = (trx.currency as CurrencyCode) || (account?.currency as CurrencyCode) || systemCurrency;
+    const amountMinor = typeof trx.amountMinor === 'number' && Number.isSafeInteger(trx.amountMinor)
+      ? Math.abs(trx.amountMinor)
+      : Math.abs(decimalToMinor(trx.amount || 0, currency));
+    const totals = ensureCurrencyTotals(currency);
+    if (trx.type === 'debit') totals.totalDebitMinor += amountMinor;
+    else if (trx.type === 'credit') totals.totalCreditMinor += amountMinor;
+    if (!Number.isSafeInteger(totals.totalDebitMinor) || !Number.isSafeInteger(totals.totalCreditMinor)) {
+      throw new Error(`إجماليات النسخة الاحتياطية تجاوزت النطاق الآمن للعملة ${currency}`);
+    }
+  }
+
+  if (Object.keys(currencyTotals).length === 0) ensureCurrencyTotals(systemCurrency);
+  for (const [currency, totals] of Object.entries(currencyTotals)) {
+    totals.totalDebit = minorToDecimal(totals.totalDebitMinor, currency);
+    totals.totalCredit = minorToDecimal(totals.totalCreditMinor, currency);
+  }
+
+  migrated.metadata.currencyTotals = currencyTotals;
+  const singleCurrencyTotals = Object.keys(currencyTotals).length === 1
+    ? currencyTotals[Object.keys(currencyTotals)[0]]
+    : undefined;
+  if (singleCurrencyTotals) {
+    migrated.metadata.totalDebitSum = singleCurrencyTotals.totalDebit;
+    migrated.metadata.totalCreditSum = singleCurrencyTotals.totalCredit;
+    migrated.metadata.totalDebitMinor = singleCurrencyTotals.totalDebitMinor;
+    migrated.metadata.totalCreditMinor = singleCurrencyTotals.totalCreditMinor;
+  } else {
+    delete migrated.metadata.totalDebitSum;
+    delete migrated.metadata.totalCreditSum;
+    delete migrated.metadata.totalDebitMinor;
+    delete migrated.metadata.totalCreditMinor;
+  }
+
+  migrated.metadata.backupSchemaVersion = 7;
+  migrated.metadata.schemaVersion = 7;
+  migrated.metadata.databaseSchemaVersion = DATABASE_SCHEMA_VERSION;
   return migrated;
 }
 
@@ -292,6 +417,10 @@ export async function migrateBackupPayload(payload: unknown): Promise<BackupPayl
     migrated = migrateBackupV5ToV6(migrated);
   }
 
+  if (getBackupSchemaVersion(migrated.metadata) === 6) {
+    migrated = migrateBackupV6ToV7(migrated);
+  }
+
   if (getBackupSchemaVersion(migrated.metadata) === BACKUP_SCHEMA_VERSION) {
     migrated.metadata.backupSchemaVersion = BACKUP_SCHEMA_VERSION;
     migrated.metadata.databaseSchemaVersion =
@@ -307,8 +436,9 @@ export async function migrateBackupPayload(payload: unknown): Promise<BackupPayl
     migrated.metadata.schemaVersion = BACKUP_SCHEMA_VERSION;
   }
 
-  // Final Invariant: Ensure all settings have id matching their key for repository access
-  if (Array.isArray(migrated.settings)) {
+  // Legacy migrations normalize setting IDs. Current V7 payloads remain byte-for-byte
+  // intact so an invalid integrity hash cannot be silently rewritten.
+  if (migrated.metadata.originalSchemaVersion !== undefined && Array.isArray(migrated.settings)) {
     migrated.settings = migrated.settings.map(s => ({
       ...s,
       id: s.key // Critical: SettingsRepository.get(key) uses db.settings.get(key)
@@ -319,5 +449,10 @@ export async function migrateBackupPayload(payload: unknown): Promise<BackupPayl
     throw new Error('فشل ترحيل النسخة الاحتياطية إلى الإصدار المطلوب (Backup Migration Incomplete)');
   }
 
+  // The caller verifies the original hash before migration. Re-sign only payloads
+  // actually migrated from an older version; never bless a malformed current V7 hash.
+  if (migrated.metadata.originalSchemaVersion !== undefined) {
+    migrated.metadata.integrityHash = await calculateBackupPayloadHash(migrated);
+  }
   return migrated;
 }

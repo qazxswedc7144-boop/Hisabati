@@ -4,6 +4,7 @@ import { accountRepository } from '../repositories/account.repository';
 import { reportService } from '../services/report.service';
 import { integrityService } from '../services/integrity.service';
 import { backupService } from '../services/backup.service';
+import { verifyCurrentBackupHash } from '../utils/crypto';
 import { formatCurrency } from '../utils/formatters';
 import { decimalToMinor, minorToDecimal, assertValidMinorUnit } from '../money/converter';
 import { getAmountMinor, toDualRepresentation, resolveMoney } from '../money/compat';
@@ -343,18 +344,58 @@ export class FinancialIntegrationTestSuite {
       }
     });
 
-    // FIN-15: Backup Snapshot Integrity and Schema Version 6 Preservation
-    await run('FIN-15', 'النسخ الاحتياطي يحفظ amountMinor وثبات BACKUP_SCHEMA_VERSION=6', async () => {
-      if (BACKUP_SCHEMA_VERSION !== 6) {
-        throw new Error(`إصدار النسخ الاحتياطي غير مطابق: المتوقع 6 الفعلي ${BACKUP_SCHEMA_VERSION}`);
+    // FIN-15: Backup Snapshot Integrity and Schema Version 7 Preservation
+    await run('FIN-15', 'النسخ الاحتياطي يحفظ amountMinor وثبات BACKUP_SCHEMA_VERSION=7', async () => {
+      if (BACKUP_SCHEMA_VERSION !== 7) {
+        throw new Error(`إصدار النسخ الاحتياطي غير مطابق: المتوقع 7 الفعلي ${BACKUP_SCHEMA_VERSION}`);
       }
       const payload = await backupService.generateBackupPayload();
-      if (payload.metadata.backupSchemaVersion !== 6) {
-        throw new Error('لقطة النسخ الاحتياطي لم تستخدم BACKUP_SCHEMA_VERSION=6');
+      if (payload.metadata.backupSchemaVersion !== 7) {
+        throw new Error('لقطة النسخ الاحتياطي لم تستخدم BACKUP_SCHEMA_VERSION=7');
       }
       if (!Array.isArray(payload.transactions)) {
         throw new Error('بيانات المعاملات في النسخة الاحتياطية غير صالحة');
       }
+
+      const kwdAccount = await accountRepository.create({
+        name: 'حساب اختبار إجماليات النسخ بالدينار الكويتي',
+        phone: '771110099',
+        currency: 'KWD',
+      });
+      await engine.createTransaction({
+        accountId: kwdAccount.id,
+        type: 'debit',
+        amount: 1.234,
+        date: '2026-03-10',
+      });
+
+      const multiCurrencyPayload = await backupService.generateBackupPayload();
+      const kwdTotals = multiCurrencyPayload.metadata.currencyTotals?.KWD;
+      if (!kwdTotals || kwdTotals.totalDebitMinor !== 1234 || kwdTotals.totalDebit !== 1.234) {
+        throw new Error('لم تُحفظ إجماليات KWD بدقتها المستقلة داخل النسخة الاحتياطية');
+      }
+      if (
+        multiCurrencyPayload.metadata.totalDebitMinor !== undefined ||
+        multiCurrencyPayload.metadata.totalDebitSum !== undefined
+      ) {
+        throw new Error('تم عرض إجمالي موحد مضلل رغم وجود أكثر من عملة');
+      }
+      if (!(await verifyCurrentBackupHash(multiCurrencyPayload))) {
+        throw new Error('بصمة النسخة الاحتياطية لا تشمل إجماليات العملات المنفصلة');
+      }
+      const payloadValidation = await backupService.validateBackupPayload(multiCurrencyPayload);
+      if (!payloadValidation.isValid) {
+        throw new Error(`النسخة متعددة العملات لم تجتز التحقق: ${payloadValidation.error}`);
+      }
+
+      const tamperedPayload = structuredClone(multiCurrencyPayload);
+      tamperedPayload.metadata.currencyTotals!.KWD!.totalDebitMinor += 1;
+      if (await verifyCurrentBackupHash(tamperedPayload)) {
+        throw new Error('لم تُكتشف محاولة العبث بإجماليات العملة داخل النسخة الاحتياطية');
+      }
+
+      await db.transactions.where('accountId').equals(kwdAccount.id).delete();
+      await db.accounts.delete(kwdAccount.id);
     });
 
     // FIN-16: Full Financial Integrity Verification Check

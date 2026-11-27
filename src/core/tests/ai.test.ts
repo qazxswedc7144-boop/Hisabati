@@ -453,6 +453,7 @@ export class AITestSuite {
         const account = await accountService.createAccount({
           name: testAccName,
           phone: '779998888',
+          currency: 'YER',
         });
 
         // 1. AI parses command
@@ -688,7 +689,7 @@ export class AITestSuite {
         // 8. Successful valid command after user confirmation via AIService
         const testAccName = 'عميل اختبار العقد الموحد';
         await db.accounts.where('name').equals(testAccName).delete();
-        const account = await accountService.createAccount({ name: testAccName });
+        const account = await accountService.createAccount({ name: testAccName, currency: 'YER' });
 
         const prompt = `سجل على ${testAccName} 500 ريال`;
         const aiResp = await aiService.ask(prompt);

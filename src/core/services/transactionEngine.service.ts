@@ -94,6 +94,12 @@ export class FinancialTransactionEngine {
    */
   async postTransaction(id: string, actor?: AuditActor): Promise<Transaction> {
     const currentActor = actor || rbacGuard.getActiveActor();
+    await rbacGuard.assertPermission('transactions:update', {
+      actor: currentActor,
+      targetType: 'transaction',
+      targetId: id,
+      details: 'ترحيل مسودة إلى دفتر القيود',
+    });
     const existing = await db.transactions.get(id);
     if (!existing) throw new Error('العملية غير موجودة');
     if (existing.status === 'posted') return existing;
@@ -110,14 +116,6 @@ export class FinancialTransactionEngine {
       if (!freshTrx) throw new Error('العملية اختفت أثناء الترحيل');
       
       const freshStatus = freshTrx.status || 'posted'; // UNIFIED LEGACY POLICY: missing = posted
-      const finalUpdatedTrx: Transaction = {
-        ...freshTrx,
-        status: 'posted',
-        postedAt: now,
-        postedBy: currentActor.id,
-        updatedAt: now,
-      };
-
       if (freshStatus === 'posted') {
         // Already posted (either explicitly or as legacy).
         // If it was already explicitly posted, just return it.
@@ -128,26 +126,54 @@ export class FinancialTransactionEngine {
           return;
         }
         
-        // Legacy transaction: Add explicit status but skip Delta
-        await transaction.table('transactions').put(finalUpdatedTrx);
-        actualResult = finalUpdatedTrx;
+        // Legacy transaction: Add explicit status but skip Delta because its
+        // financial effect is already included in the materialized account balance.
+        const legacyPostedTrx: Transaction = {
+          ...freshTrx,
+          status: 'posted',
+          postedAt: freshTrx.postedAt || now,
+          postedBy: freshTrx.postedBy || currentActor.id,
+          updatedAt: now,
+        };
+        await transaction.table('transactions').put(legacyPostedTrx);
+        actualResult = legacyPostedTrx;
         return;
       }
       if (freshStatus === 'reversed') {
         throw new Error('لا يمكن ترحيل قيد معكوس');
       }
 
-      await transaction.table('transactions').put(finalUpdatedTrx);
-      
       const settingsTable = transaction.table('settings');
       const currencyEntry = await settingsTable.get('currency');
       const systemCurrency = currencyEntry?.value || 'YER';
-      
+      const account = await transaction.table('accounts').get(freshTrx.accountId) as Account | undefined;
+      if (!account) throw new Error('الحساب المرتبط بالمسودة غير موجود');
+
+      // Resolve against the account, not just the system setting. Legacy drafts may
+      // have no currency field; their account currency is authoritative.
       const activeCurrency = resolveRequiredCurrency({
-        transactionCurrency: finalUpdatedTrx.currency,
+        transactionCurrency: freshTrx.currency,
+        accountCurrency: account.currency,
         systemCurrency,
       });
-      
+      const financialAmount = validateAndResolveFinancialAmount(
+        freshTrx.amount,
+        freshTrx.amountMinor,
+        activeCurrency
+      );
+      const finalUpdatedTrx: Transaction = {
+        ...freshTrx,
+        amount: financialAmount.amount,
+        amountMinor: financialAmount.amountMinor,
+        currency: activeCurrency,
+        status: 'posted',
+        postedAt: now,
+        postedBy: currentActor.id,
+        updatedAt: now,
+      };
+
+      await transaction.table('transactions').put(finalUpdatedTrx);
+
       // OPTIMIZED: Incremental update instead of O(N) rebuild
       await this.recalculateAccountBalanceIncremental(finalUpdatedTrx.accountId, {
         amountMinor: finalUpdatedTrx.amountMinor,
@@ -195,11 +221,218 @@ export class FinancialTransactionEngine {
   }
 
   /**
+   * Reverses a posted transaction or an entire multi-leg journal atomically.
+   * Original entries remain immutable and posted; opposite posted entries are appended
+   * and link back through reversalOfTransactionId (legacy correctedByTransactionId is read-only).
+   */
+  async reverseTransaction(id: string, reason: string, actor?: AuditActor): Promise<Transaction[]> {
+    const currentActor = actor || rbacGuard.getActiveActor();
+    await rbacGuard.assertPermission('transactions:reverse', {
+      actor: currentActor,
+      targetType: 'transaction',
+      targetId: id,
+      details: 'إنشاء قيد عكسي مرتبط بالقيد الأصلي',
+    });
+
+    const normalizedReason = typeof reason === 'string' ? reason.trim() : '';
+    if (normalizedReason.length < 5) {
+      throw new Error('سبب العكس مطلوب ويجب ألا يقل عن خمسة أحرف');
+    }
+
+    const activeDb = getDb();
+    let createdNewReversal = false;
+    const reversedEntries = await activeDb.transaction(
+      'rw',
+      activeDb.transactions,
+      activeDb.accounts,
+      activeDb.financialAuditLogs,
+      activeDb.settings,
+      async (transaction) => {
+        const transactionsTable = transaction.table('transactions');
+        const original = await transactionsTable.get(id) as Transaction | undefined;
+        if (!original) throw new Error('القيد الأصلي غير موجود');
+
+        const allTransactions = await transactionsTable.toArray() as Transaction[];
+        const journalEntries = original.operationId
+          ? allTransactions.filter((entry) => entry.operationId === original.operationId && !entry.reversalOfTransactionId)
+          : [original];
+        if (!journalEntries.length || !journalEntries.some((entry) => entry.id === original.id)) {
+          throw new Error('تعذر تحديد مجموعة القيد الأصلي بصورة آمنة');
+        }
+
+        const sourceIds = new Set(journalEntries.map((entry) => entry.id));
+        const existingReversals = allTransactions.filter((entry) =>
+          !!entry.reversalOfTransactionId && sourceIds.has(entry.reversalOfTransactionId)
+        );
+        const reversalsBySource = new Map<string, Transaction[]>();
+        for (const reversal of existingReversals) {
+          const sourceId = reversal.reversalOfTransactionId!;
+          const matches = reversalsBySource.get(sourceId) || [];
+          matches.push(reversal);
+          reversalsBySource.set(sourceId, matches);
+        }
+        const alreadyCorrected = journalEntries.filter((entry) => !!entry.correctedByTransactionId);
+        const expectedReverseOperationId = `reverse_${original.operationId || original.id}`;
+        const complete = existingReversals.length === journalEntries.length &&
+          journalEntries.every((entry) => {
+            const matches = reversalsBySource.get(entry.id) || [];
+            if (matches.length !== 1) return false;
+            const reversal = matches[0];
+            return (!entry.correctedByTransactionId || entry.correctedByTransactionId === reversal.id) &&
+              reversal.operationId === expectedReverseOperationId &&
+              (reversal.status || 'posted') === 'posted' &&
+              reversal.accountId === entry.accountId &&
+              reversal.type === (entry.type === 'debit' ? 'credit' : 'debit') &&
+              reversal.amountMinor === entry.amountMinor &&
+              (!entry.currency || reversal.currency === entry.currency);
+          });
+        if (complete) {
+          const orderedReversals = journalEntries.map((entry) => reversalsBySource.get(entry.id)![0]);
+          // Fail closed for legacy reversal rows with no reason: accepting an
+          // absent reason would let an incomplete retry masquerade as idempotent.
+          if (orderedReversals.some((reversal) =>
+            reversal.reversalReason !== normalizedReason
+          )) {
+            throw new Error('سبب العكس لا يطابق سبب العملية العكسية المسجلة سابقاً');
+          }
+          return orderedReversals;
+        }
+        if (alreadyCorrected.length > 0 || existingReversals.length > 0) {
+          throw new Error('حالة العكس غير مكتملة أو متعارضة؛ يلزم فحص النزاهة قبل إعادة المحاولة');
+        }
+
+        for (const entry of journalEntries) {
+          if ((entry.status || 'posted') !== 'posted') {
+            throw new Error('لا يمكن عكس قيد غير مرحّل أو معكوس');
+          }
+          if (!Number.isSafeInteger(entry.amountMinor) || (entry.amountMinor || 0) <= 0) {
+            throw new Error('لا يمكن عكس قيد لا يحتوي على مبلغ صحيح بالوحدات الصغرى');
+          }
+        }
+
+        const currencyEntry = await transaction.table('settings').get('currency');
+        const systemCurrency = currencyEntry?.value || 'YER';
+        const journalCurrencies = new Set<string>();
+        let totalDebitMinor = 0;
+        let totalCreditMinor = 0;
+        for (const entry of journalEntries) {
+          const account = await transaction.table('accounts').get(entry.accountId) as Account | undefined;
+          if (!account) throw new Error(`الحساب المرتبط بالقيد الأصلي غير موجود: ${entry.accountId}`);
+          const resolvedCurrency = resolveRequiredCurrency({
+            transactionCurrency: entry.currency,
+            accountCurrency: account.currency,
+            systemCurrency,
+          });
+          journalCurrencies.add(resolvedCurrency);
+          if (entry.type === 'debit') totalDebitMinor += entry.amountMinor!;
+          else totalCreditMinor += entry.amountMinor!;
+          if (!Number.isSafeInteger(totalDebitMinor) || !Number.isSafeInteger(totalCreditMinor)) {
+            throw new Error('إجمالي مجموعة القيود يتجاوز النطاق الآمن للحسابات المالية');
+          }
+        }
+        if (journalCurrencies.size !== 1) {
+          throw new Error('لا يمكن عكس مجموعة قيود تحتوي على عملات مختلطة');
+        }
+        if (journalEntries.length > 1 && totalDebitMinor !== totalCreditMinor) {
+          throw new Error('لا يمكن عكس مجموعة قيود غير متوازنة؛ يلزم فحص النزاهة أولاً');
+        }
+
+        const reverseOperationId = `reverse_${original.operationId || original.id}`;
+        const operationIdCollision = allTransactions.filter((entry) => entry.operationId === reverseOperationId);
+        if (operationIdCollision.length) {
+          throw new Error('معرف عملية العكس مستخدم مسبقاً ولا يطابق عكساً مكتملاً للقيد الأصلي');
+        }
+
+        const created: Transaction[] = [];
+        const now = new Date().toISOString();
+
+        for (const source of journalEntries) {
+          const account = await transaction.table('accounts').get(source.accountId) as Account | undefined;
+          if (!account) throw new Error(`الحساب المرتبط بالقيد الأصلي غير موجود: ${source.accountId}`);
+          const currency = resolveRequiredCurrency({
+            transactionCurrency: source.currency,
+            accountCurrency: account.currency,
+            systemCurrency,
+          });
+          const reversal: Transaction = {
+            id: `trx_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+            accountId: source.accountId,
+            type: source.type === 'debit' ? 'credit' : 'debit',
+            amount: source.amount,
+            amountMinor: source.amountMinor,
+            currency,
+            date: now.split('T')[0],
+            note: `عكس القيد ${source.id}. سبب العكس: ${normalizedReason}${source.note ? `. البيان الأصلي: ${source.note}` : ''}`,
+            receiptNumber: undefined,
+            operationId: reverseOperationId,
+            status: 'posted',
+            postedAt: now,
+            postedBy: currentActor.id,
+            reversalOfTransactionId: source.id,
+            reversalReason: normalizedReason,
+            createdAt: now,
+            updatedAt: now,
+          };
+
+          await transactionsTable.add(reversal);
+          // Append-only ledger: the original posted row is never mutated by reversal.
+          await this.recalculateAccountBalanceIncremental(source.accountId, {
+            amountMinor: source.amountMinor!,
+            type: reversal.type,
+            action: 'add',
+            date: reversal.date,
+          }, currency, transaction);
+          await financialAuditService.logFinancialEvent({
+            eventType: 'TRANSACTION_REVERSE',
+            targetType: 'transaction',
+            targetId: reversal.id,
+            amountMinor: reversal.amountMinor,
+            currency,
+            operationId: reverseOperationId,
+            beforeState: {
+              amountMinor: source.amountMinor || 0,
+              accountId: source.accountId,
+              type: source.type,
+              revision: source.id,
+            },
+            afterState: {
+              amountMinor: reversal.amountMinor || 0,
+              accountId: reversal.accountId,
+              type: reversal.type,
+              revision: reversal.id,
+            },
+            metadata: { reversalOfTransactionId: source.id, originalOperationId: source.operationId, reversalReason: normalizedReason },
+            tx: transaction,
+          });
+          created.push(reversal);
+        }
+        createdNewReversal = true;
+        return created;
+      }
+    );
+
+    if (createdNewReversal) for (const reversal of reversedEntries) {
+      try {
+        const account = await db.accounts.get(reversal.accountId);
+        if (account) await this.postProcessTransaction(reversal, 'CREATE', currentActor, account);
+      } catch (error) {
+        console.warn('[reverseTransaction] Post-process failed safely:', error);
+      }
+    }
+    return reversedEntries;
+  }
+
+  /**
    * Creates a transaction with strict financial validation, precision rounding,
    * deduplication / idempotency check, atomic persistence, and derived balance recalculation.
    */
   async createTransaction(dto: CreateTransactionDTO, actor?: AuditActor, options?: { isRemote?: boolean }): Promise<Transaction> {
     const currentActor = actor || rbacGuard.getActiveActor();
+
+    // REVERSED is produced only by the dedicated append-only reversal operation.
+    if (dto.status !== undefined && dto.status !== 'draft' && dto.status !== 'posted') {
+      throw new Error('حالة القيد عند الإنشاء يجب أن تكون مسودة أو مرحّلة؛ العكس له مسار مستقل');
+    }
 
     // 0. Strict RBAC Guard Assertion (Guarded Execution Gate)
     await rbacGuard.assertPermission('transactions:create', {
@@ -253,6 +486,7 @@ export class FinancialTransactionEngine {
 
     const executionPromise = (async () => {
       let createdTransaction: Transaction | null = null;
+      let createdNewTransaction = false;
       let nextInvoiceNumberToCommit: number | undefined = undefined;
 
       const now = new Date().toISOString();
@@ -269,15 +503,39 @@ export class FinancialTransactionEngine {
         const freshSettingsInside: any = { ...DEFAULT_SETTINGS };
         for (const e of settingsEntries) freshSettingsInside[e.key] = e.value;
 
+        // Revalidate the account currency inside the same transaction as the ledger write.
+        const freshAccountInside = await transaction.table('accounts').get(dto.accountId) as Account | undefined;
+        if (!freshAccountInside) throw new Error('الحساب المحدد لم يعد موجوداً');
+        const currencyInside = resolveRequiredCurrency({
+          transactionCurrency: dto.currency,
+          accountCurrency: freshAccountInside.currency,
+          systemCurrency: freshSettingsInside.currency,
+        });
+        if (currencyInside !== activeCurrency) {
+          throw new Error('عملة الحساب أو إعداد العملة تغيرت أثناء إنشاء العملية؛ أعد المحاولة');
+        }
+
         // Check if explicit operationId exists in DB
         if (explicitOpId) {
-          const existingTrx = await transaction.table('transactions').where('operationId').equals(explicitOpId).first();
+          const existingMatches = await transaction.table('transactions').where('operationId').equals(explicitOpId).toArray();
+          const existingTrx = existingMatches[0];
           if (existingTrx) {
+            if (existingMatches.length !== 1 || existingTrx.reversalOfTransactionId) {
+              throw new Error('الرقم المرجعي operationId مرتبط بقيد متعدد الأطراف أو عكسي ولا يمكن إعادة استخدامه كقيد مفرد');
+            }
             // Check for conflict: same operationId used for different transaction payload
             if (
               existingTrx.accountId !== dto.accountId ||
               existingTrx.type !== dto.type ||
-              existingTrx.amountMinor !== safeAmountMinor
+              existingTrx.amountMinor !== safeAmountMinor ||
+              (existingTrx.currency || activeCurrency) !== activeCurrency ||
+              (dto.date !== undefined && existingTrx.date !== dto.date) ||
+              (dto.note !== undefined && (existingTrx.note || undefined) !== (dto.note.trim() || undefined)) ||
+              (dto.receiptNumber !== undefined && (existingTrx.receiptNumber || undefined) !== (dto.receiptNumber.trim() || undefined)) ||
+              (dto.receiptId !== undefined && (existingTrx.receiptId || undefined) !== (dto.receiptId.trim() || undefined)) ||
+              (dto.documentRef !== undefined && (existingTrx.documentRef || undefined) !== (dto.documentRef || undefined)) ||
+              (dto.documentMetadata !== undefined && JSON.stringify(existingTrx.documentMetadata || null) !== JSON.stringify(dto.documentMetadata || null)) ||
+              (existingTrx.status || 'posted') !== (dto.status || 'posted')
             ) {
               throw new Error('الرقم المرجعي operationId مستخدم سابقاً مع بيانات عملية مختلفة');
             }
@@ -363,6 +621,7 @@ export class FinancialTransactionEngine {
         });
 
         createdTransaction = newTransaction;
+        createdNewTransaction = true;
       });
 
       if (!createdTransaction) {
@@ -378,8 +637,11 @@ export class FinancialTransactionEngine {
         }
       }
 
-      // Post-commit side effects (Audit trail & Sync enqueue)
-      await this.postProcessTransaction(createdTransaction, 'CREATE', currentActor, account, options);
+      // Post-commit side effects run only for a newly committed row; an idempotent
+      // retry must not enqueue duplicate sync mutations or duplicate audit events.
+      if (createdNewTransaction) {
+        await this.postProcessTransaction(createdTransaction, 'CREATE', currentActor, account, options);
+      }
 
       return createdTransaction;
     })();
@@ -455,21 +717,61 @@ export class FinancialTransactionEngine {
    */
   async createDoubleEntry(dto: CreateDoubleEntryDTO, actor?: AuditActor): Promise<Transaction[]> {
     const currentActor = actor || rbacGuard.getActiveActor();
+    if (dto.status !== undefined && dto.status !== 'draft' && dto.status !== 'posted') {
+      throw new Error('حالة القيد عند الإنشاء يجب أن تكون مسودة أو مرحّلة؛ العكس له مسار مستقل');
+    }
+
+    await rbacGuard.assertPermission('transactions:create', {
+      actor: currentActor,
+      targetType: 'transaction',
+      details: 'إنشاء قيد يومية مزدوج متعدد الأطراف',
+    });
+
     const freshSettings = await settingsRepository.getSettings();
-    const currency = dto.currency || freshSettings.currency || 'YER';
     const date = dto.date || new Date().toISOString().split('T')[0];
 
-    if (dto.entries.length < 2) {
+    if (!Array.isArray(dto.entries) || dto.entries.length < 2) {
       throw new Error('القيد المزدوج يجب أن يحتوي على طرفين على الأقل');
     }
 
-    // Resolve and validate all legs
+    // Resolve every leg against its real account. A journal is single-currency:
+    // cross-currency postings require an explicit FX journal, not arithmetic mixing.
+    let currency: CurrencyCode | undefined;
     let totalDebitMinor = 0;
     let totalCreditMinor = 0;
     const validatedLegs: (JournalEntryLeg & { resolvedAmountMinor: number; resolvedAmount: number })[] = [];
+    const accountsById = new Map<string, Account>();
 
     for (const leg of dto.entries) {
-      const { amountMinor, amount } = validateAndResolveFinancialAmount(leg.amount, leg.amountMinor, currency);
+      if (!leg || typeof leg.accountId !== 'string' || !leg.accountId.trim()) {
+        throw new Error('كل طرف في القيد يجب أن يرتبط بحساب صالح');
+      }
+      if (leg.type !== 'debit' && leg.type !== 'credit') {
+        throw new Error(`نوع الطرف غير صالح: ${String(leg.type)}`);
+      }
+
+      let account = accountsById.get(leg.accountId);
+      if (!account) {
+        const found = await db.accounts.get(leg.accountId);
+        if (!found) throw new Error(`الحساب المحدد غير موجود: ${leg.accountId}`);
+        account = found;
+        accountsById.set(leg.accountId, account);
+      }
+
+      const legCurrency = resolveRequiredCurrency({
+        transactionCurrency: dto.currency,
+        accountCurrency: account.currency,
+        systemCurrency: freshSettings.currency,
+      });
+      if (currency && currency !== legCurrency) {
+        throw new Error(`[Financial Safety] لا يمكن إنشاء قيد يومية بعملات مختلطة (${currency} و${legCurrency}) دون قيد صرف صريح`);
+      }
+      currency = legCurrency;
+
+      const { amountMinor, amount } = validateAndResolveFinancialAmount(leg.amount, leg.amountMinor, legCurrency);
+      if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
+        throw new Error('يجب أن يكون مبلغ كل طرف عدداً صحيحاً موجباً بالوحدات الصغرى');
+      }
       validatedLegs.push({
         ...leg,
         resolvedAmountMinor: amountMinor,
@@ -478,7 +780,13 @@ export class FinancialTransactionEngine {
 
       if (leg.type === 'debit') totalDebitMinor += amountMinor;
       else totalCreditMinor += amountMinor;
+
+      if (!Number.isSafeInteger(totalDebitMinor) || !Number.isSafeInteger(totalCreditMinor)) {
+        throw new Error('إجمالي القيد يتجاوز النطاق الآمن للحسابات المالية');
+      }
     }
+
+    if (!currency) throw new Error('تعذر تحديد عملة القيد');
 
     // ENFORCE INVARIANT: SUM(DEBITS) = SUM(CREDITS)
     if (totalDebitMinor !== totalCreditMinor) {
@@ -498,19 +806,66 @@ export class FinancialTransactionEngine {
 
     const executionPromise = (async () => {
       const createdTransactions: Transaction[] = [];
+      let createdNewJournal = false;
 
       const activeDb = getDb();
       await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, activeDb.settings, async (transaction) => {
-        // Check idempotency in DB
+        // Check idempotency in DB by comparing the complete normalized journal payload.
         const existing = await transaction.table('transactions').where('operationId').equals(operationId).first();
         if (existing) {
           const allSiblings = await transaction.table('transactions').where('operationId').equals(operationId).toArray();
-          const existingDebitSum = allSiblings.filter(t => t.type === 'debit').reduce((s, t) => s + (t.amountMinor || 0), 0);
-          if (allSiblings.length !== validatedLegs.length || existingDebitSum !== totalDebitMinor) {
-            throw new Error('الرقم المرجعي operationId مستخدم لقيد مزدوج مختلف');
+          if (allSiblings.some((entry) => !!entry.reversalOfTransactionId)) {
+            throw new Error('الرقم المرجعي operationId مرتبط بقيود عكسية ولا يمكن إعادة استخدامه لإنشاء قيد يومية');
+          }
+          const compareLegNotes = dto.note !== undefined || dto.entries.some((entry) => entry.note !== undefined);
+          const compareLegReceipts = dto.receiptNumber !== undefined || dto.entries.some((entry) => entry.receiptNumber !== undefined);
+          const normalizeLeg = (leg: any) => ({
+            accountId: leg.accountId,
+            type: leg.type,
+            amountMinor: leg.resolvedAmountMinor ?? leg.amountMinor,
+            // Currency is part of the normalized payload even when inferred from account settings.
+            currency: (leg.currency || currency) as CurrencyCode,
+            date: dto.date !== undefined ? date : undefined,
+            note: compareLegNotes ? (leg.note || undefined) : undefined,
+            receiptNumber: compareLegReceipts ? (leg.receiptNumber || undefined) : undefined,
+            status: leg.status || 'posted',
+          });
+          const sortPayload = (items: any[]) => items
+            .map(normalizeLeg)
+            .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+          const expectedPayload = sortPayload(validatedLegs.map((leg) => ({
+            accountId: leg.accountId,
+            type: leg.type,
+            amountMinor: leg.resolvedAmountMinor,
+            currency,
+            date,
+            note: leg.note || dto.note || undefined,
+            receiptNumber: leg.receiptNumber || dto.receiptNumber || undefined,
+            status: dto.status || 'posted',
+          })));
+          const actualPayload = sortPayload(allSiblings);
+          if (
+            allSiblings.length !== validatedLegs.length ||
+            JSON.stringify(actualPayload) !== JSON.stringify(expectedPayload)
+          ) {
+            throw new Error('الرقم المرجعي operationId مستخدم لقيد مزدوج ببيانات مختلفة');
           }
           createdTransactions.push(...allSiblings);
           return;
+        }
+
+        // Re-read each account inside the same write transaction before any ledger write.
+        for (const leg of validatedLegs) {
+          const account = await transaction.table('accounts').get(leg.accountId) as Account | undefined;
+          if (!account) throw new Error(`الحساب المحدد لم يعد موجوداً: ${leg.accountId}`);
+          const currentCurrency = resolveRequiredCurrency({
+            transactionCurrency: currency,
+            accountCurrency: account.currency,
+            systemCurrency: freshSettings.currency,
+          });
+          if (currentCurrency !== currency) {
+            throw new Error(`عملة الحساب ${leg.accountId} تغيرت أثناء إنشاء القيد`);
+          }
         }
 
         for (const leg of validatedLegs) {
@@ -563,9 +918,10 @@ export class FinancialTransactionEngine {
 
           createdTransactions.push(trx);
         }
+        createdNewJournal = true;
       });
 
-      for (const trx of createdTransactions) {
+      if (createdNewJournal) for (const trx of createdTransactions) {
         try {
           const acc = await db.accounts.get(trx.accountId);
           if (acc) await this.postProcessTransaction(trx, 'CREATE', currentActor, acc);
@@ -617,7 +973,13 @@ export class FinancialTransactionEngine {
 
     const freshSettings = await settingsRepository.getSettings();
     const activeDb = getDb();
-    const { updatedTrx, targetAccount } = await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, async (transaction) => {
+    const { updatedTrx, targetAccount } = await activeDb.transaction(
+      'rw',
+      activeDb.transactions,
+      activeDb.accounts,
+      activeDb.financialAuditLogs,
+      activeDb.settings,
+      async (transaction) => {
       // Authoritative read and immutable-ledger validation are atomic with write.
       const freshTrx = await transaction.table('transactions').get(id) as Transaction | undefined;
       if (!freshTrx) throw new Error(`العملية رقم ${id} غير موجودة`);
@@ -641,10 +1003,12 @@ export class FinancialTransactionEngine {
       const account = await transaction.table('accounts').get(targetAccountId) as Account | undefined;
       if (!account) throw new Error('الحساب المرتبط غير موجود');
 
+      const currencyEntry = await transaction.table('settings').get('currency');
+      const systemCurrency = currencyEntry?.value || freshSettings.currency;
       const activeCurrency = resolveRequiredCurrency({
         transactionCurrency: dto.currency,
         accountCurrency: account.currency,
-        systemCurrency: freshSettings.currency,
+        systemCurrency,
       });
 
       let financial;
@@ -675,9 +1039,11 @@ export class FinancialTransactionEngine {
       const accountChanged = oldAccountId !== targetAccountId;
 
       if (statusChanged || amountChanged || typeChanged || accountChanged) {
-        await this.recalculateAccountBalance(oldAccountId, activeCurrency, transaction);
+        // Rebuild each affected account using its own authoritative currency.
+        // The source and destination accounts may legitimately use different currencies.
+        await this.recalculateAccountBalance(oldAccountId, undefined, transaction);
         if (accountChanged) {
-          await this.recalculateAccountBalance(targetAccountId, activeCurrency, transaction);
+          await this.recalculateAccountBalance(targetAccountId, undefined, transaction);
         }
       }
 
@@ -825,7 +1191,15 @@ export class FinancialTransactionEngine {
       .equals(accountId)
       .toArray();
 
-    const metrics = computeAccountMetricsFromTransactions(transactions, currency);
+    const currencyEntry = await database.table('settings').get('currency');
+    const systemCurrency = currencyEntry?.value || 'YER';
+    const inferredTransactionCurrency = transactions.find((trx: Transaction) => trx.currency)?.currency;
+    const activeCurrency = resolveRequiredCurrency({
+      transactionCurrency: currency || inferredTransactionCurrency,
+      accountCurrency: account.currency,
+      systemCurrency,
+    });
+    const metrics = computeAccountMetricsFromTransactions(transactions, activeCurrency);
     const now = new Date().toISOString();
 
     const updatedFields = {
@@ -885,10 +1259,6 @@ export class FinancialTransactionEngine {
   async recalculateAllBalances(currency?: CurrencyCode): Promise<{ accountsUpdated: number }> {
     const systemCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER');
 
-    const activeCurrency = resolveRequiredCurrency({
-      transactionCurrency: currency,
-      systemCurrency,
-    });
     const allAccounts = await db.accounts.toArray();
     let count = 0;
 
@@ -897,7 +1267,10 @@ export class FinancialTransactionEngine {
       const batch = allAccounts.slice(i, i + batchSize);
       await Promise.all(
         batch.map(async (acc) => {
-          await this.recalculateAccountBalance(acc.id, activeCurrency);
+          const accountTransactions = await db.transactions.where('accountId').equals(acc.id).toArray();
+          const inferredTransactionCurrency = accountTransactions.find((trx) => trx.currency)?.currency as CurrencyCode | undefined;
+          const accountCurrency = (acc.currency || inferredTransactionCurrency || currency || systemCurrency) as CurrencyCode;
+          await this.recalculateAccountBalance(acc.id, accountCurrency);
         })
       );
       count += batch.length;
@@ -965,24 +1338,33 @@ export class FinancialTransactionEngine {
    */
   async getGlobalSummary(currency?: CurrencyCode): Promise<TransactionSummary & { totalDebitMinor: number; totalCreditMinor: number; netBalanceMinor: number }> {
     const allAccounts = await db.accounts.toArray();
-    
+
     let totalDebitMinor = 0;
     let totalCreditMinor = 0;
     let totalTransactions = 0;
+
+    const systemCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER');
+    const accountCurrencies = new Set<CurrencyCode>();
 
     for (const acc of allAccounts) {
       totalDebitMinor += acc.totalDebitMinor || 0;
       totalCreditMinor += acc.totalCreditMinor || 0;
       totalTransactions += acc.transactionCount || 0;
+      const accountTransactions = await db.transactions.where('accountId').equals(acc.id).toArray();
+      const inferredCurrency = accountTransactions.find((trx) => trx.currency)?.currency as CurrencyCode | undefined;
+      accountCurrencies.add((acc.currency || inferredCurrency || systemCurrency) as CurrencyCode);
     }
 
-    const systemCurrency = await settingsRepository.get<CurrencyCode>('currency', 'YER');
+    if (accountCurrencies.size > 1) {
+      throw new Error('[Financial Safety] Global summary cannot combine multiple account currencies without explicit FX conversion.');
+    }
+    const ledgerCurrency = Array.from(accountCurrencies)[0] || systemCurrency;
+    if (currency && currency !== ledgerCurrency) {
+      throw new Error(`[Financial Safety] Requested summary currency ${currency} does not match ledger currency ${ledgerCurrency}; FX conversion is required.`);
+    }
 
     const netBalanceMinor = totalDebitMinor - totalCreditMinor;
-    const activeCurrency = resolveRequiredCurrency({
-      transactionCurrency: currency,
-      systemCurrency,
-    });
+    const activeCurrency = ledgerCurrency;
 
     const { minorToDecimal } = await import('../money/converter');
 

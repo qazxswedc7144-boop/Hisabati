@@ -10,6 +10,7 @@ import {
   FINANCIAL_FORMAT_VERSION,
 } from '../database/schemaVersion';
 import { backupService } from '../services/backup.service';
+import { calculateBackupPayloadHash, verifyBackupIntegrityHash } from '../utils/crypto';
 
 export interface TestResult {
   id: string;
@@ -120,7 +121,7 @@ export class BackupMigratorTestSuite {
     await this.runTest(
       results,
       'MIG-04',
-      'ترحيل نسخة V2 إلى V5 بنجاح وتعيين القيم الافتراضية',
+      'ترحيل نسخة V2 إلى V7 بنجاح وتعيين القيم الافتراضية',
       async () => {
         const p2 = createMockPayload({ schemaVersion: 2 });
         const migrated = await migrateBackupPayload(p2);
@@ -141,7 +142,7 @@ export class BackupMigratorTestSuite {
     await this.runTest(
       results,
       'MIG-05',
-      'توافق النسخة الحالية V5 مع نفسها دون تشويه أي حقول',
+      'توافق النسخة الحالية V7 مع نفسها دون تشويه أي حقول',
       async () => {
         const p5 = createMockPayload({
           backupSchemaVersion: BACKUP_SCHEMA_VERSION,
@@ -149,6 +150,22 @@ export class BackupMigratorTestSuite {
           financialFormatVersion: FINANCIAL_FORMAT_VERSION,
           schemaVersion: BACKUP_SCHEMA_VERSION,
         });
+        p5.accounts = p5.accounts.map(account => ({ ...account, currency: 'SAR', currentBalanceMinor: account.id === 'acc_1' ? 100000 : -50000 }));
+        p5.transactions = p5.transactions.map((trx, index) => ({
+          ...trx,
+          currency: 'SAR',
+          amountMinor: index === 0 ? 100000 : 50000,
+          status: 'posted',
+        }));
+        p5.settings = p5.settings.map(setting => ({ ...setting, id: setting.key }));
+        (p5.metadata as any).currencyTotals = {
+          SAR: { totalDebitMinor: 100000, totalCreditMinor: 50000, totalDebit: 1000, totalCredit: 500 },
+        };
+        p5.metadata.totalDebitSum = 1000;
+        p5.metadata.totalCreditSum = 500;
+        (p5.metadata as any).totalDebitMinor = 100000;
+        (p5.metadata as any).totalCreditMinor = 50000;
+        p5.metadata.integrityHash = await calculateBackupPayloadHash(p5);
         const migrated = await migrateBackupPayload(p5);
 
         if (migrated.metadata.backupSchemaVersion !== BACKUP_SCHEMA_VERSION) {
@@ -157,11 +174,98 @@ export class BackupMigratorTestSuite {
       }
     );
 
-    // 6. Future V6 and V99 Rejection
+    // 5A. V5 legacy hashes survive migration while multi-currency totals are separated.
+    await this.runTest(
+      results,
+      'MIG-05A',
+      'ترحيل V5 متعددة العملات إلى V7 مع الحفاظ على بصمة V5 وفصل الإجماليات',
+      async () => {
+        const legacy = createMockPayload({
+          backupSchemaVersion: 5,
+          schemaVersion: 5,
+          totalDebitSum: 1000,
+          totalCreditSum: 500,
+        });
+        legacy.accounts[0].currency = 'YER';
+        legacy.accounts[1].currency = 'KWD';
+        legacy.settings = legacy.settings.map(setting => ({ ...setting, id: setting.key }));
+        legacy.transactions[0].amount = 1000;
+        legacy.transactions[1].amount = 500;
+        legacy.metadata.integrityHash = await calculateBackupPayloadHash(legacy);
+        if (!(await verifyBackupIntegrityHash(legacy, 5))) {
+          throw new Error('Raw V5 integrity hash fixture is invalid before migration');
+        }
+
+        const migrated = await migrateBackupPayload(legacy);
+        if (migrated.metadata.currencyTotals?.YER?.totalDebitMinor !== 1000) {
+          throw new Error('YER totals were not retained independently');
+        }
+        if (migrated.metadata.currencyTotals?.KWD?.totalCreditMinor !== 500000) {
+          throw new Error('KWD totals were not scaled using three decimal places');
+        }
+        if (migrated.metadata.totalDebitMinor !== undefined || migrated.metadata.totalCreditMinor !== undefined) {
+          throw new Error('Migration retained ambiguous scalar totals for mixed currencies');
+        }
+        if (!(await verifyBackupIntegrityHash(migrated, 7))) {
+          throw new Error('Migrated V5 backup no longer validates its original integrity hash');
+        }
+      }
+    );
+
+    // 5B. A V6 backup migrates to V7 and no longer trusts its old scalar hash for currency totals.
+    await this.runTest(
+      results,
+      'MIG-05B',
+      'ترحيل V6 إلى V7 مع كشف العبث بإجماليات العملات بعد الترحيل',
+      async () => {
+        const legacy = createMockPayload({
+          backupSchemaVersion: 6,
+          schemaVersion: 6,
+          totalDebitSum: 1500,
+          totalCreditSum: 500,
+          totalDebitMinor: 1500,
+          totalCreditMinor: 500,
+        });
+        legacy.accounts[0].currency = 'YER';
+        legacy.accounts[1].currency = 'KWD';
+        legacy.settings = legacy.settings.map(setting => ({ ...setting, id: setting.key }));
+        legacy.transactions[0] = {
+          ...legacy.transactions[0],
+          currency: 'YER',
+          amountMinor: 1000,
+          status: 'posted',
+        } as any;
+        legacy.transactions[1] = {
+          ...legacy.transactions[1],
+          currency: 'KWD',
+          amountMinor: 500000,
+          status: 'posted',
+        } as any;
+        legacy.metadata.integrityHash = await calculateBackupPayloadHash(legacy);
+        if (!(await verifyBackupIntegrityHash(legacy, 6))) {
+          throw new Error('Raw V6 integrity hash fixture is invalid before migration');
+        }
+
+        const migrated = await migrateBackupPayload(legacy);
+        if (migrated.metadata.backupSchemaVersion !== 7) {
+          throw new Error('V6 backup did not migrate to schema V7');
+        }
+        if (!(await verifyBackupIntegrityHash(migrated, 7))) {
+          throw new Error('Migrated V6 backup failed its new V7 integrity hash');
+        }
+        const tampered = structuredClone(migrated);
+        tampered.metadata.currencyTotals!.KWD!.totalCreditMinor += 1;
+        if (await verifyBackupIntegrityHash(tampered, 7)) {
+          throw new Error('V7 verification incorrectly fell back to the legacy V6 hash');
+        }
+      }
+    );
+
+    // 6. Future V8 and V99 Rejection
     await this.runTest(
       results,
       'MIG-06',
-      'رفض النسخ المستقبلية V6 أو V99 فورياً وحماية البيانات من الرجوع للخلف',
+      'رفض النسخ المستقبلية V8 أو V99 فورياً وحماية البيانات من الرجوع للخلف',
       async () => {
         const futurePayload6 = createMockPayload({ backupSchemaVersion: BACKUP_SCHEMA_VERSION + 1 });
         let rejected6 = false;

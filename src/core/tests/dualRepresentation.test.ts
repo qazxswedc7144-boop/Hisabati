@@ -201,8 +201,8 @@ export class DualRepresentationTestSuite {
       if (DATABASE_SCHEMA_VERSION !== 13 || db.verno !== DATABASE_SCHEMA_VERSION) {
         throw new Error(`خطأ حرج: إصدار Dexie (${db.verno}) و DATABASE_SCHEMA_VERSION (${DATABASE_SCHEMA_VERSION}) يجب أن يكونا 13.`);
       }
-      if (BACKUP_SCHEMA_VERSION !== 6) {
-        throw new Error(`خطأ حرج: تم تعديل BACKUP_SCHEMA_VERSION إلى ${BACKUP_SCHEMA_VERSION}. يجب أن يبقى 6.`);
+      if (BACKUP_SCHEMA_VERSION !== 7) {
+        throw new Error(`خطأ حرج: تم تعديل BACKUP_SCHEMA_VERSION إلى ${BACKUP_SCHEMA_VERSION}. يجب أن يبقى 7.`);
       }
       if (FINANCIAL_FORMAT_VERSION !== 1) {
         throw new Error(`خطأ حرج: تم تعديل FINANCIAL_FORMAT_VERSION إلى ${FINANCIAL_FORMAT_VERSION}. يجب أن يبقى 1.`);
@@ -242,6 +242,349 @@ export class DualRepresentationTestSuite {
       if (count !== 1) {
         throw new Error(`يجب أن يوجد سجل واحد فقط في قاعدة البيانات، والفعلي: ${count}`);
       }
+    });
+
+    // Test 9: Account metrics must never combine unrelated minor-unit currencies.
+    await run('DUAL-09', 'رفض جمع أرصدة بعملات مختلفة دون تحويل صرف صريح', async () => {
+      const mixedCurrencyTransactions = [
+        { id: 'mix-yer', accountId: 'mix', type: 'debit' as const, amount: 100, amountMinor: 100, currency: 'YER' as const, date: '2026-03-05', createdAt: '2026-03-05T00:00:00.000Z', updatedAt: '2026-03-05T00:00:00.000Z' },
+        { id: 'mix-usd', accountId: 'mix', type: 'credit' as const, amount: 1, amountMinor: 100, currency: 'USD' as const, date: '2026-03-05', createdAt: '2026-03-05T00:00:01.000Z', updatedAt: '2026-03-05T00:00:01.000Z' },
+      ];
+      let rejected = false;
+      try {
+        computeAccountMetricsFromTransactions(mixedCurrencyTransactions as any, 'YER');
+      } catch {
+        rejected = true;
+      }
+      if (!rejected) throw new Error('تم جمع وحدات YER وUSD في رصيد واحد');
+    });
+
+    // Test 10: Double-entry creation validates accounts and single-currency journal policy.
+    await run('DUAL-10', 'رفض القيد المزدوج عند غياب الحساب أو اختلاف عملة الحسابات', async () => {
+      const yerAccount = await accountRepository.create({
+        name: 'حساب قيد يومية بالريال',
+        phone: '770000010',
+        category: 'customer',
+        currency: 'YER',
+      });
+      const sarAccount = await accountRepository.create({
+        name: 'حساب قيد يومية بالريال السعودي',
+        phone: '770000011',
+        category: 'supplier',
+        currency: 'SAR',
+      });
+
+      let missingAccountRejected = false;
+      try {
+        await engine.createDoubleEntry({
+          operationId: 'journal_missing_account_' + Date.now(),
+          entries: [
+            { accountId: yerAccount.id, type: 'debit', amount: 10 },
+            { accountId: 'missing-account-id', type: 'credit', amount: 10 },
+          ],
+        });
+      } catch {
+        missingAccountRejected = true;
+      }
+      if (!missingAccountRejected) throw new Error('تم قبول طرف مرتبط بحساب غير موجود');
+
+      let mixedCurrencyRejected = false;
+      try {
+        await engine.createDoubleEntry({
+          operationId: 'journal_mixed_currency_' + Date.now(),
+          entries: [
+            { accountId: yerAccount.id, type: 'debit', amount: 10 },
+            { accountId: sarAccount.id, type: 'credit', amount: 10 },
+          ],
+        });
+      } catch {
+        mixedCurrencyRejected = true;
+      }
+      if (!mixedCurrencyRejected) throw new Error('تم قبول قيد يومية يجمع عملتين مختلفتين');
+    });
+
+    // Test 11: Reusing a journal operationId with changed leg details must fail.
+    await run('DUAL-11', 'مطابقة جميع تفاصيل القيد عند إعادة استخدام operationId', async () => {
+      const debitAccount = await accountRepository.create({
+        name: 'حساب مدين لاختبار المرجع',
+        phone: '770000012',
+        category: 'customer',
+        currency: 'YER',
+      });
+      const creditAccount = await accountRepository.create({
+        name: 'حساب دائن لاختبار المرجع',
+        phone: '770000013',
+        category: 'supplier',
+        currency: 'YER',
+      });
+      const operationId = 'journal_payload_' + Date.now();
+      await engine.createDoubleEntry({
+        operationId,
+        date: '2026-03-06',
+        entries: [
+          { accountId: debitAccount.id, type: 'debit', amount: 50, note: 'قيد أصلي' },
+          { accountId: creditAccount.id, type: 'credit', amount: 50, note: 'قيد أصلي' },
+        ],
+      });
+
+      let changedPayloadRejected = false;
+      try {
+        await engine.createDoubleEntry({
+          operationId,
+          date: '2026-03-06',
+          entries: [
+            { accountId: debitAccount.id, type: 'debit', amount: 50, note: 'قيد معدل' },
+            { accountId: creditAccount.id, type: 'credit', amount: 50, note: 'قيد معدل' },
+          ],
+        });
+      } catch {
+        changedPayloadRejected = true;
+      }
+      if (!changedPayloadRejected) throw new Error('تم قبول operationId نفسه مع تغيير ملاحظات أطراف القيد');
+    });
+
+    // Test 12: Double-entry retry is idempotent, but changed payload is rejected.
+    await run('DUAL-12', 'إعادة القيد المزدوج بنفس operationId آمنة وتغييره مرفوض', async () => {
+      const debitAccount = await accountRepository.create({
+        name: 'حساب مدين لإعادة القيد',
+        phone: '770000014',
+        category: 'customer',
+        currency: 'YER',
+      });
+      const creditAccount = await accountRepository.create({
+        name: 'حساب دائن لإعادة القيد',
+        phone: '770000015',
+        category: 'supplier',
+        currency: 'YER',
+      });
+      const operationId = 'journal_retry_' + Date.now();
+      const payload = {
+        operationId,
+        date: '2026-03-07',
+        entries: [
+          { accountId: debitAccount.id, type: 'debit' as const, amount: 25, note: 'إعادة آمنة' },
+          { accountId: creditAccount.id, type: 'credit' as const, amount: 25, note: 'إعادة آمنة' },
+        ],
+      };
+      const first = await engine.createDoubleEntry(payload);
+      const retry = await engine.createDoubleEntry(payload);
+      if (first.length !== 2 || retry.length !== 2 || first.some((entry) => !retry.some((candidate) => candidate.id === entry.id))) {
+        throw new Error('إعادة الطلب بنفس operationId لم تُرجع أطراف القيد الأصلية');
+      }
+
+      let changedPayloadRejected = false;
+      try {
+        await engine.createDoubleEntry({
+          ...payload,
+          entries: [
+            { accountId: debitAccount.id, type: 'debit', amount: 26, note: 'إعادة آمنة' },
+            { accountId: creditAccount.id, type: 'credit', amount: 26, note: 'إعادة آمنة' },
+          ],
+        });
+      } catch {
+        changedPayloadRejected = true;
+      }
+      if (!changedPayloadRejected) throw new Error('تم قبول مبالغ مختلفة مع operationId نفسه');
+    });
+
+    // Test 13: Double-entry retries remain idempotent when the date was defaulted at creation time.
+    await run('DUAL-13', 'إعادة قيد يومية بعد مرور الوقت لا تتأثر بالتاريخ الافتراضي', async () => {
+      const debitAccount = await accountRepository.create({
+        name: 'حساب مدين لإعادة التاريخ الافتراضي',
+        phone: '770000016',
+        category: 'customer',
+        currency: 'YER',
+      });
+      const creditAccount = await accountRepository.create({
+        name: 'حساب دائن لإعادة التاريخ الافتراضي',
+        phone: '770000017',
+        category: 'supplier',
+        currency: 'YER',
+      });
+      const journalOperationId = 'journal_retry_without_date_' + Date.now();
+      const journalPayload = {
+        operationId: journalOperationId,
+        entries: [
+          { accountId: debitAccount.id, type: 'debit' as const, amount: 5 },
+          { accountId: creditAccount.id, type: 'credit' as const, amount: 5 },
+        ],
+      };
+      const journalFirst = await engine.createDoubleEntry(journalPayload);
+      await db.transactions.where('operationId').equals(journalOperationId).modify({ date: '2026-01-02' });
+      const journalRetry = await engine.createDoubleEntry(journalPayload);
+      if (journalFirst.length !== journalRetry.length || journalFirst.some((entry) => !journalRetry.some((candidate) => candidate.id === entry.id))) {
+        throw new Error('رفض إعادة القيد المزدوج بسبب التاريخ الافتراضي');
+      }
+    });
+
+
+    // Test 14: operationId cannot cross the single-entry / journal boundary.
+    await run('DUAL-14', 'منع إعادة استخدام operationId بين القيد المفرد والمزدوج', async () => {
+      const debitAccount = await accountRepository.create({
+        name: 'حساب اختبار حد العملية المفردة',
+        phone: '770000018',
+        category: 'customer',
+        currency: 'YER',
+      });
+      const creditAccount = await accountRepository.create({
+        name: 'حساب اختبار حد العملية المزدوجة',
+        phone: '770000019',
+        category: 'supplier',
+        currency: 'YER',
+      });
+      const journalOperationId = 'cross_journal_single_' + Date.now();
+      const journal = await engine.createDoubleEntry({
+        operationId: journalOperationId,
+        entries: [
+          { accountId: debitAccount.id, type: 'debit', amount: 12 },
+          { accountId: creditAccount.id, type: 'credit', amount: 12 },
+        ],
+      });
+      let journalAsSingleRejected = false;
+      try {
+        await engine.createTransaction({
+          accountId: debitAccount.id,
+          type: 'debit',
+          amount: 12,
+          operationId: journalOperationId,
+          date: journal[0].date,
+        });
+      } catch {
+        journalAsSingleRejected = true;
+      }
+      if (!journalAsSingleRejected) throw new Error('أعاد المسار المفرد طرفاً واحداً من قيد يومية مزدوج');
+
+      const singleOperationId = 'cross_single_journal_' + Date.now();
+      await engine.createTransaction({
+        accountId: debitAccount.id,
+        type: 'debit',
+        amount: 7,
+        operationId: singleOperationId,
+        date: '2026-03-08',
+      });
+      let singleAsJournalRejected = false;
+      try {
+        await engine.createDoubleEntry({
+          operationId: singleOperationId,
+          entries: [
+            { accountId: debitAccount.id, type: 'debit', amount: 7 },
+            { accountId: creditAccount.id, type: 'credit', amount: 7 },
+          ],
+        });
+      } catch {
+        singleAsJournalRejected = true;
+      }
+      if (!singleAsJournalRejected) throw new Error('قُبل operationId الخاص بقيد مفرد في مسار القيد المزدوج');
+    });
+
+    // Test 15: reversed is an outcome of reverseTransaction, never a create status.
+    await run('DUAL-15', 'رفض إنشاء قيود بحالة reversed عبر مسارات الإنشاء', async () => {
+      const account = await accountRepository.create({
+        name: 'حساب اختبار حالة العكس',
+        phone: '770000020',
+        category: 'customer',
+        currency: 'YER',
+      });
+      let singleRejected = false;
+      try {
+        await engine.createTransaction({
+          accountId: account.id,
+          type: 'debit',
+          amount: 3,
+          status: 'reversed',
+          date: '2026-03-09',
+        });
+      } catch {
+        singleRejected = true;
+      }
+      let journalRejected = false;
+      try {
+        await engine.createDoubleEntry({
+          status: 'reversed',
+          entries: [
+            { accountId: account.id, type: 'debit', amount: 3 },
+            { accountId: account.id, type: 'credit', amount: 3 },
+          ],
+        });
+      } catch {
+        journalRejected = true;
+      }
+      if (!singleRejected || !journalRejected) {
+        throw new Error('تم قبول حالة reversed مباشرة في أحد مسارات الإنشاء');
+      }
+    });
+
+    // Test 16: Resolved account currency is part of single-transaction idempotency.
+    await run('DUAL-16', 'رفض إعادة استخدام operationId مفرد بعد تغير عملة الحساب', async () => {
+      const account = await accountRepository.create({
+        name: 'حساب اختبار عملة مرجع مفرد',
+        phone: '770000021',
+        category: 'customer',
+        currency: 'YER',
+      });
+      const operationId = 'single_currency_retry_' + Date.now();
+      await engine.createTransaction({
+        accountId: account.id, type: 'debit', amount: 5,
+        operationId, date: '2026-03-10',
+      });
+      await db.accounts.update(account.id, { currency: 'USD' });
+      let changedCurrencyRejected = false;
+      try {
+        await engine.createTransaction({
+          accountId: account.id, type: 'debit', amount: 0.05, amountMinor: 5,
+          operationId, date: '2026-03-10',
+        });
+      } catch {
+        changedCurrencyRejected = true;
+      }
+      if (!changedCurrencyRejected) {
+        throw new Error('تم قبول إعادة محاولة بنفس operationId بعد تغير العملة المستنتجة');
+      }
+      await db.transactions.where('operationId').equals(operationId).delete();
+      await db.accounts.delete(account.id);
+    });
+
+    // Test 17: Resolved currency is part of multi-leg journal idempotency.
+    await run('DUAL-17', 'رفض إعادة استخدام operationId لقيد مزدوج بعد تغير عملة الحسابات', async () => {
+      const debitAccount = await accountRepository.create({
+        name: 'حساب مدين لاختبار عملة اليومية',
+        phone: '770000022',
+        category: 'customer',
+        currency: 'YER',
+      });
+      const creditAccount = await accountRepository.create({
+        name: 'حساب دائن لاختبار عملة اليومية',
+        phone: '770000023',
+        category: 'supplier',
+        currency: 'YER',
+      });
+      const operationId = 'journal_currency_retry_' + Date.now();
+      await engine.createDoubleEntry({
+        operationId,
+        entries: [
+          { accountId: debitAccount.id, type: 'debit', amount: 5 },
+          { accountId: creditAccount.id, type: 'credit', amount: 5 },
+        ],
+      });
+      await db.accounts.update(debitAccount.id, { currency: 'USD' });
+      await db.accounts.update(creditAccount.id, { currency: 'USD' });
+      let changedCurrencyRejected = false;
+      try {
+        await engine.createDoubleEntry({
+          operationId,
+          entries: [
+            { accountId: debitAccount.id, type: 'debit', amount: 0.05, amountMinor: 5 },
+            { accountId: creditAccount.id, type: 'credit', amount: 0.05, amountMinor: 5 },
+          ],
+        });
+      } catch {
+        changedCurrencyRejected = true;
+      }
+      if (!changedCurrencyRejected) {
+        throw new Error('تم قبول إعادة محاولة القيد المزدوج رغم تغير عملة الحسابات');
+      }
+      await db.transactions.where('operationId').equals(operationId).delete();
+      await db.accounts.bulkDelete([debitAccount.id, creditAccount.id]);
     });
 
     const passedCount = results.filter((r) => r.passed).length;

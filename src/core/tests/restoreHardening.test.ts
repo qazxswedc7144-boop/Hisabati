@@ -483,13 +483,13 @@ export class RestoreHardeningTestSuite {
     await this.runTest(
       results,
       'RST-11',
-      'عزل قاعدة البيانات: ثبات Dexie v13 مع ثبات BACKUP_SCHEMA_VERSION=6 و FINANCIAL_FORMAT_VERSION=1',
+      'عزل قاعدة البيانات: ثبات Dexie v13 مع ثبات BACKUP_SCHEMA_VERSION=7 و FINANCIAL_FORMAT_VERSION=1',
       async () => {
         if (DATABASE_SCHEMA_VERSION !== 13) {
           throw new Error(`DATABASE_SCHEMA_VERSION must remain 13, got ${DATABASE_SCHEMA_VERSION}`);
         }
-        if (BACKUP_SCHEMA_VERSION !== 6) {
-          throw new Error(`BACKUP_SCHEMA_VERSION must remain 6, got ${BACKUP_SCHEMA_VERSION}`);
+        if (BACKUP_SCHEMA_VERSION !== 7) {
+          throw new Error(`BACKUP_SCHEMA_VERSION must remain 7, got ${BACKUP_SCHEMA_VERSION}`);
         }
         if (FINANCIAL_FORMAT_VERSION !== 1) {
           throw new Error(`FINANCIAL_FORMAT_VERSION must remain 1, got ${FINANCIAL_FORMAT_VERSION}`);
