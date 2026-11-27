@@ -15,6 +15,8 @@ import { validateStructuredAICommand } from './aiValidation';
 import { Transaction, Permission } from '@/shared/types';
 
 import { aiCommandRepository } from '@/core/repositories/aiCommand.repository';
+import { aiTextSafetyGuard } from './AITextSafetyGuard';
+import { aiAuditRetryService } from './AIAuditRetryService';
 
 export class AIService {
   private activeProvider: AIProvider = localFallbackProvider;
@@ -56,6 +58,11 @@ export class AIService {
       throw new Error('الرجاء كتابة سؤال أو طلب مالي.');
     }
 
+    // Retry previously deferred audit events opportunistically on the next AI request.
+    void aiAuditRetryService.retryDue().catch((error) => {
+      console.warn('[AIService] Deferred audit retry pass failed:', error);
+    });
+
     // 1. Throttling
     const now = Date.now();
     if (now - this.lastRequestTimestamp < this.minIntervalMs) {
@@ -95,10 +102,16 @@ export class AIService {
 
       // If a command is generated, validate it and persist its durable record.
       if (response.command) {
-        // Pre-validate to move from PENDING_VALIDATION to READY_FOR_CONFIRMATION or REJECTED
-        await aiValidationService.validate(response.command);
-        // Persist to Dexie for recovery
-        await aiCommandRepository.add(response.command);
+        // ROUND 2-E.4: inspect CREATE text before any durable command persistence.
+        const safetyResult = aiTextSafetyGuard.inspect(rawPrompt, response.command);
+        if (!safetyResult.allowed) {
+          response.command.status = 'REJECTED';
+          response.command.validationErrors = ['تم رفض الطلب بواسطة فاحص سلامة النص قبل الحفظ: ' + safetyResult.reasons.join(', ')];
+        } else {
+          // Existing command validation and lifecycle are unchanged.
+          await aiValidationService.validate(response.command);
+          await aiCommandRepository.add(response.command);
+        }
       }
 
       // Record in AI audit log
@@ -108,10 +121,12 @@ export class AIService {
         promptPreview: aiPrivacyService.sanitizePromptForAudit(rawPrompt),
         intent: response.intent,
         timestamp: new Date().toISOString(),
-        status: 'success',
+        status: response.command?.status === 'REJECTED' ? 'rejected' : 'success',
         provider: response.provider || this.activeProvider.id,
         confidence: response.confidence,
-        action: response.command ? `Prepared command ${response.command.intent}` : `Answered intent ${response.intent}`,
+        action: response.command?.status === 'REJECTED'
+          ? 'Rejected command before durable persistence'
+          : response.command ? `Prepared command ${response.command.intent}` : `Answered intent ${response.intent}`,
         confirmed: false,
       });
 

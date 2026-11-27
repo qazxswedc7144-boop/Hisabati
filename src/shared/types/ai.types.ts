@@ -152,3 +152,15 @@ export interface AIAuditLogEntry {
   confirmed?: boolean;
   relatedEntityId?: string;
 }
+
+/** Durable retry record for an AI audit event that could not be persisted immediately. */
+export interface AIAuditRetryRecord {
+  id: string;
+  eventId: string;
+  payload: AIAuditLogEntry;
+  retryCount: number;
+  lastError: string;
+  nextRetryAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
