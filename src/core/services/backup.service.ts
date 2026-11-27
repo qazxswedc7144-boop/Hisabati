@@ -429,7 +429,7 @@ export class BackupService {
       };
       for (const trx of transactions) {
         if ((trx.status || 'posted') !== 'posted') continue;
-        const relatedAccount = accountsById.get(trx.accountId);
+        const relatedAccount = validatedAccountsById.get(trx.accountId);
         const currency = (trx.currency || relatedAccount?.currency || defaultCurrency) as string;
         const totals = ensureExpected(currency);
         if (trx.type === 'debit') totals.totalDebitMinor += Math.abs(trx.amountMinor);
