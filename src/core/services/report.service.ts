@@ -608,7 +608,8 @@ export class ReportService {
       accountRepository.getAll(options.includeArchived ?? false),
       db.transactions.toArray(),
     ]);
-    const { decimals } = await resolveReportDecimals({ accounts, transactions });
+    const postedLedgerTransactions = transactions.filter((trx) => (trx.status || 'posted') === 'posted');
+    const { decimals } = await resolveReportDecimals({ accounts, transactions: postedLedgerTransactions });
 
     // All active/eligible payable accounts (balance < 0)
     const allPayableAccounts = accounts.filter(
