@@ -45,17 +45,40 @@ try {
   const response = await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 45_000 });
   assert.ok(response?.ok(), 'The PWA shell must load online.');
 
-  await page.evaluate(async () => {
-    if (!('serviceWorker' in navigator)) {
-      throw new Error('Service workers are unavailable in the test browser.');
-    }
-    await navigator.serviceWorker.ready;
-  });
+  await page.waitForFunction(() => 'serviceWorker' in navigator, undefined, { timeout: 10_000 });
+  await page.waitForFunction(
+    async () => Boolean(await navigator.serviceWorker.getRegistration()),
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(() => navigator.serviceWorker.ready);
 
   if (!(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)))) {
     await page.reload({ waitUntil: 'domcontentloaded' });
   }
   await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller), undefined, { timeout: 30_000 });
+
+  const manifestState = await page.evaluate(async () => {
+    const manifestLink = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    if (!manifestLink) {
+      throw new Error('The PWA manifest link is missing.');
+    }
+    const response = await fetch(manifestLink.href);
+    if (!response.ok) {
+      throw new Error(`PWA manifest request failed: ${response.status}`);
+    }
+    const manifest = await response.json();
+    return {
+      direction: manifest.dir,
+      language: manifest.lang,
+      display: manifest.display,
+      icons: manifest.icons,
+    };
+  });
+  assert.equal(manifestState.direction, 'rtl', 'The PWA manifest must preserve RTL direction.');
+  assert.equal(manifestState.language, 'ar', 'The PWA manifest must declare Arabic.');
+  assert.equal(manifestState.display, 'standalone', 'The PWA manifest must use standalone display mode.');
+  assert.ok(Array.isArray(manifestState.icons) && manifestState.icons.length >= 2, 'The PWA manifest must include app icons.');
 
   const cacheState = await page.evaluate(async () => {
     const names = await caches.keys();
@@ -100,6 +123,7 @@ try {
   assert.match(offlineState.title, /Hisabati|حساباتي/i);
   assert.deepEqual(pageErrors, [], 'The PWA must not produce uncaught page errors during online/offline startup.');
 
+  console.log('PASS PWA manifest Arabic RTL metadata and standalone mode');
   console.log('PASS PWA service worker registration and control');
   console.log(`PASS Workbox precache contains ${cacheState.requests.length} cached request(s)`);
   console.log('PASS application shell reloads while browser networking is offline');
