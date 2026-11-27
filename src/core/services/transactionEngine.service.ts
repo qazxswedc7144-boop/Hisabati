@@ -116,14 +116,6 @@ export class FinancialTransactionEngine {
       if (!freshTrx) throw new Error('العملية اختفت أثناء الترحيل');
       
       const freshStatus = freshTrx.status || 'posted'; // UNIFIED LEGACY POLICY: missing = posted
-      const finalUpdatedTrx: Transaction = {
-        ...freshTrx,
-        status: 'posted',
-        postedAt: now,
-        postedBy: currentActor.id,
-        updatedAt: now,
-      };
-
       if (freshStatus === 'posted') {
         // Already posted (either explicitly or as legacy).
         // If it was already explicitly posted, just return it.
@@ -143,17 +135,37 @@ export class FinancialTransactionEngine {
         throw new Error('لا يمكن ترحيل قيد معكوس');
       }
 
-      await transaction.table('transactions').put(finalUpdatedTrx);
-      
       const settingsTable = transaction.table('settings');
       const currencyEntry = await settingsTable.get('currency');
       const systemCurrency = currencyEntry?.value || 'YER';
-      
+      const account = await transaction.table('accounts').get(freshTrx.accountId) as Account | undefined;
+      if (!account) throw new Error('الحساب المرتبط بالمسودة غير موجود');
+
+      // Resolve against the account, not just the system setting. Legacy drafts may
+      // have no currency field; their account currency is authoritative.
       const activeCurrency = resolveRequiredCurrency({
-        transactionCurrency: finalUpdatedTrx.currency,
+        transactionCurrency: freshTrx.currency,
+        accountCurrency: account.currency,
         systemCurrency,
       });
-      
+      const financialAmount = validateAndResolveFinancialAmount(
+        freshTrx.amount,
+        freshTrx.amountMinor,
+        activeCurrency
+      );
+      const finalUpdatedTrx: Transaction = {
+        ...freshTrx,
+        amount: financialAmount.amount,
+        amountMinor: financialAmount.amountMinor,
+        currency: activeCurrency,
+        status: 'posted',
+        postedAt: now,
+        postedBy: currentActor.id,
+        updatedAt: now,
+      };
+
+      await transaction.table('transactions').put(finalUpdatedTrx);
+
       // OPTIMIZED: Incremental update instead of O(N) rebuild
       await this.recalculateAccountBalanceIncremental(finalUpdatedTrx.accountId, {
         amountMinor: finalUpdatedTrx.amountMinor,
