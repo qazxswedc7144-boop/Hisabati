@@ -126,9 +126,17 @@ export class FinancialTransactionEngine {
           return;
         }
         
-        // Legacy transaction: Add explicit status but skip Delta
-        await transaction.table('transactions').put(finalUpdatedTrx);
-        actualResult = finalUpdatedTrx;
+        // Legacy transaction: Add explicit status but skip Delta because its
+        // financial effect is already included in the materialized account balance.
+        const legacyPostedTrx: Transaction = {
+          ...freshTrx,
+          status: 'posted',
+          postedAt: freshTrx.postedAt || now,
+          postedBy: freshTrx.postedBy || currentActor.id,
+          updatedAt: now,
+        };
+        await transaction.table('transactions').put(legacyPostedTrx);
+        actualResult = legacyPostedTrx;
         return;
       }
       if (freshStatus === 'reversed') {
