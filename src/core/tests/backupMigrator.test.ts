@@ -157,13 +157,13 @@ export class BackupMigratorTestSuite {
           amountMinor: index === 0 ? 100000 : 50000,
           status: 'posted',
         }));
-        p5.metadata.currencyTotals = {
+        (p5.metadata as any).currencyTotals = {
           SAR: { totalDebitMinor: 100000, totalCreditMinor: 50000, totalDebit: 1000, totalCredit: 500 },
         };
         p5.metadata.totalDebitSum = 1000;
         p5.metadata.totalCreditSum = 500;
-        p5.metadata.totalDebitMinor = 100000;
-        p5.metadata.totalCreditMinor = 50000;
+        (p5.metadata as any).totalDebitMinor = 100000;
+        (p5.metadata as any).totalCreditMinor = 50000;
         p5.metadata.integrityHash = await calculateBackupPayloadHash(p5);
         const migrated = await migrateBackupPayload(p5);
 
@@ -233,13 +233,13 @@ export class BackupMigratorTestSuite {
           currency: 'YER',
           amountMinor: 1000,
           status: 'posted',
-        };
+        } as any;
         legacy.transactions[1] = {
           ...legacy.transactions[1],
           currency: 'KWD',
           amountMinor: 500000,
           status: 'posted',
-        };
+        } as any;
         legacy.metadata.integrityHash = await calculateBackupPayloadHash(legacy);
         if (!(await verifyBackupIntegrityHash(legacy, 6))) {
           throw new Error('Raw V6 integrity hash fixture is invalid before migration');
