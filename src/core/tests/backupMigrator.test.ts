@@ -150,6 +150,20 @@ export class BackupMigratorTestSuite {
           financialFormatVersion: FINANCIAL_FORMAT_VERSION,
           schemaVersion: BACKUP_SCHEMA_VERSION,
         });
+        p5.accounts = p5.accounts.map(account => ({ ...account, currency: 'SAR', currentBalanceMinor: account.id === 'acc_1' ? 100000 : -50000 }));
+        p5.transactions = p5.transactions.map((trx, index) => ({
+          ...trx,
+          currency: 'SAR',
+          amountMinor: index === 0 ? 100000 : 50000,
+          status: 'posted',
+        }));
+        p5.metadata.currencyTotals = {
+          SAR: { totalDebitMinor: 100000, totalCreditMinor: 50000, totalDebit: 1000, totalCredit: 500 },
+        };
+        p5.metadata.totalDebitSum = 1000;
+        p5.metadata.totalCreditSum = 500;
+        p5.metadata.totalDebitMinor = 100000;
+        p5.metadata.totalCreditMinor = 50000;
         const migrated = await migrateBackupPayload(p5);
 
         if (migrated.metadata.backupSchemaVersion !== BACKUP_SCHEMA_VERSION) {
