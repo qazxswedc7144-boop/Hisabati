@@ -55,7 +55,7 @@ try {
   if (!(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)))) {
     await page.reload({ waitUntil: 'domcontentloaded' });
   }
-  await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller), { timeout: 30_000 });
+  await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller), undefined, { timeout: 30_000 });
 
   const cacheState = await page.evaluate(async () => {
     const names = await caches.keys();
