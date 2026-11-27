@@ -436,8 +436,9 @@ export async function migrateBackupPayload(payload: unknown): Promise<BackupPayl
     migrated.metadata.schemaVersion = BACKUP_SCHEMA_VERSION;
   }
 
-  // Final Invariant: Ensure all settings have id matching their key for repository access
-  if (Array.isArray(migrated.settings)) {
+  // Legacy migrations normalize setting IDs. Current V7 payloads remain byte-for-byte
+  // intact so an invalid integrity hash cannot be silently rewritten.
+  if (migrated.metadata.originalSchemaVersion !== undefined && Array.isArray(migrated.settings)) {
     migrated.settings = migrated.settings.map(s => ({
       ...s,
       id: s.key // Critical: SettingsRepository.get(key) uses db.settings.get(key)
