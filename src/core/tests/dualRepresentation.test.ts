@@ -201,7 +201,7 @@ export class DualRepresentationTestSuite {
       if (DATABASE_SCHEMA_VERSION !== 13 || db.verno !== DATABASE_SCHEMA_VERSION) {
         throw new Error(`خطأ حرج: إصدار Dexie (${db.verno}) و DATABASE_SCHEMA_VERSION (${DATABASE_SCHEMA_VERSION}) يجب أن يكونا 13.`);
       }
-      if (BACKUP_SCHEMA_VERSION !== 6) {
+      if (BACKUP_SCHEMA_VERSION !== 7) {
         throw new Error(`خطأ حرج: تم تعديل BACKUP_SCHEMA_VERSION إلى ${BACKUP_SCHEMA_VERSION}. يجب أن يبقى 6.`);
       }
       if (FINANCIAL_FORMAT_VERSION !== 1) {
