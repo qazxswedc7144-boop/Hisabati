@@ -288,8 +288,10 @@ export class FinancialTransactionEngine {
           });
         if (complete) {
           const orderedReversals = journalEntries.map((entry) => reversalsBySource.get(entry.id)![0]);
+          // Fail closed for legacy reversal rows with no reason: accepting an
+          // absent reason would let an incomplete retry masquerade as idempotent.
           if (orderedReversals.some((reversal) =>
-            reversal.reversalReason !== undefined && reversal.reversalReason !== normalizedReason
+            reversal.reversalReason !== normalizedReason
           )) {
             throw new Error('سبب العكس لا يطابق سبب العملية العكسية المسجلة سابقاً');
           }
