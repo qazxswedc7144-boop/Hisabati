@@ -351,7 +351,7 @@ export class FinancialIntegrationTestSuite {
       }
       const payload = await backupService.generateBackupPayload();
       if (payload.metadata.backupSchemaVersion !== 7) {
-        throw new Error('لقطة النسخ الاحتياطي لم تستخدم BACKUP_SCHEMA_VERSION=6');
+        throw new Error('لقطة النسخ الاحتياطي لم تستخدم BACKUP_SCHEMA_VERSION=7');
       }
       if (!Array.isArray(payload.transactions)) {
         throw new Error('بيانات المعاملات في النسخة الاحتياطية غير صالحة');
