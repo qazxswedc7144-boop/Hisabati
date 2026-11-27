@@ -540,6 +540,8 @@ export class DualRepresentationTestSuite {
       if (!changedCurrencyRejected) {
         throw new Error('تم قبول إعادة محاولة بنفس operationId بعد تغير العملة المستنتجة');
       }
+      await db.transactions.where('operationId').equals(operationId).delete();
+      await db.accounts.delete(account.id);
     });
 
     // Test 17: Resolved currency is part of multi-leg journal idempotency.
@@ -581,6 +583,8 @@ export class DualRepresentationTestSuite {
       if (!changedCurrencyRejected) {
         throw new Error('تم قبول إعادة محاولة القيد المزدوج رغم تغير عملة الحسابات');
       }
+      await db.transactions.where('operationId').equals(operationId).delete();
+      await db.accounts.bulkDelete([debitAccount.id, creditAccount.id]);
     });
 
     const passedCount = results.filter((r) => r.passed).length;
