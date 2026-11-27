@@ -77,6 +77,52 @@ export const ImmutableLedgerTestSuite = {
         afterPostAcc?.currentBalanceMinor === 1500 && afterPostTrx?.status === 'posted'
       );
 
+      // D1. A legacy draft without currency inherits its account currency when posted.
+      const usdAccountId = 'acc_post_usd_' + Date.now();
+      const usdNow = new Date().toISOString();
+      await db.accounts.add({
+        id: usdAccountId, name: 'حساب اختبار ترحيل بالدولار', currency: 'USD',
+        currentBalance: 0, currentBalanceMinor: 0, totalDebit: 0, totalDebitMinor: 0,
+        totalCredit: 0, totalCreditMinor: 0, transactionCount: 0, archived: 0,
+        createdAt: usdNow, updatedAt: usdNow,
+      } as any);
+      const legacyUsdDraftId = 'trx_legacy_usd_draft_' + Date.now();
+      await db.transactions.add({
+        id: legacyUsdDraftId, accountId: usdAccountId, type: 'debit',
+        amount: 1.25, amountMinor: 125, date: '2026-02-01', status: 'draft',
+        createdAt: usdNow, updatedAt: usdNow,
+      } as any);
+      await transactionEngine.postTransaction(legacyUsdDraftId);
+      const postedUsdDraft = await db.transactions.get(legacyUsdDraftId);
+      const postedUsdAccount = await db.accounts.get(usdAccountId);
+      addResult(21, 'ترحيل مسودة قديمة بلا عملة يرث عملة الحساب بدلاً من عملة النظام',
+        postedUsdDraft?.currency === 'USD' &&
+        postedUsdDraft?.amountMinor === 125 &&
+        postedUsdAccount?.currentBalanceMinor === 125 &&
+        postedUsdAccount?.currentBalance === 1.25
+      );
+
+      // D2. An explicitly mismatched draft currency must fail atomically.
+      const mismatchedDraftId = 'trx_mismatched_currency_' + Date.now();
+      await db.transactions.add({
+        id: mismatchedDraftId, accountId: usdAccountId, type: 'debit',
+        amount: 2, amountMinor: 2, currency: 'YER', date: '2026-02-02',
+        status: 'draft', createdAt: usdNow, updatedAt: usdNow,
+      } as any);
+      let mismatchedCurrencyRejected = false;
+      try {
+        await transactionEngine.postTransaction(mismatchedDraftId);
+      } catch {
+        mismatchedCurrencyRejected = true;
+      }
+      const rejectedCurrencyDraft = await db.transactions.get(mismatchedDraftId);
+      const usdAccountAfterRejectedPost = await db.accounts.get(usdAccountId);
+      addResult(22, 'رفض ترحيل عملة مخالفة لعملة الحساب دون تغيير المسودة أو الرصيد',
+        mismatchedCurrencyRejected &&
+        rejectedCurrencyDraft?.status === 'draft' &&
+        usdAccountAfterRejectedPost?.currentBalanceMinor === 125
+      );
+
       // E. POSTED -> update -> Rejected
       let editError = '';
       try {
@@ -411,8 +457,8 @@ export const ImmutableLedgerTestSuite = {
 
       // Cleanup
       await Promise.all([
-        db.transactions.where('accountId').anyOf([testAccountId, testAcc2, reverseAccA, reverseAccB]).delete(),
-        db.accounts.where('id').anyOf([testAccountId, testAcc2, reverseAccA, reverseAccB]).delete()
+        db.transactions.where('accountId').anyOf([testAccountId, testAcc2, reverseAccA, reverseAccB, usdAccountId]).delete(),
+        db.accounts.where('id').anyOf([testAccountId, testAcc2, reverseAccA, reverseAccB, usdAccountId]).delete()
       ]);
 
     } catch (err: any) {
