@@ -225,10 +225,21 @@ export function applyTransactionDelta(
   },
   currency?: CurrencyCode
 ): Partial<Account> & { isInconsistent?: boolean } {
-  const activeCurrency = (currency || account.currency || 'YER') as CurrencyCode;
+  const accountCurrency = account.currency;
+  const requestedCurrency = currency;
+  if (
+    accountCurrency &&
+    requestedCurrency &&
+    accountCurrency.trim().toUpperCase() !== requestedCurrency.trim().toUpperCase()
+  ) {
+    throw new Error(
+      `[Financial Safety] Cannot apply a ${requestedCurrency} balance delta to a ${accountCurrency} account without an explicit FX conversion.`
+    );
+  }
+  const activeCurrency = (requestedCurrency || accountCurrency || 'YER') as CurrencyCode;
   
-  // Integrity check: amountMinor must be a valid integer
-  if (typeof delta.amountMinor !== 'number' || !Number.isInteger(delta.amountMinor)) {
+  // Integrity check: amountMinor must be a valid safe integer
+  if (typeof delta.amountMinor !== 'number' || !Number.isSafeInteger(delta.amountMinor)) {
     return { isInconsistent: true };
   }
 
