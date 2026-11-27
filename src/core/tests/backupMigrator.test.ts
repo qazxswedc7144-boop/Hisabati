@@ -172,6 +172,7 @@ export class BackupMigratorTestSuite {
         });
         legacy.accounts[0].currency = 'YER';
         legacy.accounts[1].currency = 'KWD';
+        legacy.settings = legacy.settings.map(setting => ({ ...setting, id: setting.key }));
         legacy.transactions[0].amount = 1000;
         legacy.transactions[1].amount = 500;
         legacy.metadata.integrityHash = await calculateBackupPayloadHash(legacy);
