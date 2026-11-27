@@ -162,7 +162,7 @@ export class BackupMigratorTestSuite {
     await this.runTest(
       results,
       'MIG-05A',
-      'ترحيل V5 متعددة العملات مع الحفاظ على بصمة V5 وفصل الإجماليات',
+      'ترحيل V5 متعددة العملات إلى V7 مع الحفاظ على بصمة V5 وفصل الإجماليات',
       async () => {
         const legacy = createMockPayload({
           backupSchemaVersion: 5,
@@ -187,8 +187,54 @@ export class BackupMigratorTestSuite {
         if (migrated.metadata.totalDebitMinor !== undefined || migrated.metadata.totalCreditMinor !== undefined) {
           throw new Error('Migration retained ambiguous scalar totals for mixed currencies');
         }
-        if (!(await verifyBackupIntegrityHash(migrated, 6))) {
+        if (!(await verifyBackupIntegrityHash(migrated, 7))) {
           throw new Error('Migrated V5 backup no longer validates its original integrity hash');
+        }
+      }
+    );
+
+    // 5B. A V6 backup migrates to V7 and no longer trusts its old scalar hash for currency totals.
+    await this.runTest(
+      results,
+      'MIG-05B',
+      'ترحيل V6 إلى V7 مع كشف العبث بإجماليات العملات بعد الترحيل',
+      async () => {
+        const legacy = createMockPayload({
+          backupSchemaVersion: 6,
+          schemaVersion: 6,
+          totalDebitSum: 1500,
+          totalCreditSum: 500,
+          totalDebitMinor: 1500,
+          totalCreditMinor: 500,
+        });
+        legacy.accounts[0].currency = 'YER';
+        legacy.accounts[1].currency = 'KWD';
+        legacy.settings = legacy.settings.map(setting => ({ ...setting, id: setting.key }));
+        legacy.transactions[0] = {
+          ...legacy.transactions[0],
+          currency: 'YER',
+          amountMinor: 1000,
+          status: 'posted',
+        };
+        legacy.transactions[1] = {
+          ...legacy.transactions[1],
+          currency: 'KWD',
+          amountMinor: 500000,
+          status: 'posted',
+        };
+        legacy.metadata.integrityHash = await calculateBackupPayloadHash(legacy);
+
+        const migrated = await migrateBackupPayload(legacy);
+        if (migrated.metadata.backupSchemaVersion !== 7) {
+          throw new Error('V6 backup did not migrate to schema V7');
+        }
+        if (!(await verifyBackupIntegrityHash(migrated, 7))) {
+          throw new Error('Migrated V6 backup failed its new V7 integrity hash');
+        }
+        const tampered = structuredClone(migrated);
+        tampered.metadata.currencyTotals!.KWD!.totalCreditMinor += 1;
+        if (await verifyBackupIntegrityHash(tampered, 7)) {
+          throw new Error('V7 verification incorrectly fell back to the legacy V6 hash');
         }
       }
     );
