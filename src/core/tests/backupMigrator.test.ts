@@ -157,6 +157,7 @@ export class BackupMigratorTestSuite {
           amountMinor: index === 0 ? 100000 : 50000,
           status: 'posted',
         }));
+        p5.settings = p5.settings.map(setting => ({ ...setting, id: setting.key }));
         (p5.metadata as any).currencyTotals = {
           SAR: { totalDebitMinor: 100000, totalCreditMinor: 50000, totalDebit: 1000, totalCredit: 500 },
         };
