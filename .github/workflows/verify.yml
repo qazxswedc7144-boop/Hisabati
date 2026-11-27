@@ -2,7 +2,7 @@ name: Verify
 on:
   workflow_dispatch:
   push:
-    branches: ['fix/**', 'feat/**', 'main', 'chore/**']
+    branches: ['fix/**', 'feat/**', 'main', 'chore/**', 'security/**']
   pull_request:
     branches: [main]
 
