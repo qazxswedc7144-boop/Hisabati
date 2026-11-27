@@ -489,7 +489,7 @@ export class RestoreHardeningTestSuite {
           throw new Error(`DATABASE_SCHEMA_VERSION must remain 13, got ${DATABASE_SCHEMA_VERSION}`);
         }
         if (BACKUP_SCHEMA_VERSION !== 7) {
-          throw new Error(`BACKUP_SCHEMA_VERSION must remain 6, got ${BACKUP_SCHEMA_VERSION}`);
+          throw new Error(`BACKUP_SCHEMA_VERSION must remain 7, got ${BACKUP_SCHEMA_VERSION}`);
         }
         if (FINANCIAL_FORMAT_VERSION !== 1) {
           throw new Error(`FINANCIAL_FORMAT_VERSION must remain 1, got ${FINANCIAL_FORMAT_VERSION}`);
