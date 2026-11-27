@@ -328,6 +328,14 @@ export const ImmutableLedgerTestSuite = {
         tamperedRetryRejected = true;
       }
       await db.transactions.put(tamperTarget);
+      await db.transactions.update(tamperTarget.id, { reversalReason: undefined });
+      let missingReasonRetryRejected = false;
+      try {
+        await transactionEngine.reverseTransaction(originalJournal[0].id, reversalReason);
+      } catch {
+        missingReasonRetryRejected = true;
+      }
+      await db.transactions.update(tamperTarget.id, { reversalReason });
       const reverseAfterA = (await db.accounts.get(reverseAccA))?.currentBalanceMinor;
       const reverseAfterB = (await db.accounts.get(reverseAccB))?.currentBalanceMinor;
       const originalsAfterReverse = await Promise.all(originalJournal.map((entry) => db.transactions.get(entry.id)));
@@ -343,7 +351,7 @@ export const ImmutableLedgerTestSuite = {
         reversalEntries.length === 2 &&
         reversalRetry.length === 2 &&
         reversalEntries.every((entry) => reversalRetry.some((retry) => retry.id === entry.id)) &&
-        changedReasonRejected && tamperedRetryRejected && originalsUnchanged &&
+        changedReasonRejected && tamperedRetryRejected && missingReasonRetryRejected && originalsUnchanged &&
         reverseAfterA === 0 && reverseAfterB === 0 && linksValid
       );
 
