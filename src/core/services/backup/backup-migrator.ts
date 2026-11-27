@@ -11,7 +11,7 @@ import {
 } from '../../database/schemaVersion';
 import { BackupPayload, BackupMetadata } from '@/shared/types';
 import { Account, Transaction, SettingsEntry, CurrencyCode } from '@/shared/types';
-import { decimalToMinor } from '../../money/converter';
+import { decimalToMinor, minorToDecimal } from '../../money/converter';
 
 /**
  * Extracts and resolves the backup schema version from metadata.
@@ -212,23 +212,39 @@ export function migrateBackupV5ToV6(payload: unknown): BackupPayload {
 
   const accountsMap = new Map((migrated.accounts || []).map(a => [a.id, a]));
 
-  let totalDebitMinor = 0;
-  let totalCreditMinor = 0;
-  const txs = Array.isArray(migrated.transactions) ? migrated.transactions : [];
-  
+  const currencyTotals: Record<string, {
+    totalDebitMinor: number;
+    totalCreditMinor: number;
+    totalDebit: number;
+    totalCredit: number;
+  }> = {};
+  const ensureCurrencyTotals = (currency: string) => {
+    if (!currencyTotals[currency]) {
+      currencyTotals[currency] = {
+        totalDebitMinor: 0,
+        totalCreditMinor: 0,
+        totalDebit: 0,
+        totalCredit: 0,
+      };
+    }
+    return currencyTotals[currency];
+  };
+  ensureCurrencyTotals(systemCurrency);
+
   if (Array.isArray(migrated.transactions)) {
     migrated.transactions = migrated.transactions.map(t => {
       const acc = accountsMap.get(t.accountId);
       const currency = (t.currency as CurrencyCode) || (acc?.currency as CurrencyCode) || systemCurrency;
-      
+
       const minor = (typeof t.amountMinor === 'number' && isFinite(t.amountMinor))
         ? t.amountMinor
         : decimalToMinor(t.amount || 0, currency as string);
-      
+
       const status = t.status || 'posted';
       if (status === 'posted') {
-        if (t.type === 'debit') totalDebitMinor += minor;
-        else if (t.type === 'credit') totalCreditMinor += minor;
+        const totals = ensureCurrencyTotals(currency);
+        if (t.type === 'debit') totals.totalDebitMinor += minor;
+        else if (t.type === 'credit') totals.totalCreditMinor += minor;
       }
 
       return {
@@ -240,8 +256,25 @@ export function migrateBackupV5ToV6(payload: unknown): BackupPayload {
     });
   }
 
-  migrated.metadata.totalDebitMinor = totalDebitMinor;
-  migrated.metadata.totalCreditMinor = totalCreditMinor;
+  for (const [currency, totals] of Object.entries(currencyTotals)) {
+    totals.totalDebit = minorToDecimal(totals.totalDebitMinor, currency);
+    totals.totalCredit = minorToDecimal(totals.totalCreditMinor, currency);
+  }
+  migrated.metadata.currencyTotals = currencyTotals;
+  const singleCurrencyTotals = Object.keys(currencyTotals).length === 1
+    ? currencyTotals[Object.keys(currencyTotals)[0]]
+    : undefined;
+  if (singleCurrencyTotals) {
+    migrated.metadata.totalDebitMinor = singleCurrencyTotals.totalDebitMinor;
+    migrated.metadata.totalCreditMinor = singleCurrencyTotals.totalCreditMinor;
+    migrated.metadata.totalDebitSum = singleCurrencyTotals.totalDebit;
+    migrated.metadata.totalCreditSum = singleCurrencyTotals.totalCredit;
+  } else {
+    delete migrated.metadata.totalDebitMinor;
+    delete migrated.metadata.totalCreditMinor;
+    delete migrated.metadata.totalDebitSum;
+    delete migrated.metadata.totalCreditSum;
+  }
   migrated.metadata.backupSchemaVersion = 6;
   migrated.metadata.schemaVersion = 6;
   migrated.metadata.databaseSchemaVersion = DATABASE_SCHEMA_VERSION;
