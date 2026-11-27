@@ -36,6 +36,8 @@ function buildCanonicalContent(payload: {
   totalCreditSum?: number;
   legacyTotalDebitSum?: number;
   legacyTotalCreditSum?: number;
+  legacyTotalDebitMinor?: number;
+  legacyTotalCreditMinor?: number;
   totalDebitMinor?: number;
   totalCreditMinor?: number;
   accounts: any[];
@@ -60,10 +62,10 @@ function buildCanonicalContent(payload: {
     createdAt: payload.createdAt,
     accountsLength: payload.accountsLength,
     transactionsLength: payload.transactionsLength,
-    totalDebitSum: payload.schemaVersion < 6
+    totalDebitSum: payload.schemaVersion <= 6
       ? (payload.legacyTotalDebitSum ?? payload.totalDebitSum)
       : payload.totalDebitSum,
-    totalCreditSum: payload.schemaVersion < 6
+    totalCreditSum: payload.schemaVersion <= 6
       ? (payload.legacyTotalCreditSum ?? payload.totalCreditSum)
       : payload.totalCreditSum,
     accounts: (payload.accounts || []).map((a) => ({
@@ -117,8 +119,12 @@ function buildCanonicalContent(payload: {
 
   // V6+: enhanced integrity (Minor units + status + currency + archived)
   if (payload.schemaVersion >= 6) {
-    base.totalDebitMinor = payload.totalDebitMinor;
-    base.totalCreditMinor = payload.totalCreditMinor;
+    base.totalDebitMinor = payload.schemaVersion === 6
+      ? (payload.legacyTotalDebitMinor ?? payload.totalDebitMinor)
+      : payload.totalDebitMinor;
+    base.totalCreditMinor = payload.schemaVersion === 6
+      ? (payload.legacyTotalCreditMinor ?? payload.totalCreditMinor)
+      : payload.totalCreditMinor;
     base.accounts = (payload.accounts || []).map((a) => ({
       id: a.id,
       name: a.name,
@@ -141,7 +147,7 @@ function buildCanonicalContent(payload: {
       postedAt: t.postedAt,
       updatedAt: t.updatedAt,
     }));
-    if (payload.currencyTotals) {
+    if (payload.schemaVersion >= 7 && payload.currencyTotals) {
       base.currencyTotals = Object.keys(payload.currencyTotals).sort().reduce((totals, code) => {
         totals[code] = payload.currencyTotals![code];
         return totals;
@@ -172,6 +178,8 @@ export async function calculateBackupPayloadHash(payloadWithoutHash: {
     totalCreditSum?: number;
     legacyTotalDebitSum?: number;
     legacyTotalCreditSum?: number;
+    legacyTotalDebitMinor?: number;
+    legacyTotalCreditMinor?: number;
     totalDebitMinor?: number;
     totalCreditMinor?: number;
     currencyTotals?: Record<string, {
@@ -206,6 +214,8 @@ export async function calculateBackupPayloadHash(payloadWithoutHash: {
     totalCreditSum: payloadWithoutHash.metadata.totalCreditSum,
     legacyTotalDebitSum: payloadWithoutHash.metadata.legacyTotalDebitSum,
     legacyTotalCreditSum: payloadWithoutHash.metadata.legacyTotalCreditSum,
+    legacyTotalDebitMinor: payloadWithoutHash.metadata.legacyTotalDebitMinor,
+    legacyTotalCreditMinor: payloadWithoutHash.metadata.legacyTotalCreditMinor,
     totalDebitMinor: payloadWithoutHash.metadata.totalDebitMinor,
     totalCreditMinor: payloadWithoutHash.metadata.totalCreditMinor,
     currencyTotals: payloadWithoutHash.metadata.currencyTotals,
