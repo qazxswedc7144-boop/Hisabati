@@ -390,6 +390,8 @@ export class BackupService {
       ) {
         return { isValid: false, error: `عملة المعاملة لا تطابق عملة الحساب (ID: ${trx.id})` };
       }
+      const systemCurrency = (settings || []).find((setting: any) => setting.key === 'currency')?.value || 'YER';
+      const transactionCurrency = trx.currency || relatedAccount?.currency || systemCurrency;
       if (typeof trx.amount !== 'number' || isNaN(trx.amount) || !isFinite(trx.amount) || trx.amount <= 0) {
         return { isValid: false, error: `مبلغ غير صالح في المعاملة (ID: ${trx.id}): ${trx.amount}` };
       }
@@ -401,12 +403,12 @@ export class BackupService {
         }
       } else {
         if (trx.amountMinor === undefined || !isValidMinorUnit(trx.amountMinor)) {
-          trx.amountMinor = decimalToMinor(trx.amount, trx.currency || 'YER');
+          trx.amountMinor = decimalToMinor(trx.amount, transactionCurrency);
         }
       }
 
       if (trx.amountMinor !== undefined && trx.amount !== undefined) {
-        const expectedMinor = decimalToMinor(trx.amount, trx.currency || 'YER');
+        const expectedMinor = decimalToMinor(trx.amount, transactionCurrency);
         if (Math.abs(expectedMinor - trx.amountMinor) > 1) {
           return { isValid: false, error: `تعارض حسابي بين المبلغ (amount) والوحدات الصغرى (amountMinor) في المعاملة (ID: ${trx.id})` };
         }
