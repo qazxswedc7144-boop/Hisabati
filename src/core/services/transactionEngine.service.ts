@@ -950,7 +950,13 @@ export class FinancialTransactionEngine {
 
     const freshSettings = await settingsRepository.getSettings();
     const activeDb = getDb();
-    const { updatedTrx, targetAccount } = await activeDb.transaction('rw', activeDb.transactions, activeDb.accounts, activeDb.financialAuditLogs, async (transaction) => {
+    const { updatedTrx, targetAccount } = await activeDb.transaction(
+      'rw',
+      activeDb.transactions,
+      activeDb.accounts,
+      activeDb.financialAuditLogs,
+      activeDb.settings,
+      async (transaction) => {
       // Authoritative read and immutable-ledger validation are atomic with write.
       const freshTrx = await transaction.table('transactions').get(id) as Transaction | undefined;
       if (!freshTrx) throw new Error(`العملية رقم ${id} غير موجودة`);
@@ -1008,9 +1014,11 @@ export class FinancialTransactionEngine {
       const accountChanged = oldAccountId !== targetAccountId;
 
       if (statusChanged || amountChanged || typeChanged || accountChanged) {
-        await this.recalculateAccountBalance(oldAccountId, activeCurrency, transaction);
+        // Rebuild each affected account using its own authoritative currency.
+        // The source and destination accounts may legitimately use different currencies.
+        await this.recalculateAccountBalance(oldAccountId, undefined, transaction);
         if (accountChanged) {
-          await this.recalculateAccountBalance(targetAccountId, activeCurrency, transaction);
+          await this.recalculateAccountBalance(targetAccountId, undefined, transaction);
         }
       }
 
