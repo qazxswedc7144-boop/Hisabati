@@ -51,7 +51,7 @@ try {
     undefined,
     { timeout: 30_000 },
   );
-  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; return true; });
 
   if (!(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)))) {
     await page.reload({ waitUntil: 'domcontentloaded' });
