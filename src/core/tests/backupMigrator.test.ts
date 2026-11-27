@@ -176,6 +176,9 @@ export class BackupMigratorTestSuite {
         legacy.transactions[0].amount = 1000;
         legacy.transactions[1].amount = 500;
         legacy.metadata.integrityHash = await calculateBackupPayloadHash(legacy);
+        if (!(await verifyBackupIntegrityHash(legacy, 5))) {
+          throw new Error('Raw V5 integrity hash fixture is invalid before migration');
+        }
 
         const migrated = await migrateBackupPayload(legacy);
         if (migrated.metadata.currencyTotals?.YER?.totalDebitMinor !== 1000) {
@@ -223,6 +226,9 @@ export class BackupMigratorTestSuite {
           status: 'posted',
         };
         legacy.metadata.integrityHash = await calculateBackupPayloadHash(legacy);
+        if (!(await verifyBackupIntegrityHash(legacy, 6))) {
+          throw new Error('Raw V6 integrity hash fixture is invalid before migration');
+        }
 
         const migrated = await migrateBackupPayload(legacy);
         if (migrated.metadata.backupSchemaVersion !== 7) {
