@@ -1,4 +1,5 @@
 name: Firebase and PWA Integration
+# Run against every reviewed lockfile refresh, including bot-generated lockfile commits.
 
 on:
   workflow_dispatch:
