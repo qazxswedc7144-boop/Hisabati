@@ -95,8 +95,6 @@ export class BackupService {
       }
       return currencyTotals[currency];
     };
-    ensureCurrencyTotals(defaultCurrency);
-
     for (const trx of transactions) {
       const status = trx.status || 'posted';
       if (status !== 'posted') continue;
@@ -120,6 +118,8 @@ export class BackupService {
         throw new Error(`[Financial Safety] Backup totals exceed the safe integer range for ${trxCurrency}`);
       }
     }
+
+    if (Object.keys(currencyTotals).length === 0) ensureCurrencyTotals(defaultCurrency);
 
     for (const [currency, totals] of Object.entries(currencyTotals)) {
       totals.totalDebit = minorToDecimal(totals.totalDebitMinor, currency);
