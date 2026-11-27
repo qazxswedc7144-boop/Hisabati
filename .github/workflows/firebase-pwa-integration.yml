@@ -49,4 +49,4 @@ jobs:
           --project demo-hisabati
           --only auth,firestore
           --non-interactive
-          "npm run test:firebase:emulator && npm run build && npm run test:pwa:offline"
+          "npm run test:firebase:emulator && npm run test:tenant:http && npm run build && npm run test:pwa:offline"
