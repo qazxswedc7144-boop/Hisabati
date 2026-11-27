@@ -285,6 +285,94 @@ export function migrateBackupV5ToV6(payload: unknown): BackupPayload {
   return migrated;
 }
 
+/**
+ * V6 -> V7: preserve old V6 hash inputs, then replace ambiguous scalar totals
+ * with integrity-hashed currency-specific totals.
+ */
+export function migrateBackupV6ToV7(payload: unknown): BackupPayload {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('هيكل ملف النسخة الاحتياطية غير صالح (Invalid Payload)');
+  }
+  const p = payload as Record<string, unknown>;
+  if (!p.metadata || typeof p.metadata !== 'object') {
+    throw new Error('بيانات النسخة الاحتياطية الوصفية غير موجودة (Metadata Missing)');
+  }
+
+  const migrated = structuredClone(payload) as BackupPayload;
+  const originalVersion = migrated.metadata.originalSchemaVersion;
+  if (originalVersion === 6) {
+    migrated.metadata.legacyTotalDebitSum = migrated.metadata.totalDebitSum;
+    migrated.metadata.legacyTotalCreditSum = migrated.metadata.totalCreditSum;
+    migrated.metadata.legacyTotalDebitMinor = migrated.metadata.totalDebitMinor;
+    migrated.metadata.legacyTotalCreditMinor = migrated.metadata.totalCreditMinor;
+  }
+
+  const settings = Array.isArray(migrated.settings) ? migrated.settings : [];
+  const systemCurrency = (settings.find(setting => setting.key === 'currency')?.value as CurrencyCode) || 'YER';
+  const accountsMap = new Map((migrated.accounts || []).map(account => [account.id, account]));
+  const currencyTotals: Record<string, {
+    totalDebitMinor: number;
+    totalCreditMinor: number;
+    totalDebit: number;
+    totalCredit: number;
+  }> = {};
+
+  const ensureCurrencyTotals = (currency: string) => {
+    if (!currencyTotals[currency]) {
+      currencyTotals[currency] = {
+        totalDebitMinor: 0,
+        totalCreditMinor: 0,
+        totalDebit: 0,
+        totalCredit: 0,
+      };
+    }
+    return currencyTotals[currency];
+  };
+
+  for (const trx of migrated.transactions || []) {
+    const status = trx.status || 'posted';
+    if (status !== 'posted') continue;
+    const account = accountsMap.get(trx.accountId);
+    const currency = (trx.currency as CurrencyCode) || (account?.currency as CurrencyCode) || systemCurrency;
+    const amountMinor = typeof trx.amountMinor === 'number' && Number.isSafeInteger(trx.amountMinor)
+      ? Math.abs(trx.amountMinor)
+      : Math.abs(decimalToMinor(trx.amount || 0, currency));
+    const totals = ensureCurrencyTotals(currency);
+    if (trx.type === 'debit') totals.totalDebitMinor += amountMinor;
+    else if (trx.type === 'credit') totals.totalCreditMinor += amountMinor;
+    if (!Number.isSafeInteger(totals.totalDebitMinor) || !Number.isSafeInteger(totals.totalCreditMinor)) {
+      throw new Error(`إجماليات النسخة الاحتياطية تجاوزت النطاق الآمن للعملة ${currency}`);
+    }
+  }
+
+  if (Object.keys(currencyTotals).length === 0) ensureCurrencyTotals(systemCurrency);
+  for (const [currency, totals] of Object.entries(currencyTotals)) {
+    totals.totalDebit = minorToDecimal(totals.totalDebitMinor, currency);
+    totals.totalCredit = minorToDecimal(totals.totalCreditMinor, currency);
+  }
+
+  migrated.metadata.currencyTotals = currencyTotals;
+  const singleCurrencyTotals = Object.keys(currencyTotals).length === 1
+    ? currencyTotals[Object.keys(currencyTotals)[0]]
+    : undefined;
+  if (singleCurrencyTotals) {
+    migrated.metadata.totalDebitSum = singleCurrencyTotals.totalDebit;
+    migrated.metadata.totalCreditSum = singleCurrencyTotals.totalCredit;
+    migrated.metadata.totalDebitMinor = singleCurrencyTotals.totalDebitMinor;
+    migrated.metadata.totalCreditMinor = singleCurrencyTotals.totalCreditMinor;
+  } else {
+    delete migrated.metadata.totalDebitSum;
+    delete migrated.metadata.totalCreditSum;
+    delete migrated.metadata.totalDebitMinor;
+    delete migrated.metadata.totalCreditMinor;
+  }
+
+  migrated.metadata.backupSchemaVersion = 7;
+  migrated.metadata.schemaVersion = 7;
+  migrated.metadata.databaseSchemaVersion = DATABASE_SCHEMA_VERSION;
+  return migrated;
+}
+
 export async function migrateBackupPayload(payload: unknown): Promise<BackupPayload> {
   if (!payload || typeof payload !== 'object') {
     throw new Error('هيكل ملف النسخة الاحتياطية غير صالح (Invalid Payload Object)');
@@ -326,6 +414,10 @@ export async function migrateBackupPayload(payload: unknown): Promise<BackupPayl
 
   if (getBackupSchemaVersion(migrated.metadata) === 5) {
     migrated = migrateBackupV5ToV6(migrated);
+  }
+
+  if (getBackupSchemaVersion(migrated.metadata) === 6) {
+    migrated = migrateBackupV6ToV7(migrated);
   }
 
   if (getBackupSchemaVersion(migrated.metadata) === BACKUP_SCHEMA_VERSION) {
