@@ -7,7 +7,7 @@ import { ServerLeaseIssuer } from './server/infrastructure/ServerLeaseIssuer';
 import { FirebaseTokenVerifier, FirebaseTokenVerificationError } from './server/infrastructure/FirebaseTokenVerifier';
 import { AIResponseSchema, validateInvoiceAuditResponse } from './src/core/services/ai/aiValidation';
 import { GeminiOcrResponseSchema } from './src/core/services/ai/ocrValidation';
-import { initFirebaseAdmin } from './server/infrastructure/adminServer';
+import { getAdminAuth, initFirebaseAdmin } from './server/infrastructure/adminServer';
 import { privacyGateway } from './src/core/services/ai/PrivacyGateway';
 
 // Initialize Firebase Admin SDK on server start
@@ -311,7 +311,12 @@ const requireFirebaseAuth = async (
   }
 
   try {
-    const claims = await FirebaseTokenVerifier.verifyIdToken(idToken);
+    // Auth Emulator issues emulator-signed tokens, which must be verified by the
+    // Admin SDK connected to that emulator. Production continues to use the
+    // hardened Google-certificate verifier.
+    const claims = process.env.FIREBASE_AUTH_EMULATOR_HOST
+      ? await getAdminAuth().verifyIdToken(idToken)
+      : await FirebaseTokenVerifier.verifyIdToken(idToken);
     (req as any).verifiedUid = claims.uid;
     (req as any).verifiedEmail = claims.email;
     next();
@@ -858,7 +863,7 @@ ${JSON.stringify(safeAccountContext).slice(0, 5000)}
           ? authHeader.slice(7).trim()
           : undefined;
 
-      const idToken = (req.body?.idToken || bearerToken) as string | undefined;
+      const idToken = (bearerToken || req.body?.idToken) as string | undefined;
       const organizationId = req.body?.organizationId as string | undefined;
       const clientClaimedUid = req.body?.clientClaimedUid as string | undefined;
       const clientClaimedRole = req.body?.clientClaimedRole as string | undefined;
@@ -889,6 +894,9 @@ ${JSON.stringify(safeAccountContext).slice(0, 5000)}
         organizationId,
         clientClaimedUid,
         clientClaimedRole,
+        clientClaimedPermissions: Array.isArray(req.body?.clientClaimedPermissions)
+          ? req.body.clientClaimedPermissions.filter((permission: unknown): permission is string => typeof permission === 'string')
+          : undefined,
       });
 
       if (!result.success) {
@@ -928,7 +936,7 @@ ${JSON.stringify(safeAccountContext).slice(0, 5000)}
           ? authHeader.slice(7).trim()
           : undefined;
 
-      const idToken = (req.body?.idToken || bearerToken) as string | undefined;
+      const idToken = (bearerToken || req.body?.idToken) as string | undefined;
       const organizationId = req.body?.organizationId as string | undefined;
 
       if (!idToken || typeof idToken !== 'string') {
