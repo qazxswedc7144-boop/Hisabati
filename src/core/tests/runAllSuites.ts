@@ -38,6 +38,7 @@ import { tenantService } from '../services/TenantService';
 import { accountService } from '../services/account.service';
 import { FinancialAuditSnapshotP2B13TestSuite } from './financialAuditSnapshotP2B13.test';
 import { TransactionConcurrencySafetyTestSuite } from './transactionConcurrencySafety.test';
+import { VercelApiHttpTestSuite } from '../../../server/tests/vercelApiHttp.test';
 
 async function main() {
   console.log('====================================================');
@@ -748,6 +749,25 @@ async function main() {
     }
   } catch (err: any) {
     console.error('ROUND 2-E.1 Transaction Concurrency Safety suite crashed:', err);
+    totalFailed += 1;
+    totalCount += 1;
+  }
+
+  // --- Vercel Express Function HTTP Integration ---
+  console.log('\n--- [Vercel] Express API HTTP Integration Tests ---');
+  try {
+    const vercelHttp = await VercelApiHttpTestSuite.runAll();
+    console.log(`Vercel HTTP Result: Passed ${vercelHttp.passed}/${vercelHttp.total}`);
+    totalPassed += vercelHttp.passed;
+    totalFailed += vercelHttp.failed;
+    totalCount += vercelHttp.total;
+    if (vercelHttp.failed > 0) {
+      for (const result of vercelHttp.results.filter((item) => !item.passed)) {
+        console.error(`  ❌ [${result.id}] ${result.title}: ${result.error}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('Vercel HTTP Integration suite crashed:', err);
     totalFailed += 1;
     totalCount += 1;
   }
