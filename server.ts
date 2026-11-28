@@ -1025,9 +1025,11 @@ const isMainScript =
     process.argv[1].endsWith('server.cjs') ||
     process.argv[1].endsWith('server.js'));
 
-if (isMainScript) {
+if (process.env.VERCEL !== '1' && isMainScript) {
   startServer().catch((err) => {
     console.error('Failed to start server:', err);
   });
 }
 
+// Vercel detects this recognized Express entrypoint and runs it as a Function.
+export default createApp();
