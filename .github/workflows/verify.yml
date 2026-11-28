@@ -4,7 +4,7 @@ on:
   push:
     branches: ['fix/**', 'feat/**', 'main', 'chore/**']
   pull_request:
-    branches: [main]
+    branches: [main, 'fix/phase1-ledger-currency-hardening']
 
 jobs:
   verify:
