@@ -50,8 +50,10 @@ export const MAX_BACKUP_SETTINGS = 500;
 import { rbacGuard } from './rbac/RBACGuard.service';
 
 export class BackupService {
-  // Test hook to simulate safety backup failures in security unit tests
+  // Test hooks for safety and post-write restore failure scenarios.
   public _simulateSafetyBackupFailure: boolean = false;
+  public _simulatePostRestoreRecalculationFailure: boolean = false;
+  public _simulatePostRestoreAuditFailure: boolean = false;
 
   /**
    * Generates a validated and cryptographically hashed snapshot of the local database.
@@ -507,7 +509,11 @@ export class BackupService {
       
       if (!lastSafety || !lastSafety.payload) return false;
       
-      await this.restoreFromPayload(lastSafety.payload, 'replace', { skipSafetyBackup: true, internal: true });
+      await this.restoreFromPayload(lastSafety.payload, 'replace', {
+        skipSafetyBackup: true,
+        internal: true,
+        isRollback: true,
+      });
       return true;
     } catch {
       return false;
@@ -543,7 +549,7 @@ export class BackupService {
   public async restoreFromPayload(
     rawPayload: any,
     mode: 'replace' | 'merge' = 'replace',
-    options: { skipSafetyBackup?: boolean; internal?: boolean } = {}
+    options: { skipSafetyBackup?: boolean; internal?: boolean; isRollback?: boolean } = {}
   ): Promise<{ success: boolean; message: string }> {
     // 0. RBAC Guard: assert backup:restore (Skip if internal)
     if (!options.internal) {
@@ -716,17 +722,55 @@ export class BackupService {
       }
     });
 
-    // 8. POST-RESTORE BALANCE RECALCULATION & INTEGRITY AUDIT
-    await transactionEngine.recalculateAllBalances();
-    const integrityAudit = await integrityService.verifyFinancialIntegrity();
-    if (!integrityAudit.valid && integrityAudit.inconsistencies.length > 0) {
-      // Auto-heal balances if issues found
-      await integrityService.autoFixAll();
+    // 8. POST-WRITE VERIFICATION. A restore is not successful until the
+    // recalculated ledger passes a fresh integrity audit.
+    try {
+      if (!options.isRollback && this._simulatePostRestoreRecalculationFailure) {
+        throw new Error('Simulated post-restore balance recalculation failure');
+      }
+
+      await transactionEngine.recalculateAllBalances();
+
+      const firstAudit = !options.isRollback && this._simulatePostRestoreAuditFailure
+        ? { valid: false, inconsistencies: [{ details: 'Simulated persistent integrity failure' }] }
+        : await integrityService.verifyFinancialIntegrity();
+
+      if (!firstAudit.valid) {
+        await integrityService.autoFixAll();
+
+        // Re-audit after repair. Never treat an attempted repair as proof of integrity.
+        const finalAudit = !options.isRollback && this._simulatePostRestoreAuditFailure
+          ? { valid: false, inconsistencies: [{ details: 'Simulated persistent integrity failure' }] }
+          : await integrityService.verifyFinancialIntegrity();
+
+        if (!finalAudit.valid) {
+          const details = finalAudit.inconsistencies.map((item: any) => item.details).filter(Boolean).join('; ');
+          throw new Error(
+            `Post-restore integrity audit failed after repair${details ? `: ${details}` : ''}`
+          );
+        }
+      }
+    } catch (postRestoreError: any) {
+      // A rollback restore must not recursively attempt another rollback.
+      if (options.skipSafetyBackup || options.isRollback) {
+        throw postRestoreError;
+      }
+
+      const rollbackSucceeded = await this.rollbackToSafetyBackup();
+      if (!rollbackSucceeded) {
+        throw new Error(
+          `Restore failed after database write and automatic rollback also failed. Original error: ${postRestoreError?.message || String(postRestoreError)}`
+        );
+      }
+
+      throw new Error(
+        `Restore was aborted and the pre-restore safety backup was restored. Reason: ${postRestoreError?.message || String(postRestoreError)}`
+      );
     }
 
     return {
       success: true,
-      message: `تمت الاستعادة بنجاح (${payload.accounts.length} حساب، ${payload.transactions.length} معاملة)`,
+      message: `تمت الاستعادة والتحقق من سلامتها بنجاح (${payload.accounts.length} حساب، ${payload.transactions.length} معاملة)`,
     };
   }
 

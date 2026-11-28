@@ -149,6 +149,7 @@ export class RestoreHardeningTestSuite {
         await db.accounts.put({
           id: 'baseline_acc',
           name: 'حساب أصلي مبدئي',
+          currency: 'SAR',
           currentBalance: 500,
           totalDebit: 500,
           totalCredit: 0,
@@ -161,6 +162,8 @@ export class RestoreHardeningTestSuite {
           id: 'baseline_trx',
           accountId: 'baseline_acc',
           amount: 500,
+          amountMinor: 50000,
+          currency: 'SAR',
           type: 'debit',
           date: '2026-01-01',
           createdAt: new Date().toISOString(),
@@ -539,6 +542,93 @@ export class RestoreHardeningTestSuite {
         const res = await backupService.validateBackupPayload(payload);
         if (res.isValid) {
           throw new Error('Expected validation to fail for amount / amountMinor mismatch');
+        }
+      }
+    );
+
+    // ----------------------------------------------------
+    // TEST 14: Post-write recalculation failure triggers safety rollback
+    // ----------------------------------------------------
+    await this.runTest(
+      results,
+      'RST-14',
+      'فشل إعادة حساب الأرصدة بعد الكتابة يستعيد نسخة الأمان تلقائياً',
+      async () => {
+        await seedInitialDb();
+        await db.safetyBackups.clear();
+        const originalAccount = await db.accounts.get('baseline_acc');
+        if (!originalAccount) throw new Error('Baseline account was not seeded');
+
+        const payload = createPayload(3);
+        payload.metadata.integrityHash = await calculateBackupPayloadHash(payload);
+        backupService._simulatePostRestoreRecalculationFailure = true;
+
+        let rejected = false;
+        try {
+          await backupService.restoreFromPayload(payload, 'replace');
+        } catch (err: any) {
+          rejected = err.message.includes('pre-restore safety backup was restored');
+        } finally {
+          backupService._simulatePostRestoreRecalculationFailure = false;
+        }
+
+        if (!rejected) {
+          throw new Error('Restore did not fail with an explicit successful rollback result');
+        }
+
+        const restoredOriginal = await db.accounts.get('baseline_acc');
+        const importedAccount = await db.accounts.get('acc_sec_1');
+        const baselineTransactions = await db.transactions.where('accountId').equals('baseline_acc').toArray();
+        if (!restoredOriginal || importedAccount || baselineTransactions.length !== 1) {
+          throw new Error('Automatic rollback did not restore the exact pre-restore account/transaction state');
+        }
+
+        const audit = await integrityService.verifyFinancialIntegrity();
+        if (!audit.valid) {
+          throw new Error('Financial integrity did not pass after automatic rollback');
+        }
+      }
+    );
+
+    // ----------------------------------------------------
+    // TEST 15: Persistent post-repair audit failure triggers safety rollback
+    // ----------------------------------------------------
+    await this.runTest(
+      results,
+      'RST-15',
+      'استمرار فشل التدقيق بعد محاولة الإصلاح يمنع النجاح ويستعيد نسخة الأمان',
+      async () => {
+        await seedInitialDb();
+        await db.safetyBackups.clear();
+        const payload = createPayload(3);
+        payload.metadata.integrityHash = await calculateBackupPayloadHash(payload);
+        backupService._simulatePostRestoreAuditFailure = true;
+
+        let rejected = false;
+        try {
+          await backupService.restoreFromPayload(payload, 'replace');
+        } catch (err: any) {
+          rejected =
+            err.message.includes('pre-restore safety backup was restored') &&
+            err.message.includes('Post-restore integrity audit failed after repair');
+        } finally {
+          backupService._simulatePostRestoreAuditFailure = false;
+        }
+
+        if (!rejected) {
+          throw new Error('A restore with a persistently failing final audit was incorrectly accepted');
+        }
+
+        const baselineAccount = await db.accounts.get('baseline_acc');
+        const importedAccount = await db.accounts.get('acc_sec_1');
+        const baselineTransactions = await db.transactions.where('accountId').equals('baseline_acc').toArray();
+        if (!baselineAccount || importedAccount || baselineTransactions.length !== 1) {
+          throw new Error('Final-audit failure did not restore the pre-restore safety snapshot');
+        }
+
+        const audit = await integrityService.verifyFinancialIntegrity();
+        if (!audit.valid) {
+          throw new Error('Restored pre-restore database failed the final integrity audit');
         }
       }
     );
