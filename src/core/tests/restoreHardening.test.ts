@@ -161,6 +161,7 @@ export class RestoreHardeningTestSuite {
           id: 'baseline_trx',
           accountId: 'baseline_acc',
           amount: 500,
+          amountMinor: 50000,
           type: 'debit',
           date: '2026-01-01',
           createdAt: new Date().toISOString(),
