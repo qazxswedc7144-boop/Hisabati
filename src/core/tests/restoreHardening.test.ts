@@ -149,6 +149,7 @@ export class RestoreHardeningTestSuite {
         await db.accounts.put({
           id: 'baseline_acc',
           name: 'حساب أصلي مبدئي',
+          currency: 'SAR',
           currentBalance: 500,
           totalDebit: 500,
           totalCredit: 0,
@@ -162,6 +163,7 @@ export class RestoreHardeningTestSuite {
           accountId: 'baseline_acc',
           amount: 500,
           amountMinor: 50000,
+          currency: 'SAR',
           type: 'debit',
           date: '2026-01-01',
           createdAt: new Date().toISOString(),
