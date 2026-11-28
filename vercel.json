@@ -2,14 +2,20 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "services": {
     "web": {
-      "entrypoint": ".",
-      "routePrefix": "/",
-      "framework": "vite"
+      "root": ".",
+      "framework": "vite",
+      "rewrites": [
+        { "source": "/(.*)", "destination": "/index.html" }
+      ]
     },
     "api": {
+      "root": ".",
       "entrypoint": "server.ts",
-      "routePrefix": "/api",
       "framework": "express"
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": { "service": "api" } },
+    { "source": "/(.*)", "destination": { "service": "web" } }
+  ]
 }
